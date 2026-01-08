@@ -5,6 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
+.history
+.uv-cache
 
 # Virtual environments
 .venv
+
+data/
+logs/
