@@ -10,3 +10,8 @@ dependencies = ["pokerkit"]
 dev = [
     "pytest>=9.0.2",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "large_sample: 依赖本地手牌数据集的大样本回归测试（默认跳过）",
+]
