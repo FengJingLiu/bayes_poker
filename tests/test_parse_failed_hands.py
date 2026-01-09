@@ -19,6 +19,7 @@ from bayes_poker.hand_history.parse_gg_poker import (
     extract_cash_drop_total_cents,
     parse_hand_text,
     parse_value_in_cents,
+    repair_uncalled_bet_returned_for_raise_over_all_in,
     sanitize_hand_text,
 )
 from pokerkit.notation import HandHistory
@@ -395,6 +396,39 @@ Bob: folds
 Uncalled bet ($0.10) returned to Alice
 """
 
+SAMPLE_ALL_IN_RAISE_UNCALLED_AFTER_FOLDS_RAW_OK = """PokerStars Hand #03261314758: Hold'em No Limit ($0.01/$0.02) - 2025/01/21 13:03:44
+Table 'GG_RushAndCash8764148' 6-max Seat #1 is the button
+Seat 1: Frenemy ($2.24 in chips)
+Seat 2: WildKing007 ($2.00 in chips)
+Seat 3: Elizabeth Olsen ($1.99 in chips)
+Seat 4: Coffee zombie ($3.93 in chips)
+Seat 5: wc_fedos ($2.01 in chips)
+Seat 6: Rubiksss ($2.20 in chips)
+WildKing007: posts small blind $0.01
+Elizabeth Olsen: posts big blind $0.02
+*** HOLE CARDS ***
+Coffee zombie: raises $0.02 to $0.04
+wc_fedos: folds
+Rubiksss: folds
+Frenemy: raises $0.06 to $0.10
+WildKing007: folds
+Elizabeth Olsen: raises $0.25 to $0.35
+Coffee zombie: raises $3.58 to $3.93 and is all-in
+Frenemy: folds
+Elizabeth Olsen: folds
+Uncalled bet ($3.58) returned to Coffee zombie
+*** SHOWDOWN ***
+Coffee zombie collected $0.75 from pot
+*** SUMMARY ***
+Total pot $0.81 | Rake $0.03 | Jackpot $0.03 | Bingo $0 | Fortune $0 | Tax $0
+Seat 1: Frenemy (button) folded before Flop
+Seat 2: WildKing007 (small blind) folded before Flop (didn't bet)
+Seat 3: Elizabeth Olsen (big blind) folded before Flop
+Seat 4: Coffee zombie collected ($0.75)
+Seat 5: wc_fedos folded before Flop (didn't bet)
+Seat 6: Rubiksss folded before Flop (didn't bet)
+"""
+
 SAMPLE_CALLS_THEN_FOLDS_BEFORE_SHOWS = """PokerStars Hand #06666666666: Hold'em No Limit ($0.01/$0.02) - 2025/01/01 00:00:00
 Table 'GG_RushAndCash_TEST' 6-max Seat #1 is the button
 *** TURN *** [8h 5s Ad] [7d]
@@ -436,8 +470,7 @@ class TestParseFailedHands:
 
     def test_cash_drop_fail(self, parser):
         """测试 Cash Drop 历史失败样本（回归用例：应能解析）。"""
-        sanitized = sanitize_hand_text(SAMPLE_CASH_DROP_FAIL)
-        parser._parse(sanitized, parse_value=parse_value_in_cents)
+        parse_hand_text(SAMPLE_CASH_DROP_FAIL, parser=parser)
 
     @pytest.mark.parametrize(
         "case_name, hand_text, expected_winners, expected_board",
@@ -465,7 +498,7 @@ class TestParseFailedHands:
         expected_board: list[str] | None,
     ) -> None:
         """
-        验证各类特例在 sanitize 后能成功解析，且金额正确，板面正确。
+        验证各类特例能成功解析，且金额正确，板面正确。
         
         Args:
             parser: 解析器
@@ -474,12 +507,9 @@ class TestParseFailedHands:
             expected_winners: 预期赢家及金额（分）
             expected_board: 预期板面发牌动作列表（如 ["Td4s8d", "2h", "7d"]），可选
         """
-        # 1. Sanitize
-        sanitized = sanitize_hand_text(hand_text)
-        
-        # 2. Parse check
+        # Parse check
         try:
-            hh = parser._parse(sanitized, parse_value=parse_value_in_cents)
+            hh = parse_hand_text(hand_text, parser=parser)
         except Exception as e:
             pytest.fail(f"[{case_name}] 解析失败: {e}")
 
@@ -549,6 +579,24 @@ def test_sanitize_does_not_convert_standard_uncalled_bet_after_fold() -> None:
     assert "Alice: raises $0.10 to $0.15" in sanitized
     assert "Alice: calls" not in sanitized
     assert "Uncalled bet ($0.10) returned to Alice" in sanitized
+
+
+def test_sanitize_does_not_break_raw_parseable_all_in_raise_uncalled_after_folds() -> None:
+    parser = RushCashPokerStarsParser()
+    parser._parse(SAMPLE_ALL_IN_RAISE_UNCALLED_AFTER_FOLDS_RAW_OK, parse_value=parse_value_in_cents)
+
+    sanitized = sanitize_hand_text(SAMPLE_ALL_IN_RAISE_UNCALLED_AFTER_FOLDS_RAW_OK)
+    assert "Coffee zombie: raises $3.58 to $3.93 and is all-in" in sanitized
+    assert "Uncalled bet ($3.58) returned to Coffee zombie" in sanitized
+    parser._parse(sanitized, parse_value=parse_value_in_cents)
+
+
+def test_repair_converts_raise_over_all_in_to_calls_and_removes_uncalled() -> None:
+    sanitized = sanitize_hand_text(SAMPLE_CASH_DROP_FAIL)
+    repaired = repair_uncalled_bet_returned_for_raise_over_all_in(sanitized)
+    assert "ArhiTema: raises $2.88 to $4.84 and is all-in" not in repaired
+    assert "Uncalled bet ($2.88) returned to ArhiTema" not in repaired
+    assert "ArhiTema: calls" in repaired
 
 
 def test_sanitize_removes_calls_then_folds_before_shows() -> None:

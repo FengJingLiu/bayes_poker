@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import logging
 from operator import add
 from pathlib import Path
-from re import DOTALL, MULTILINE, compile, search, sub, finditer, escape
+from re import DOTALL, MULTILINE, compile, search, sub
 
 from pokerkit.notation import HandHistory, PokerStarsParser, parse_time
 
@@ -190,18 +190,26 @@ def sanitize_hand_text(text: str) -> str:
         text,
     )
 
-    # 6. 处理 Uncalled bet returned（修复 raises-over-all-in 导致 pokerkit 无法修复的场景）
-    #
-    # 关键约束（避免误伤正常手牌）：
-    # - 仅在 Uncalled bet 对应玩家的“上一条动作”是 raises 时才尝试修复；
-    #   否则（例如 bets 场景）保持原样，因为原始文本通常可被解析。
-    # - raises $X ... 必须紧邻于当前 street 内，并且 $X == Uncalled bet 返回金额；
-    # - 如果 raises 与 Uncalled bet 之间存在 folds，则仅在该 street 内出现过其他玩家 all-in 时才修复，
-    #   以避免将标准的“开池加注 -> 全桌弃牌 -> 退回下注”误改写为 calls。
+    # 5. 清理 SUMMARY 中的特殊格式
+    text = sub(r", Cashout Risk \(\$[\d.]+\)", "", text)
+    # 合并多次 won: "and won ($X), and won ($Y)" -> "and won ($X)"
+    text = sub(r"(and won \(\$[\d.,]+\))(?:, and won \(\$[\d.,]+\))+", r"\1", text)
+
+    return text
+
+
+def repair_uncalled_bet_returned_for_raise_over_all_in(text: str) -> str:
+    """
+    修复 raises-over-all-in 导致 pokerkit 无法修复的 Uncalled bet 场景。
+
+    注意：这是“修复器”而非通用清洗器，启发式较强；推荐仅在解析失败后再尝试。
+    """
     lines = text.split("\n")
-    uncalled_pattern = compile(r"^Uncalled bet \(\$(?P<amount>[\d.]+)\) returned to (?P<player>.+)$")
+    uncalled_pattern = compile(
+        r"^Uncalled bet \(\$(?P<amount>[\d.,]+)\) returned to (?P<player>.+)$"
+    )
     raise_pattern = compile(
-        r"^(?P<player>.+?): raises \$(?P<raise_amount>[\d.]+) to \$(?P<to_amount>[\d.]+)(?P<all_in> and is all-in)?$"
+        r"^(?P<player>.+?): raises \$(?P<raise_amount>[\d.,]+) to \$(?P<to_amount>[\d.,]+)(?P<all_in> and is all-in)?$"
     )
     street_markers = ("*** HOLE CARDS ***", "*** FLOP ***", "*** TURN ***", "*** RIVER ***")
 
@@ -213,7 +221,6 @@ def sanitize_hand_text(text: str) -> str:
         uncalled_amount = match.group("amount")
         player = match.group("player")
 
-        # 定位当前 street 起点，防止误匹配到更早街/更远处的 raises
         street_start = 0
         for i in range(uncalled_index - 1, -1, -1):
             if lines[i] in street_markers:
@@ -234,39 +241,25 @@ def sanitize_hand_text(text: str) -> str:
             continue
 
         raise_amount = raise_match.group("raise_amount")
-        is_all_in_raise = raise_match.group("all_in") is not None
-        if raise_amount != uncalled_amount:
+        if raise_amount.replace(",", "") != uncalled_amount.replace(",", ""):
             continue
 
-        folds_between = any(
-            ": folds" in lines[i] for i in range(last_action_index + 1, uncalled_index)
-        )
         all_in_before_raise = any(
             "and is all-in" in lines[i] and not lines[i].startswith(f"{player}: ")
             for i in range(street_start, last_action_index)
         )
-
-        if folds_between and not is_all_in_raise and not all_in_before_raise:
+        if not all_in_before_raise:
             continue
 
-        lines[last_action_index] = f"{player}: calls ${raise_amount}"
+        lines[last_action_index] = f"{player}: calls"
         del lines[uncalled_index]
         LOGGER.debug(
-            "修复 Uncalled bet: player=%s amount=%s folds_between=%s all_in_before_raise=%s",
+            "修复 Uncalled bet(raise-over-all-in): player=%s amount=%s",
             player,
             raise_amount,
-            folds_between,
-            all_in_before_raise,
         )
 
-    text = "\n".join(lines)
-
-    # 5. 清理 SUMMARY 中的特殊格式
-    text = sub(r", Cashout Risk \(\$[\d.]+\)", "", text)
-    # 合并多次 won: "and won ($X), and won ($Y)" -> "and won ($X)"
-    text = sub(r"(and won \(\$[\d.,]+\))(?:, and won \(\$[\d.,]+\))+", r"\1", text)
-
-    return text
+    return "\n".join(lines)
 
 
 def parse_value_in_cents(raw_value: str) -> int:
@@ -330,11 +323,26 @@ def parse_hand_text(
     parser = parser or RushCashPokerStarsParser()
 
     cash_drop_total_cents = extract_cash_drop_total_cents(hand_text)
-    hand_text = sanitize_hand_text(hand_text)
-    hand_history = parser._parse(
-        hand_text,
-        parse_value=parse_value_in_cents,
-    )
+    sanitized = sanitize_hand_text(hand_text)
+
+    try:
+        hand_history = parser._parse(
+            sanitized,
+            parse_value=parse_value_in_cents,
+        )
+    except (KeyError, ValueError, RecursionError) as exc:
+        hand_id, table = extract_hand_metadata(hand_text)
+        repaired = repair_uncalled_bet_returned_for_raise_over_all_in(sanitized)
+        LOGGER.debug(
+            "首次解析失败，尝试 Uncalled bet 修复: hand=%s table=%s error=%s",
+            hand_id,
+            table,
+            exc,
+        )
+        hand_history = parser._parse(
+            repaired,
+            parse_value=parse_value_in_cents,
+        )
 
     if cash_drop_total_cents is not None:
         if hand_history.user_defined_fields is None:
