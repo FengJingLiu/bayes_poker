@@ -11,6 +11,7 @@
 """
 
 from io import BytesIO
+import logging
 
 import pytest
 from bayes_poker.hand_history.parse_gg_poker import (
@@ -376,6 +377,55 @@ Seat 5: SeeYouCoco folded before Flop (didn't bet)
 Seat 6: vudik folded before Flop (didn't bet)
 """
 
+SAMPLE_CASH_DROP_COMMAS = """PokerStars Hand #09999999999: Hold'em No Limit ($0.01/$0.02) - 2025/01/01 00:00:00
+Table 'GG_RushAndCash_TEST' 6-max Seat #1 is the button
+Cash Drop to Pot : total $1,234.56
+"""
+
+SAMPLE_CASH_DROP_INVALID_AMOUNT = """PokerStars Hand #08888888888: Hold'em No Limit ($0.01/$0.02) - 2025/01/01 00:00:00
+Table 'GG_RushAndCash_TEST' 6-max Seat #1 is the button
+Cash Drop to Pot : total $0.2.0
+"""
+
+SAMPLE_STANDARD_UNCALLED_BET_AFTER_FOLD = """PokerStars Hand #07777777777: Hold'em No Limit ($0.01/$0.02) - 2025/01/01 00:00:00
+Table 'GG_RushAndCash_TEST' 6-max Seat #1 is the button
+*** HOLE CARDS ***
+Alice: raises $0.10 to $0.15
+Bob: folds
+Uncalled bet ($0.10) returned to Alice
+"""
+
+SAMPLE_CALLS_THEN_FOLDS_BEFORE_SHOWS = """PokerStars Hand #06666666666: Hold'em No Limit ($0.01/$0.02) - 2025/01/01 00:00:00
+Table 'GG_RushAndCash_TEST' 6-max Seat #1 is the button
+*** TURN *** [8h 5s Ad] [7d]
+Alice: calls $0.23
+Bob: folds
+Alice: shows [Ah Kh]
+*** SHOWDOWN ***
+"""
+
+SAMPLE_RUN_IT_THREE_TIMES_MINIMAL = """PokerStars Hand #05555555555: Hold'em No Limit ($0.01/$0.02) - 2025/01/01 00:00:00
+Table 'GG_RushAndCash_TEST' 6-max Seat #1 is the button
+*** HOLE CARDS ***
+Alice: shows [Ah Kh]
+Bob: shows [Qd Qc]
+*** FIRST FLOP *** [Td 4s 8d]
+*** SECOND FLOP *** [2s Th 8c]
+*** THIRD FLOP *** [As Ks Qs]
+*** FIRST SHOWDOWN *** 
+Alice collected $0.01 from pot
+*** SECOND SHOWDOWN *** 
+Alice collected $0.01 from pot
+*** THIRD SHOWDOWN *** 
+Alice collected $0.01 from pot
+*** SUMMARY ***
+Hand was run three times
+FIRST Board [Td 4s 8d]
+SECOND Board [2s Th 8c]
+THIRD Board [As Ks Qs]
+"""
+
+
 class TestParseFailedHands:
     """测试各类手牌场景的解析行为及金额准确性。"""
 
@@ -482,6 +532,41 @@ class TestParseFailedHands:
 def test_extract_cash_drop_total_cents() -> None:
     assert extract_cash_drop_total_cents(SAMPLE_CASH_DROP_SUCCESS) == 20
     assert extract_cash_drop_total_cents(SAMPLE_EV_CASHOUT) is None
+
+
+def test_extract_cash_drop_total_cents_parses_commas() -> None:
+    assert extract_cash_drop_total_cents(SAMPLE_CASH_DROP_COMMAS) == 123_456
+
+
+def test_extract_cash_drop_total_cents_invalid_amount_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="bayes_poker.hand_history.parse_gg_poker"):
+        assert extract_cash_drop_total_cents(SAMPLE_CASH_DROP_INVALID_AMOUNT) is None
+    assert any("Cash Drop 金额解析失败" in record.getMessage() for record in caplog.records)
+
+
+def test_sanitize_does_not_convert_standard_uncalled_bet_after_fold() -> None:
+    sanitized = sanitize_hand_text(SAMPLE_STANDARD_UNCALLED_BET_AFTER_FOLD)
+    assert "Alice: raises $0.10 to $0.15" in sanitized
+    assert "Alice: calls" not in sanitized
+    assert "Uncalled bet ($0.10) returned to Alice" in sanitized
+
+
+def test_sanitize_removes_calls_then_folds_before_shows() -> None:
+    sanitized = sanitize_hand_text(SAMPLE_CALLS_THEN_FOLDS_BEFORE_SHOWS)
+    assert "Bob: folds" not in sanitized
+    assert "Alice: calls $0.23" in sanitized
+    assert "Alice: shows [Ah Kh]" in sanitized
+
+
+def test_sanitize_run_it_three_times_removes_extra_boards() -> None:
+    sanitized = sanitize_hand_text(SAMPLE_RUN_IT_THREE_TIMES_MINIMAL)
+    assert "*** FLOP ***" in sanitized
+    assert "*** FIRST FLOP ***" not in sanitized
+    assert "*** SECOND FLOP ***" not in sanitized
+    assert "*** THIRD FLOP ***" not in sanitized
+    assert "Hand was run three times" not in sanitized
+    assert "SECOND Board" not in sanitized
+    assert "THIRD Board" not in sanitized
 
 
 def test_parse_hand_text_preserves_cash_drop() -> None:

@@ -17,6 +17,8 @@ from re import DOTALL, MULTILINE, compile, search, sub, finditer, escape
 
 from pokerkit.notation import HandHistory, PokerStarsParser, parse_time
 
+from bayes_poker.config.settings import get_log_level
+
 # 路径配置
 HAND_HISTORY_PATH = Path(
     "data/handhistory/11351348hhd_RushCash_5_NLH2SH_2025-01-12.txt"
@@ -188,60 +190,76 @@ def sanitize_hand_text(text: str) -> str:
         text,
     )
 
-    # 6. 处理 Uncalled bet returned (修复 3-way all-in 解析失败)
-    # 当玩家 All-in 加注量正好等于被退回的 Uncalled bet 时，说明该加注实际无人跟注，
-    # 也就是该玩家实际上只是 Call 了前一个人的 All-in。
-    # 我们将 "raises $X to $Y" 修改为 "calls"，并移除 Uncalled bet 行。
-    matches = list(
-        finditer(r"^Uncalled bet \(\$([\d.]+)\) returned to (.+)\n", text, MULTILINE)
+    # 6. 处理 Uncalled bet returned（修复 raises-over-all-in 导致 pokerkit 无法修复的场景）
+    #
+    # 关键约束（避免误伤正常手牌）：
+    # - 仅在 Uncalled bet 对应玩家的“上一条动作”是 raises 时才尝试修复；
+    #   否则（例如 bets 场景）保持原样，因为原始文本通常可被解析。
+    # - raises $X ... 必须紧邻于当前 street 内，并且 $X == Uncalled bet 返回金额；
+    # - 如果 raises 与 Uncalled bet 之间存在 folds，则仅在该 street 内出现过其他玩家 all-in 时才修复，
+    #   以避免将标准的“开池加注 -> 全桌弃牌 -> 退回下注”误改写为 calls。
+    lines = text.split("\n")
+    uncalled_pattern = compile(r"^Uncalled bet \(\$(?P<amount>[\d.]+)\) returned to (?P<player>.+)$")
+    raise_pattern = compile(
+        r"^(?P<player>.+?): raises \$(?P<raise_amount>[\d.]+) to \$(?P<to_amount>[\d.]+)(?P<all_in> and is all-in)?$"
     )
-    for match in reversed(matches):
-        uncalled_amt = match.group(1)
-        player = match.group(2)
+    street_markers = ("*** HOLE CARDS ***", "*** FLOP ***", "*** TURN ***", "*** RIVER ***")
 
-        start_u = match.start()
-        end_u = match.end()
+    for uncalled_index in range(len(lines) - 1, -1, -1):
+        match = uncalled_pattern.match(lines[uncalled_index])
+        if not match:
+            continue
 
-        # Search backwards from start_u for the player's raise
-        # Simple extraction
-        search_limit = max(0, start_u - 2000)  # limit lookback
-        search_area = text[search_limit:start_u]
-        player_esc = escape(player)
+        uncalled_amount = match.group("amount")
+        player = match.group("player")
 
-        # Last matching raise
-        # Note: we need absolute position for replacement
-        # 查找模式: "Player: raises $Amount to $Total [and is all-in]"
-        raise_pattern = compile(
-            rf"^{player_esc}: raises \$([\d.]+) to \$[\d.]+(?P<all_in> and is all-in)?",
-            MULTILINE,
+        # 定位当前 street 起点，防止误匹配到更早街/更远处的 raises
+        street_start = 0
+        for i in range(uncalled_index - 1, -1, -1):
+            if lines[i] in street_markers:
+                street_start = i + 1
+                break
+
+        last_action_index: int | None = None
+        for i in range(uncalled_index - 1, street_start - 1, -1):
+            if lines[i].startswith(f"{player}: "):
+                last_action_index = i
+                break
+
+        if last_action_index is None:
+            continue
+
+        raise_match = raise_pattern.match(lines[last_action_index])
+        if not raise_match:
+            continue
+
+        raise_amount = raise_match.group("raise_amount")
+        is_all_in_raise = raise_match.group("all_in") is not None
+        if raise_amount != uncalled_amount:
+            continue
+
+        folds_between = any(
+            ": folds" in lines[i] for i in range(last_action_index + 1, uncalled_index)
         )
-        r_matches = list(raise_pattern.finditer(search_area))
+        all_in_before_raise = any(
+            "and is all-in" in lines[i] and not lines[i].startswith(f"{player}: ")
+            for i in range(street_start, last_action_index)
+        )
 
-        if r_matches:
-            last_r = r_matches[-1]
-            if last_r.group(1) == uncalled_amt:
-                # Found it!
-                abs_start_r = search_limit + last_r.start()
-                abs_end_r = search_limit + last_r.end()
+        if folds_between and not is_all_in_raise and not all_in_before_raise:
+            continue
 
-                # Safeguard: If FOLDS occurred between the raise and the uncalled bet,
-                # the raise was real (forced folds) and should NOT be converted to a call.
-                # This prevents regression on standard "Raise -> Fold -> Uncalled" hands.
-                intermediate_text = text[abs_end_r:start_u]
-                is_all_in_raise = last_r.group("all_in") is not None
-                if "folds" in intermediate_text and not is_all_in_raise:
-                    continue
+        lines[last_action_index] = f"{player}: calls ${raise_amount}"
+        del lines[uncalled_index]
+        LOGGER.debug(
+            "修复 Uncalled bet: player=%s amount=%s folds_between=%s all_in_before_raise=%s",
+            player,
+            raise_amount,
+            folds_between,
+            all_in_before_raise,
+        )
 
-                # Replace
-                # 1. Remove Uncalled line first? (It's later in text)
-                # If we modify later text, earlier indices (abs_start_r) remain valid.
-
-                text = text[:start_u] + text[end_u:]  # Remove Uncalled line
-
-                # Now replace Raise line
-                # "Player: calls" (we remove 'and is all-in' if present because uncalled return implies not all-in, or covered)
-                new_action = f"{player}: calls"
-                text = text[:abs_start_r] + new_action + text[abs_end_r:]
+    text = "\n".join(lines)
 
     # 5. 清理 SUMMARY 中的特殊格式
     text = sub(r", Cashout Risk \(\$[\d.]+\)", "", text)
@@ -433,7 +451,7 @@ def configure_logging(log_path: Path) -> None:
     stream_handler.setFormatter(formatter)
     LOGGER.addHandler(file_handler)
     LOGGER.addHandler(stream_handler)
-    LOGGER.setLevel(logging.INFO)
+    LOGGER.setLevel(get_log_level(logging.INFO))
 
 
 def extract_hand_metadata(hand_text: str) -> tuple[str, str]:
