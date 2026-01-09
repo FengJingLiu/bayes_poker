@@ -10,12 +10,17 @@
 6. Deep Stack Uncalled Bet (验证 non-all-in uncalled bet 转换)
 """
 
+from io import BytesIO
+
 import pytest
 from bayes_poker.hand_history.parse_gg_poker import (
     RushCashPokerStarsParser,
+    extract_cash_drop_total_cents,
+    parse_hand_text,
     parse_value_in_cents,
     sanitize_hand_text,
 )
+from pokerkit.notation import HandHistory
 
 # --- Test Data Samples (Real Verified Hands) ---
 
@@ -421,3 +426,26 @@ class TestParseFailedHands:
             assert parsed_board_actions == expected_board, (
                 f"[{case_name}] 板面发牌动作不匹配. 预期: {expected_board}, 实际: {parsed_board_actions}"
             )
+
+
+def test_extract_cash_drop_total_cents() -> None:
+    assert extract_cash_drop_total_cents(SAMPLE_CASH_DROP_SUCCESS) == 20
+    assert extract_cash_drop_total_cents(SAMPLE_EV_CASHOUT) is None
+
+
+def test_parse_hand_text_preserves_cash_drop() -> None:
+    parser = RushCashPokerStarsParser()
+    hand_history = parse_hand_text(SAMPLE_CASH_DROP_SUCCESS, parser=parser)
+    assert hand_history.user_defined_fields["_cash_drop_total_cents"] == 20
+
+
+def test_cash_drop_persisted_in_dump_load_roundtrip() -> None:
+    parser = RushCashPokerStarsParser()
+    hand_history = parse_hand_text(SAMPLE_CASH_DROP_SUCCESS, parser=parser)
+
+    buffer = BytesIO()
+    HandHistory.dump_all([hand_history], buffer)
+    buffer.seek(0)
+
+    loaded = list(HandHistory.load_all(buffer, parse_value=parse_value_in_cents))
+    assert loaded[0].user_defined_fields["_cash_drop_total_cents"] == 20

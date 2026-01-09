@@ -28,6 +28,11 @@ FAILED_HANDS_LOG_PATH = Path("logs/hand_history_failures.log")
 # 日志配置
 LOGGER = logging.getLogger(__name__)
 
+CASH_DROP_TO_POT_PATTERN = compile(
+    r"^Cash Drop to Pot\s*:\s*total\s*\$(?P<amount>[\d.,]+)\s*$",
+    MULTILINE,
+)
+
 
 @dataclass
 class RushCashPokerStarsParser(PokerStarsParser):
@@ -266,6 +271,66 @@ def parse_value_in_cents(raw_value: str) -> int:
     return int((amount * 100).to_integral_value(rounding=ROUND_HALF_UP))
 
 
+def extract_cash_drop_total_cents(hand_text: str) -> int | None:
+    """
+    从手牌文本中提取 Cash Drop to Pot 的金额（单位：分）。
+
+    Returns:
+        若存在 Cash Drop 行则返回金额（分），否则返回 None。
+    """
+    match = CASH_DROP_TO_POT_PATTERN.search(hand_text)
+    if not match:
+        return None
+
+    raw_amount = match.group("amount")
+    try:
+        return parse_value_in_cents(raw_amount)
+    except ValueError as exc:
+        hand_id, table = extract_hand_metadata(hand_text)
+        LOGGER.warning(
+            "Cash Drop 金额解析失败: hand=%s table=%s amount=%s error=%s",
+            hand_id,
+            table,
+            raw_amount,
+            exc,
+        )
+        return None
+
+
+def parse_hand_text(
+    hand_text: str,
+    parser: RushCashPokerStarsParser | None = None,
+) -> HandHistory:
+    """
+    解析单个手牌文本为 HandHistory，并保留 Cash Drop 信息。
+
+    说明：
+    - pokerkit 的 PokerStarsParser 不会将 GGPoker 的 Cash Drop 行映射到标准动作；
+      为避免信息丢失，这里将金额写入 user_defined_fields["_cash_drop_total_cents"]。
+    """
+    parser = parser or RushCashPokerStarsParser()
+
+    cash_drop_total_cents = extract_cash_drop_total_cents(hand_text)
+    hand_text = sanitize_hand_text(hand_text)
+    hand_history = parser._parse(
+        hand_text,
+        parse_value=parse_value_in_cents,
+    )
+
+    if cash_drop_total_cents is not None:
+        if hand_history.user_defined_fields is None:
+            hand_history.user_defined_fields = {}
+        hand_history.user_defined_fields["_cash_drop_total_cents"] = cash_drop_total_cents
+        LOGGER.debug(
+            "检测到 Cash Drop: hand=%s table=%s total_cents=%d",
+            hand_history.hand,
+            hand_history.table,
+            cash_drop_total_cents,
+        )
+
+    return hand_history
+
+
 def parse_hand_histories(path: Path) -> tuple[list[HandHistory], int]:
     """
     解析手牌历史文件。
@@ -290,15 +355,8 @@ def parse_hand_histories(path: Path) -> tuple[list[HandHistory], int]:
         #     LOGGER.info("跳过 Cash Drop 手牌: hand=%s table=%s", hand_id, table)
         #     continue
 
-        # 清理非标准行（如 SHOWDOWN 前的非法 folds）
-        hand_text = sanitize_hand_text(hand_text)
         try:
-            hand_histories.append(
-                parser._parse(
-                    hand_text,
-                    parse_value=parse_value_in_cents,
-                )
-            )
+            hand_histories.append(parse_hand_text(hand_text, parser=parser))
         except (KeyError, ValueError, RecursionError) as exc:
             hand_id, table = extract_hand_metadata(hand_text)
             LOGGER.warning("解析失败: hand=%s table=%s error=%s", hand_id, table, exc)
