@@ -212,7 +212,7 @@ def sanitize_hand_text(text: str) -> str:
         # Note: we need absolute position for replacement
         # 查找模式: "Player: raises $Amount to $Total [and is all-in]"
         raise_pattern = compile(
-            rf"^{player_esc}: raises \$([\d.]+) to \$[\d.]+(?: and is all-in)?",
+            rf"^{player_esc}: raises \$([\d.]+) to \$[\d.]+(?P<all_in> and is all-in)?",
             MULTILINE,
         )
         r_matches = list(raise_pattern.finditer(search_area))
@@ -228,7 +228,8 @@ def sanitize_hand_text(text: str) -> str:
                 # the raise was real (forced folds) and should NOT be converted to a call.
                 # This prevents regression on standard "Raise -> Fold -> Uncalled" hands.
                 intermediate_text = text[abs_end_r:start_u]
-                if "folds" in intermediate_text:
+                is_all_in_raise = last_r.group("all_in") is not None
+                if "folds" in intermediate_text and not is_all_in_raise:
                     continue
 
                 # Replace

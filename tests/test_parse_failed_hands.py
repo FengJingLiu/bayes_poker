@@ -194,6 +194,52 @@ Seat 5: SuperZamba folded before Flop (didn't bet)
 Seat 6: Ywzzz_ showed [Ad Qs] and lost, and lost
 """
 
+SAMPLE_RUN_IT_TWICE_UNCALLED_BET_AFTER_ALL_IN_RAISE = """PokerStars Hand #03035132399: Hold'em No Limit ($0.01/$0.02) - 2024/11/03 19:36:57
+Table 'GG_RushAndCash1754753' 6-max Seat #1 is the button
+Seat 1: SAWO4I ($2.42 in chips)
+Seat 2: Tula_3 ($5.88 in chips)
+Seat 3: Petrichor404 ($2.00 in chips)
+Seat 4: saha3746 ($2.05 in chips)
+Seat 5: Zolibacsi ($1.59 in chips)
+Seat 6: eddiegaven_25 ($2.02 in chips)
+Tula_3: posts small blind $0.01
+Petrichor404: posts big blind $0.02
+*** HOLE CARDS ***
+saha3746: raises $0.03 to $0.05
+Zolibacsi: folds
+eddiegaven_25: folds
+SAWO4I: raises $0.11 to $0.16
+Tula_3: folds
+Petrichor404: raises $0.29 to $0.45
+saha3746: raises $1.60 to $2.05 and is all-in
+SAWO4I: raises $0.37 to $2.42 and is all-in
+Petrichor404: folds
+Uncalled bet ($0.37) returned to SAWO4I
+SAWO4I: shows [Ah Kh]
+saha3746: shows [Kc Ks]
+*** FIRST FLOP *** [4s Qc 8s]
+*** FIRST TURN *** [4s Qc 8s] [6d]
+*** FIRST RIVER *** [4s Qc 8s 6d] [5c]
+*** SECOND FLOP *** [2d 8h 7d]
+*** SECOND TURN *** [2d 8h 7d] [Ad]
+*** SECOND RIVER *** [2d 8h 7d Ad] [Jc]
+*** FIRST SHOWDOWN *** 
+saha3746 collected $2.24 from pot
+*** SECOND SHOWDOWN *** 
+SAWO4I collected $2.23 from pot
+*** SUMMARY ***
+Total pot $4.56 | Rake $0.06 | Jackpot $0.03 | Bingo $0 | Fortune $0 | Tax $0
+Hand was run twice times
+FIRST Board [4s Qc 8s 6d 5c]
+SECOND Board [2d 8h 7d Ad Jc]
+Seat 1: SAWO4I (button) showed [Ah Kh] and lost, and won ($2.23) (didn't bet)
+Seat 2: Tula_3 (small blind) folded before Flop (didn't bet)
+Seat 3: Petrichor404 (big blind) folded before Flop (didn't bet)
+Seat 4: saha3746 showed [Kc Ks] and won ($2.24), and lost (didn't bet)
+Seat 5: Zolibacsi folded before Flop (didn't bet)
+Seat 6: eddiegaven_25 folded before Flop (didn't bet)
+"""
+
 SAMPLE_PREFLOP_UNCALLED_BET = """PokerStars Hand #02811042547: Hold'em No Limit ($0.01/$0.02) - 2024/08/18 04:39:14
 Table 'GG_RushAndCash6278340' 6-max Seat #1 is the button
 Seat 1: aube ($2.01 in chips)
@@ -338,9 +384,8 @@ class TestParseFailedHands:
         return RushCashPokerStarsParser()
 
 
-    @pytest.mark.xfail(reason="Cash Drop hands have inconsistent pot balance (Pot mismatch) and missing seat actions.")
     def test_cash_drop_fail(self, parser):
-        """测试 Cash Drop 失败样本（预期失败）。"""
+        """测试 Cash Drop 历史失败样本（回归用例：应能解析）。"""
         sanitized = sanitize_hand_text(SAMPLE_CASH_DROP_FAIL)
         parser._parse(sanitized, parse_value=parse_value_in_cents)
 
@@ -350,6 +395,12 @@ class TestParseFailedHands:
             ("Cash Drop (Success)", SAMPLE_CASH_DROP_SUCCESS, {"BlurryMoth": 27}, None),
             ("EV Cashout", SAMPLE_EV_CASHOUT, {"Angrykillki": 126}, None),
             ("Run It Twice", SAMPLE_RUN_IT_TWICE, {"Hiu Chun Leung": 402}, ["Td4s8d", "2h", "7d"]),
+            (
+                "Run It Twice (Uncalled Bet After All-in Raise)",
+                SAMPLE_RUN_IT_TWICE_UNCALLED_BET_AFTER_ALL_IN_RAISE,
+                {"saha3746": 224, "SAWO4I": 223},
+                ["4sQc8s", "6d", "5c"],
+            ),
             ("Preflop Uncalled Bet", SAMPLE_PREFLOP_UNCALLED_BET, {"pinkass!": 591}, None),
             ("Deep Stack & Multi-Collected", SAMPLE_DEEP_STACK_MULTI_COLLECTED, {"Zsolt Gyero": 653}, None),
             ("Showdown Folds", SAMPLE_SHOWDOWN_FOLDS, {"shirogoma": 433}, None),
