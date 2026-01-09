@@ -65,6 +65,8 @@ class ParseResult:
     success_count: int
     total_count: int
     output_path: Path | None
+    skipped: bool = False
+    skip_reason: str | None = None
     error: str | None = None
 
 
@@ -119,6 +121,29 @@ def generate_output_path(
         output_path = output_dir / input_file.with_suffix(".phhs").name
 
     return output_path
+
+
+def is_already_parsed(output_path: Path) -> tuple[bool, str | None]:
+    """
+    判断输出是否已存在（用于跳过已解析文件）。
+
+    规则：
+    - 输出文件存在且非空：视为已解析
+    - 输出文件不存在或为空：视为未解析
+
+    Returns:
+        (是否已解析, 跳过原因)
+    """
+    try:
+        if output_path.exists():
+            size = output_path.stat().st_size
+            if size > 0:
+                return True, f"输出已存在({size} bytes)"
+            return False, "输出文件为空，重新解析"
+    except OSError as e:
+        return False, f"检查输出失败({e})，重新解析"
+
+    return False, None
 
 
 def parse_single_file(
@@ -182,6 +207,27 @@ def parse_files_sequential(
 
     for i, input_file in enumerate(files, 1):
         output_path = generate_output_path(input_file, output_dir, input_base)
+        already_parsed, reason = is_already_parsed(output_path)
+        if already_parsed:
+            LOGGER.info(
+                "跳过 [%d/%d]: %s (%s)",
+                i,
+                len(files),
+                input_file.name,
+                reason or "已解析",
+            )
+            results.append(
+                ParseResult(
+                    file_path=input_file,
+                    success_count=0,
+                    total_count=0,
+                    output_path=output_path,
+                    skipped=True,
+                    skip_reason=reason,
+                )
+            )
+            continue
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         LOGGER.info("解析 [%d/%d]: %s", i, len(files), input_file.name)
@@ -224,10 +270,31 @@ def parse_files_parallel(
 
     # 预先创建输出目录并准备任务
     tasks: list[tuple[Path, Path]] = []
+    skipped_count = 0
     for input_file in files:
         output_path = generate_output_path(input_file, output_dir, input_base)
+        already_parsed, reason = is_already_parsed(output_path)
+        if already_parsed:
+            skipped_count += 1
+            LOGGER.info("跳过: %s (%s)", input_file.name, reason or "已解析")
+            results.append(
+                ParseResult(
+                    file_path=input_file,
+                    success_count=0,
+                    total_count=0,
+                    output_path=output_path,
+                    skipped=True,
+                    skip_reason=reason,
+                )
+            )
+            continue
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
         tasks.append((input_file, output_path))
+
+    if not tasks:
+        LOGGER.info("所有文件均已解析（跳过 %d 个）", skipped_count)
+        return results
 
     LOGGER.info("启动 %d 个工作进程...", max_workers)
 
@@ -245,7 +312,7 @@ def parse_files_parallel(
                 LOGGER.info(
                     "完成 [%d/%d]: %s - %d/%d 手成功",
                     i,
-                    len(files),
+                    len(tasks),
                     input_file.name,
                     result.success_count,
                     result.total_count,
@@ -274,8 +341,11 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
         elapsed: 总耗时（秒）。
     """
     total_files = len(results)
-    success_files = sum(1 for r in results if r.error is None and r.success_count > 0)
-    failed_files = sum(1 for r in results if r.error is not None)
+    skipped_files = sum(1 for r in results if r.skipped)
+    success_files = sum(
+        1 for r in results if (not r.skipped) and r.error is None and r.success_count > 0
+    )
+    failed_files = sum(1 for r in results if (not r.skipped) and r.error is not None)
     total_hands = sum(r.total_count for r in results)
     success_hands = sum(r.success_count for r in results)
 
@@ -283,6 +353,7 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
     print("                    解析摘要")
     print("=" * 60)
     print(f"  文件总数:     {total_files}")
+    print(f"  跳过文件:     {skipped_files}")
     print(f"  成功文件:     {success_files}")
     print(f"  失败文件:     {failed_files}")
     print("-" * 60)
@@ -296,7 +367,7 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
     print("=" * 60)
 
     # 显示失败文件
-    failed = [r for r in results if r.error is not None]
+    failed = [r for r in results if (not r.skipped) and r.error is not None]
     if failed:
         print("\n失败文件列表:")
         for r in failed:

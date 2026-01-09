@@ -66,9 +66,7 @@ class RushCashPokerStarsParser(PokerStarsParser):
     }
     PLAYER_VARIABLES = {
         "winnings": (
-            compile(
-                r"^(?P<player>.+?) collected \D?(?P<winnings>[0-9.,]+) from pot"
-            ),
+            compile(r"^(?P<player>.+?) collected \D?(?P<winnings>[0-9.,]+) from pot"),
             None,
             int,
             add,
@@ -96,7 +94,6 @@ def sanitize_hand_text(text: str) -> str:
     # 1. 移除 EV Cashout 相关行
     text = sub(r"^.+: Chooses to EV Cashout\n", "", text, flags=MULTILINE)
     text = sub(r"^.+: Pays Cashout Risk \(\$[\d.]+\)\n", "", text, flags=MULTILINE)
-
 
     # 2. 处理 Run It Twice/Three 多板面
     if search(r"\*\*\* FIRST FLOP \*\*\*", text):
@@ -164,21 +161,12 @@ def sanitize_hand_text(text: str) -> str:
                 collected_lines += f"{player} collected ${total:.2f} from pot\n"
             text = text[:insert_pos] + collected_lines + text[insert_pos:]
 
-    # Position: Before Hole Cards.
-    cash_drop_match = search(r"^Cash Drop to Pot : total \$([\d.]+)", text, MULTILINE)
-    if cash_drop_match:
-        amount = cash_drop_match.group(1)
-        # Remove original line
-        text = sub(r"^Cash Drop to Pot : total \$[\d.]+\s*\n", "", text, flags=MULTILINE)
-        # Inject dummy ante before hole cards
-        text = text.replace("*** HOLE CARDS ***", f"Cash Drop: posts the ante ${amount}\n*** HOLE CARDS ***")
-
     # 4. 移除 SHOWDOWN 前的异常 folds 行
     # 模式 A: shows 后出现的 folds (可能夹杂 Uncalled bet)
     def remove_folds_in_block(match):
-        prefix = match.group(1) # shows line
+        prefix = match.group(1)  # shows line
         block = match.group(2)  # intermediate lines
-        suffix = match.group(3) # SHOWDOWN line
+        suffix = match.group(3)  # SHOWDOWN line
         # 移除 block 中的 folds 行
         cleaned_block = sub(r"^.+: folds\n", "", block, flags=MULTILINE)
         return prefix + cleaned_block + suffix
@@ -199,33 +187,38 @@ def sanitize_hand_text(text: str) -> str:
     # 当玩家 All-in 加注量正好等于被退回的 Uncalled bet 时，说明该加注实际无人跟注，
     # 也就是该玩家实际上只是 Call 了前一个人的 All-in。
     # 我们将 "raises $X to $Y" 修改为 "calls"，并移除 Uncalled bet 行。
-    matches = list(finditer(r"^Uncalled bet \(\$([\d.]+)\) returned to (.+)\n", text, MULTILINE))
+    matches = list(
+        finditer(r"^Uncalled bet \(\$([\d.]+)\) returned to (.+)\n", text, MULTILINE)
+    )
     for match in reversed(matches):
         uncalled_amt = match.group(1)
         player = match.group(2)
-        
+
         start_u = match.start()
         end_u = match.end()
-        
+
         # Search backwards from start_u for the player's raise
         # Simple extraction
-        search_limit = max(0, start_u - 2000) # limit lookback
+        search_limit = max(0, start_u - 2000)  # limit lookback
         search_area = text[search_limit:start_u]
         player_esc = escape(player)
-        
+
         # Last matching raise
         # Note: we need absolute position for replacement
         # 查找模式: "Player: raises $Amount to $Total [and is all-in]"
-        raise_pattern = compile(rf"^{player_esc}: raises \$([\d.]+) to \$[\d.]+(?: and is all-in)?", MULTILINE)
+        raise_pattern = compile(
+            rf"^{player_esc}: raises \$([\d.]+) to \$[\d.]+(?: and is all-in)?",
+            MULTILINE,
+        )
         r_matches = list(raise_pattern.finditer(search_area))
-        
+
         if r_matches:
             last_r = r_matches[-1]
             if last_r.group(1) == uncalled_amt:
-                 # Found it!
+                # Found it!
                 abs_start_r = search_limit + last_r.start()
                 abs_end_r = search_limit + last_r.end()
-                
+
                 # Safeguard: If FOLDS occurred between the raise and the uncalled bet,
                 # the raise was real (forced folds) and should NOT be converted to a call.
                 # This prevents regression on standard "Raise -> Fold -> Uncalled" hands.
@@ -236,9 +229,9 @@ def sanitize_hand_text(text: str) -> str:
                 # Replace
                 # 1. Remove Uncalled line first? (It's later in text)
                 # If we modify later text, earlier indices (abs_start_r) remain valid.
-                
-                text = text[:start_u] + text[end_u:] # Remove Uncalled line
-                
+
+                text = text[:start_u] + text[end_u:]  # Remove Uncalled line
+
                 # Now replace Raise line
                 # "Player: calls" (we remove 'and is all-in' if present because uncalled return implies not all-in, or covered)
                 new_action = f"{player}: calls"
@@ -308,9 +301,7 @@ def parse_hand_histories(path: Path) -> tuple[list[HandHistory], int]:
             )
         except (KeyError, ValueError, RecursionError) as exc:
             hand_id, table = extract_hand_metadata(hand_text)
-            LOGGER.warning(
-                "解析失败: hand=%s table=%s error=%s", hand_id, table, exc
-            )
+            LOGGER.warning("解析失败: hand=%s table=%s error=%s", hand_id, table, exc)
             save_failed_hand(hand_text, hand_id, table)
 
     return hand_histories, total
