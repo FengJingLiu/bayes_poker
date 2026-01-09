@@ -1,3 +1,10 @@
+"""
+GGPoker Rush & Cash 手牌历史解析模块。
+
+本模块提供解析 GGPoker Rush & Cash 导出的手牌历史文件的功能。
+使用 pokerkit 库进行底层解析。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -10,31 +17,26 @@ from re import DOTALL, MULTILINE, compile, search, sub
 
 from pokerkit.notation import HandHistory, PokerStarsParser, parse_time
 
+# 路径配置
 HAND_HISTORY_PATH = Path(
     "data/handhistory/11351348hhd_RushCash_5_NLH2SH_2025-01-12.txt"
 )
 PERSISTED_HAND_HISTORY_PATH = Path("data/outputs/hand_histories.phhs")
 FAILED_HANDS_DIR = Path("logs/hand_history_failures")
 FAILED_HANDS_LOG_PATH = Path("logs/hand_history_failures.log")
+
+# 日志配置
 LOGGER = logging.getLogger(__name__)
-CASH_DROP_MARKER = "Cash Drop to Pot"
-CASHOUT_MARKERS = ("Chooses to EV Cashout", "Pays Cashout Risk")
-RAISE_TO_PATTERN = compile(
-    (
-        r"^(?P<player>.+): raises \D?[0-9.]+ to \D?(?P<to>[0-9.]+)"
-        r"(?P<all_in> and is all-in)?$"
-    )
-)
-BET_PATTERN = compile(
-    r"^(?P<player>.+): bets \D?(?P<amount>[0-9.]+)(?P<all_in> and is all-in)?$"
-)
-UNCALLED_BET_PATTERN = compile(
-    r"^Uncalled bet \(\D?(?P<amount>[0-9.]+)\) returned to (?P<player>.+)$"
-)
 
 
 @dataclass
 class RushCashPokerStarsParser(PokerStarsParser):
+    """
+    GGPoker Rush & Cash 手牌历史解析器。
+
+    继承自 pokerkit 的 PokerStarsParser，针对 GGPoker 的格式进行了定制。
+    """
+
     HAND = compile(
         r"^PokerStars Hand #.+?(?=^PokerStars Hand #|\Z)",
         DOTALL | MULTILINE,
@@ -75,6 +77,18 @@ class RushCashPokerStarsParser(PokerStarsParser):
 
 
 def parse_value_in_cents(raw_value: str) -> int:
+    """
+    将金额字符串解析为美分整数。
+
+    Args:
+        raw_value: 金额字符串，如 "1.50"。
+
+    Returns:
+        美分整数，如 150。
+
+    Raises:
+        ValueError: 如果金额格式无效。
+    """
     try:
         amount = Decimal(raw_value.replace(",", ""))
     except InvalidOperation as exc:
@@ -84,6 +98,15 @@ def parse_value_in_cents(raw_value: str) -> int:
 
 
 def parse_hand_histories(path: Path) -> tuple[list[HandHistory], int]:
+    """
+    解析手牌历史文件。
+
+    Args:
+        path: 手牌历史文件路径。
+
+    Returns:
+        元组 (成功解析的手牌列表, 总手牌数)。
+    """
     text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
     parser = RushCashPokerStarsParser()
     hand_texts = parser.HAND.findall(text)
@@ -92,20 +115,10 @@ def parse_hand_histories(path: Path) -> tuple[list[HandHistory], int]:
     hand_histories: list[HandHistory] = []
 
     for hand_text in hand_texts:
-        skip_reason = get_skip_reason(hand_text)
-        if skip_reason:
-            hand_id, table = extract_hand_metadata(hand_text)
-            LOGGER.info(
-                "跳过手牌: hand=%s table=%s reason=%s",
-                hand_id,
-                table,
-                skip_reason,
-            )
-            continue
         try:
             hand_histories.append(
                 parser._parse(
-                    sanitize_hand_text(hand_text),
+                    hand_text,
                     parse_value=parse_value_in_cents,
                 )
             )
@@ -120,6 +133,15 @@ def parse_hand_histories(path: Path) -> tuple[list[HandHistory], int]:
 
 
 def format_time(hand_history: HandHistory) -> str:
+    """
+    格式化手牌历史的时间。
+
+    Args:
+        hand_history: 手牌历史对象。
+
+    Returns:
+        格式化的时间字符串。
+    """
     if hand_history.year is None:
         return "未知时间"
 
@@ -129,179 +151,43 @@ def format_time(hand_history: HandHistory) -> str:
     )
 
 
-def should_skip_hand(hand_text: str) -> bool:
-    return get_skip_reason(hand_text) is not None
-
-
-def get_skip_reason(hand_text: str) -> str | None:
-    if CASH_DROP_MARKER in hand_text:
-        return "cash_drop"
-    return None
-
-
-def sanitize_hand_text(hand_text: str) -> str:
-    lines = hand_text.splitlines()
-    if not any(marker in hand_text for marker in CASHOUT_MARKERS):
-        return _sanitize_non_cashout_lines(lines)
-
-    lines = [
-        line
-        for line in lines
-        if not any(marker in line for marker in CASHOUT_MARKERS)
-    ]
-    return _sanitize_non_cashout_lines(lines)
-
-
-def _sanitize_non_cashout_lines(lines: list[str]) -> str:
-    lines = _adjust_actions_with_uncalled(lines)
-    lines = _remove_muck_folds(lines)
-    return "\n".join(lines)
-
-
-def _adjust_actions_with_uncalled(lines: list[str]) -> list[str]:
-    adjusted_lines = list(lines)
-    skip_indices: set[int] = set()
-    last_board_index = -1
-
-    for index, line in enumerate(lines):
-        if _is_board_line(line):
-            last_board_index = index
-            continue
-
-        uncalled_match = UNCALLED_BET_PATTERN.match(line)
-        if not uncalled_match:
-            continue
-
-        player = uncalled_match["player"]
-        uncalled_amount = uncalled_match["amount"]
-        for back in range(index - 1, last_board_index, -1):
-            candidate = adjusted_lines[back]
-            raise_match = RAISE_TO_PATTERN.match(candidate)
-            if raise_match and raise_match["player"] == player:
-                symbol = "$" if "$" in candidate else ""
-                effective_value = _to_decimal(raise_match["to"]) - _to_decimal(
-                    uncalled_amount
-                )
-                if effective_value <= 0:
-                    skip_indices.add(index)
-                    break
-                effective = _format_amount(
-                    effective_value,
-                    raise_match["to"],
-                    uncalled_amount,
-                )
-                suffix = " and is all-in" if raise_match["all_in"] else ""
-                adjusted_lines[back] = (
-                    f"{player}: calls {symbol}{effective}{suffix}"
-                )
-                skip_indices.add(index)
-                break
-            bet_match = BET_PATTERN.match(candidate)
-            if bet_match and bet_match["player"] == player:
-                symbol = "$" if "$" in candidate else ""
-                effective_value = _to_decimal(bet_match["amount"]) - _to_decimal(
-                    uncalled_amount
-                )
-                if effective_value <= 0:
-                    skip_indices.add(index)
-                    break
-                effective = _format_amount(
-                    effective_value,
-                    bet_match["amount"],
-                    uncalled_amount,
-                )
-                suffix = " and is all-in" if bet_match["all_in"] else ""
-                adjusted_lines[back] = (
-                    f"{player}: bets {symbol}{effective}{suffix}"
-                )
-                skip_indices.add(index)
-                break
-
-    return [
-        line
-        for index, line in enumerate(adjusted_lines)
-        if index not in skip_indices
-    ]
-
-
-def _format_amount(amount: Decimal, left_raw: str, right_raw: str) -> str:
-    scale = max(_decimal_places(left_raw), _decimal_places(right_raw))
-    quantize_unit = Decimal("1").scaleb(-scale)
-    return f"{amount.quantize(quantize_unit):f}"
-
-
-def _decimal_places(raw: str) -> int:
-    if "." not in raw:
-        return 0
-    return len(raw.split(".", 1)[1])
-
-
-def _to_decimal(raw: str) -> Decimal:
-    return Decimal(raw)
-
-
-def _is_board_line(line: str) -> bool:
-    return line.startswith(
-        (
-            "*** FLOP ***",
-            "*** TURN ***",
-            "*** RIVER ***",
-            "*** FIRST FLOP ***",
-            "*** FIRST TURN ***",
-            "*** FIRST RIVER ***",
-            "*** SECOND FLOP ***",
-            "*** SECOND TURN ***",
-            "*** SECOND RIVER ***",
-        )
-    )
-
-
-def _remove_muck_folds(lines: list[str]) -> list[str]:
-    has_show = any(": shows [" in line for line in lines)
-    if not has_show:
-        return lines
-
-    river_index = _find_last_river_index(lines)
-    if river_index is None:
-        return lines
-
-    filtered = []
-    for index, line in enumerate(lines):
-        if index > river_index and line.endswith(": folds"):
-            continue
-        filtered.append(line)
-    return filtered
-
-
-def _find_last_river_index(lines: list[str]) -> int | None:
-    river_index = None
-    for index, line in enumerate(lines):
-        if line.startswith("*** RIVER ***"):
-            river_index = index
-            continue
-        if line.startswith("*** FIRST RIVER ***"):
-            river_index = index
-            continue
-        if line.startswith("*** SECOND RIVER ***"):
-            river_index = index
-    return river_index
-
-
 def save_hand_histories(
     path: Path,
     hand_histories: Sequence[HandHistory],
 ) -> None:
+    """
+    保存手牌历史到文件。
+
+    Args:
+        path: 保存路径。
+        hand_histories: 手牌历史序列。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as file:
         HandHistory.dump_all(hand_histories, file)
 
 
 def load_hand_histories(path: Path) -> list[HandHistory]:
+    """
+    从文件加载手牌历史。
+
+    Args:
+        path: 文件路径。
+
+    Returns:
+        手牌历史列表。
+    """
     with path.open("rb") as file:
         return list(HandHistory.load_all(file, parse_value=parse_value_in_cents))
 
 
 def configure_logging(log_path: Path) -> None:
+    """
+    配置日志记录。
+
+    Args:
+        log_path: 日志文件路径。
+    """
     if LOGGER.handlers:
         return
 
@@ -317,6 +203,15 @@ def configure_logging(log_path: Path) -> None:
 
 
 def extract_hand_metadata(hand_text: str) -> tuple[str, str]:
+    """
+    从手牌文本中提取元数据。
+
+    Args:
+        hand_text: 手牌文本。
+
+    Returns:
+        元组 (hand_id, table_name)。
+    """
     hand_match = search(r"PokerStars Hand #(?P<hand>\d+):", hand_text)
     table_match = search(r"Table '(?P<table>[^']+)'", hand_text)
     hand_id = hand_match["hand"] if hand_match else "unknown"
@@ -325,6 +220,17 @@ def extract_hand_metadata(hand_text: str) -> tuple[str, str]:
 
 
 def save_failed_hand(hand_text: str, hand_id: str, table: str) -> Path:
+    """
+    保存解析失败的手牌到文件。
+
+    Args:
+        hand_text: 手牌文本。
+        hand_id: 手牌 ID。
+        table: 牌桌名。
+
+    Returns:
+        保存的文件路径。
+    """
     FAILED_HANDS_DIR.mkdir(parents=True, exist_ok=True)
     safe_table = sub(r"[^A-Za-z0-9_.-]+", "_", table)
     safe_hand = sub(r"[^0-9]+", "", hand_id) or "unknown"
@@ -334,6 +240,7 @@ def save_failed_hand(hand_text: str, hand_id: str, table: str) -> Path:
 
 
 def main() -> None:
+    """主函数，用于测试解析功能。"""
     if PERSISTED_HAND_HISTORY_PATH.exists():
         hand_histories = load_hand_histories(PERSISTED_HAND_HISTORY_PATH)
         total = len(hand_histories)
