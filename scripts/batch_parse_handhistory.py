@@ -40,6 +40,8 @@ from bayes_poker.hand_history.parse_gg_poker import (
     parse_hand_histories,
     save_hand_histories,
 )
+from bayes_poker.storage.converter import HandHistoryConverter
+from bayes_poker.storage.repository import HandRepository
 
 if TYPE_CHECKING:
     from pokerkit.notation import HandHistory
@@ -161,7 +163,6 @@ def parse_single_file(
         解析结果对象。
     """
     try:
-        # 配置当前进程的日志
         configure_logging(FAILED_HANDS_LOG_PATH)
 
         hand_histories, total = parse_hand_histories(input_file)
@@ -178,6 +179,51 @@ def parse_single_file(
 
     except Exception as e:
         LOGGER.exception("解析文件失败: %s", input_file)
+        return ParseResult(
+            file_path=input_file,
+            success_count=0,
+            total_count=0,
+            output_path=None,
+            error=str(e),
+        )
+
+
+def parse_single_file_to_sqlite(
+    input_file: Path,
+    db_path: Path,
+) -> ParseResult:
+    """
+    解析单个手牌历史文件并保存到 SQLite。
+    """
+    try:
+        configure_logging(FAILED_HANDS_LOG_PATH)
+
+        hand_histories, total = parse_hand_histories(input_file)
+
+        if not hand_histories:
+            return ParseResult(
+                file_path=input_file,
+                success_count=0,
+                total_count=total,
+                output_path=None,
+            )
+
+        with HandRepository(db_path) as repo:
+            converter = HandHistoryConverter(repo)
+            success, failed = converter.batch_convert_and_save(
+                hand_histories,
+                source=str(input_file),
+            )
+
+        return ParseResult(
+            file_path=input_file,
+            success_count=success,
+            total_count=total,
+            output_path=db_path,
+        )
+
+    except Exception as e:
+        LOGGER.exception("解析文件到 SQLite 失败: %s", input_file)
         return ParseResult(
             file_path=input_file,
             success_count=0,
@@ -343,7 +389,9 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
     total_files = len(results)
     skipped_files = sum(1 for r in results if r.skipped)
     success_files = sum(
-        1 for r in results if (not r.skipped) and r.error is None and r.success_count > 0
+        1
+        for r in results
+        if (not r.skipped) and r.error is None and r.success_count > 0
     )
     failed_files = sum(1 for r in results if (not r.skipped) and r.error is not None)
     total_hands = sum(r.total_count for r in results)
@@ -360,7 +408,11 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
     print(f"  手牌总数:     {total_hands}")
     print(f"  成功解析:     {success_hands}")
     print(f"  解析失败:     {total_hands - success_hands}")
-    print(f"  成功率:       {success_hands / total_hands * 100:.2f}%" if total_hands else "  成功率:       N/A")
+    print(
+        f"  成功率:       {success_hands / total_hands * 100:.2f}%"
+        if total_hands
+        else "  成功率:       N/A"
+    )
     print("-" * 60)
     print(f"  总耗时:       {elapsed:.2f} 秒")
     print(f"  平均速度:     {total_hands / elapsed:.0f} 手/秒" if elapsed > 0 else "")
@@ -446,6 +498,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="启用详细日志输出",
     )
+    parser.add_argument(
+        "--sqlite",
+        type=Path,
+        default=None,
+        help="输出到 SQLite 数据库路径（与 .phhs 输出互斥）",
+    )
 
     return parser.parse_args()
 
@@ -472,30 +530,57 @@ def main() -> int:
 
     LOGGER.info("找到 %d 个文件待处理", len(files))
 
-    # 确定输入基础目录
     input_base = args.input if args.input.is_dir() else None
-
-    # 确保输出目录存在
-    args.output.mkdir(parents=True, exist_ok=True)
 
     start_time = time.time()
 
-    # 根据 workers 参数选择顺序或并行模式
-    if args.workers > 1:
+    if args.sqlite:
+        LOGGER.info("使用 SQLite 输出模式: %s", args.sqlite)
+        results = parse_files_to_sqlite(files, args.sqlite)
+    elif args.workers > 1:
+        args.output.mkdir(parents=True, exist_ok=True)
         LOGGER.info("使用多进程模式 (workers=%d)", args.workers)
-        results = parse_files_parallel(
-            files, args.output, input_base, args.workers
-        )
+        results = parse_files_parallel(files, args.output, input_base, args.workers)
     else:
+        args.output.mkdir(parents=True, exist_ok=True)
         LOGGER.info("使用顺序模式")
         results = parse_files_sequential(files, args.output, input_base)
 
     elapsed = time.time() - start_time
     print_summary(results, elapsed)
 
-    # 如果有任何错误，返回非零状态码
     has_errors = any(r.error is not None for r in results)
     return 1 if has_errors else 0
+
+
+def parse_files_to_sqlite(
+    files: list[Path],
+    db_path: Path,
+) -> list[ParseResult]:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    results: list[ParseResult] = []
+    for i, input_file in enumerate(files, 1):
+        LOGGER.info("解析 [%d/%d]: %s", i, len(files), input_file.name)
+        result = parse_single_file_to_sqlite(input_file, db_path)
+        results.append(result)
+        LOGGER.info(
+            "完成 [%d/%d]: %d/%d 手成功",
+            i,
+            len(files),
+            result.success_count,
+            result.total_count,
+        )
+
+    with HandRepository(db_path) as repo:
+        stats = repo.get_stats()
+        LOGGER.info(
+            "数据库统计: 手牌=%d 玩家=%d",
+            stats["hands"],
+            stats["players"],
+        )
+
+    return results
 
 
 if __name__ == "__main__":
