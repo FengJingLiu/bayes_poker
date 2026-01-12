@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""
-批量解析 GGPoker 手牌历史文件。
-
-本脚本支持：
-- 单文件或文件夹批量解析
-- 可选多进程并行处理
-- 自定义输出目录
-
-使用示例:
-    # 解析单个文件
-    python batch_parse_handhistory.py input.txt -o output/
-
-    # 解析整个文件夹
-    python batch_parse_handhistory.py data/handhistory/ -o output/
-
-    # 使用 4 个进程并行解析
-    python batch_parse_handhistory.py data/handhistory/ -o output/ -w 4
-"""
+"""批量解析 GGPoker 手牌历史文件。"""
 
 from __future__ import annotations
 
@@ -30,7 +13,6 @@ from multiprocessing import cpu_count
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-# 将 src 目录添加到模块搜索路径
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from bayes_poker.hand_history.parse_gg_poker import (
@@ -46,23 +28,11 @@ from bayes_poker.storage.repository import HandRepository
 if TYPE_CHECKING:
     from pokerkit.notation import HandHistory
 
-# 日志配置
 LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
 class ParseResult:
-    """
-    单个文件的解析结果。
-
-    Attributes:
-        file_path: 源文件路径。
-        success_count: 成功解析的手牌数量。
-        total_count: 总手牌数量。
-        output_path: 输出文件路径。
-        error: 解析过程中的错误信息（如有）。
-    """
-
     file_path: Path
     success_count: int
     total_count: int
@@ -72,21 +42,15 @@ class ParseResult:
     error: str | None = None
 
 
+@dataclass
+class ConvertResult:
+    file_path: Path
+    records: list
+    total_count: int
+    error: str | None = None
+
+
 def get_input_files(input_path: Path, recursive: bool = False) -> list[Path]:
-    """
-    获取待处理的输入文件列表。
-
-    Args:
-        input_path: 输入路径，可以是文件或目录。
-        recursive: 是否递归搜索子目录。
-
-    Returns:
-        文件路径列表。
-
-    Raises:
-        FileNotFoundError: 如果输入路径不存在。
-        ValueError: 如果输入路径既非文件也非目录。
-    """
     if not input_path.exists():
         raise FileNotFoundError(f"输入路径不存在: {input_path}")
 
@@ -105,17 +69,6 @@ def generate_output_path(
     output_dir: Path,
     input_base: Path | None = None,
 ) -> Path:
-    """
-    生成输出文件路径。
-
-    Args:
-        input_file: 输入文件路径。
-        output_dir: 输出目录。
-        input_base: 输入基础目录（用于保持相对路径结构）。
-
-    Returns:
-        输出文件路径（.phhs 格式）。
-    """
     if input_base and input_base.is_dir():
         relative = input_file.relative_to(input_base)
         output_path = output_dir / relative.with_suffix(".phhs")
@@ -126,16 +79,6 @@ def generate_output_path(
 
 
 def is_already_parsed(output_path: Path) -> tuple[bool, str | None]:
-    """
-    判断输出是否已存在（用于跳过已解析文件）。
-
-    规则：
-    - 输出文件存在且非空：视为已解析
-    - 输出文件不存在或为空：视为未解析
-
-    Returns:
-        (是否已解析, 跳过原因)
-    """
     try:
         if output_path.exists():
             size = output_path.stat().st_size
@@ -152,16 +95,6 @@ def parse_single_file(
     input_file: Path,
     output_path: Path,
 ) -> ParseResult:
-    """
-    解析单个手牌历史文件。
-
-    Args:
-        input_file: 输入文件路径。
-        output_path: 输出文件路径。
-
-    Returns:
-        解析结果对象。
-    """
     try:
         configure_logging(FAILED_HANDS_LOG_PATH)
 
@@ -188,13 +121,44 @@ def parse_single_file(
         )
 
 
+def parse_and_convert_file(input_file: Path) -> ConvertResult:
+    try:
+        configure_logging(FAILED_HANDS_LOG_PATH)
+        hand_histories, total = parse_hand_histories(input_file)
+
+        if not hand_histories:
+            return ConvertResult(
+                file_path=input_file,
+                records=[],
+                total_count=total,
+            )
+
+        converter = HandHistoryConverter(None)  # type: ignore
+        records = []
+        for hh in hand_histories:
+            record = converter.convert(hh, source=str(input_file))
+            if record:
+                records.append(record)
+
+        return ConvertResult(
+            file_path=input_file,
+            records=records,
+            total_count=total,
+        )
+
+    except Exception as e:
+        return ConvertResult(
+            file_path=input_file,
+            records=[],
+            total_count=0,
+            error=str(e),
+        )
+
+
 def parse_single_file_to_sqlite(
     input_file: Path,
     db_path: Path,
 ) -> ParseResult:
-    """
-    解析单个手牌历史文件并保存到 SQLite。
-    """
     try:
         configure_logging(FAILED_HANDS_LOG_PATH)
 
@@ -238,17 +202,6 @@ def parse_files_sequential(
     output_dir: Path,
     input_base: Path | None = None,
 ) -> list[ParseResult]:
-    """
-    顺序解析多个文件。
-
-    Args:
-        files: 待解析的文件列表。
-        output_dir: 输出目录。
-        input_base: 输入基础目录。
-
-    Returns:
-        解析结果列表。
-    """
     results: list[ParseResult] = []
 
     for i, input_file in enumerate(files, 1):
@@ -297,24 +250,11 @@ def parse_files_parallel(
     input_base: Path | None = None,
     max_workers: int | None = None,
 ) -> list[ParseResult]:
-    """
-    并行解析多个文件。
-
-    Args:
-        files: 待解析的文件列表。
-        output_dir: 输出目录。
-        input_base: 输入基础目录。
-        max_workers: 最大工作进程数，默认为 CPU 核心数。
-
-    Returns:
-        解析结果列表。
-    """
     if max_workers is None:
         max_workers = cpu_count()
 
     results: list[ParseResult] = []
 
-    # 预先创建输出目录并准备任务
     tasks: list[tuple[Path, Path]] = []
     skipped_count = 0
     for input_file in files:
@@ -378,14 +318,89 @@ def parse_files_parallel(
     return results
 
 
-def print_summary(results: list[ParseResult], elapsed: float) -> None:
-    """
-    打印解析摘要。
+def parse_files_to_sqlite_parallel(
+    files: list[Path],
+    db_path: Path,
+    max_workers: int | None = None,
+    batch_size: int = 5000,
+) -> list[ParseResult]:
+    if max_workers is None:
+        max_workers = min(cpu_count(), 8)
 
-    Args:
-        results: 解析结果列表。
-        elapsed: 总耗时（秒）。
-    """
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    LOGGER.info("启动 %d 个解析进程...", max_workers)
+
+    results: list[ParseResult] = []
+    all_records: list = []
+    total_parsed = 0
+    total_files = len(files)
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_file = {executor.submit(parse_and_convert_file, f): f for f in files}
+
+        for i, future in enumerate(as_completed(future_to_file), 1):
+            input_file = future_to_file[future]
+            try:
+                conv_result = future.result()
+                all_records.extend(conv_result.records)
+                total_parsed += conv_result.total_count
+
+                results.append(
+                    ParseResult(
+                        file_path=input_file,
+                        success_count=len(conv_result.records),
+                        total_count=conv_result.total_count,
+                        output_path=db_path,
+                        error=conv_result.error,
+                    )
+                )
+
+                if i % 50 == 0 or i == total_files:
+                    LOGGER.info(
+                        "解析进度 [%d/%d]: 累计 %d 条记录",
+                        i,
+                        total_files,
+                        len(all_records),
+                    )
+
+            except Exception as e:
+                LOGGER.exception("解析进程失败: %s", input_file)
+                results.append(
+                    ParseResult(
+                        file_path=input_file,
+                        success_count=0,
+                        total_count=0,
+                        output_path=None,
+                        error=str(e),
+                    )
+                )
+
+    LOGGER.info("解析完成，共 %d 条记录，开始批量写入...", len(all_records))
+
+    if all_records:
+
+        def progress_cb(current: int, total: int, success: int, dups: int) -> None:
+            LOGGER.info(
+                "写入进度 [%d/%d]: 成功 %d, 重复 %d",
+                current,
+                total,
+                success,
+                dups,
+            )
+
+        with HandRepository(db_path, wal_mode=True) as repo:
+            success, duplicates = repo.insert_hands_batch(
+                all_records,
+                batch_size=batch_size,
+                progress_callback=progress_cb,
+            )
+            LOGGER.info("写入完成: 成功 %d, 重复 %d", success, duplicates)
+
+    return results
+
+
+def print_summary(results: list[ParseResult], elapsed: float) -> None:
     total_files = len(results)
     skipped_files = sum(1 for r in results if r.skipped)
     success_files = sum(
@@ -418,21 +433,16 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
     print(f"  平均速度:     {total_hands / elapsed:.0f} 手/秒" if elapsed > 0 else "")
     print("=" * 60)
 
-    # 显示失败文件
     failed = [r for r in results if (not r.skipped) and r.error is not None]
     if failed:
         print("\n失败文件列表:")
-        for r in failed:
+        for r in failed[:10]:
             print(f"  - {r.file_path}: {r.error}")
+        if len(failed) > 10:
+            print(f"  ... 还有 {len(failed) - 10} 个失败文件")
 
 
 def setup_logging(verbose: bool = False) -> None:
-    """
-    配置根日志。
-
-    Args:
-        verbose: 是否启用详细日志输出。
-    """
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
@@ -442,29 +452,9 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    """
-    解析命令行参数。
-
-    Returns:
-        解析后的命令行参数。
-    """
     parser = argparse.ArgumentParser(
         description="批量解析 GGPoker 手牌历史文件",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-使用示例:
-  # 解析单个文件
-  python batch_parse_handhistory.py input.txt -o output/
-
-  # 解析整个文件夹
-  python batch_parse_handhistory.py data/handhistory/ -o output/
-
-  # 使用 4 个进程并行解析
-  python batch_parse_handhistory.py data/handhistory/ -o output/ -w 4
-
-  # 递归搜索子目录
-  python batch_parse_handhistory.py data/handhistory/ -o output/ -r
-        """,
     )
 
     parser.add_argument(
@@ -504,17 +494,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="输出到 SQLite 数据库路径（与 .phhs 输出互斥）",
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=5000,
+        help="批量写入大小 (默认: 5000)",
+    )
 
     return parser.parse_args()
 
 
 def main() -> int:
-    """
-    主入口函数。
-
-    Returns:
-        退出状态码，0 表示成功，1 表示有错误。
-    """
     args = parse_args()
     setup_logging(args.verbose)
 
@@ -536,7 +526,15 @@ def main() -> int:
 
     if args.sqlite:
         LOGGER.info("使用 SQLite 输出模式: %s", args.sqlite)
-        results = parse_files_to_sqlite(files, args.sqlite)
+        if args.workers > 1:
+            results = parse_files_to_sqlite_parallel(
+                files,
+                args.sqlite,
+                max_workers=args.workers,
+                batch_size=args.batch_size,
+            )
+        else:
+            results = parse_files_to_sqlite(files, args.sqlite)
     elif args.workers > 1:
         args.output.mkdir(parents=True, exist_ok=True)
         LOGGER.info("使用多进程模式 (workers=%d)", args.workers)
@@ -548,6 +546,11 @@ def main() -> int:
 
     elapsed = time.time() - start_time
     print_summary(results, elapsed)
+
+    if args.sqlite:
+        with HandRepository(args.sqlite) as repo:
+            stats = repo.get_stats()
+            print(f"\n数据库统计: 手牌={stats['hands']} 玩家={stats['players']}")
 
     has_errors = any(r.error is not None for r in results)
     return 1 if has_errors else 0
