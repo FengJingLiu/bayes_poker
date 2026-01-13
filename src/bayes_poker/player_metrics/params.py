@@ -109,44 +109,6 @@ class PreFlopParams:
                     )
                 )
 
-            prev_actions = [ActionType.CHECK, ActionType.RAISE]
-            for prev_action in prev_actions:
-                for in_pos in (False, True):
-                    for num_pl in (2, 3):
-                        all_params.append(
-                            PreFlopParams(
-                                table_type,
-                                Position.BIG_BLIND,
-                                0,
-                                1,
-                                num_pl,
-                                prev_action,
-                                in_pos,
-                            )
-                        )
-                        all_params.append(
-                            PreFlopParams(
-                                table_type,
-                                Position.BIG_BLIND,
-                                1,
-                                1,
-                                num_pl,
-                                prev_action,
-                                in_pos,
-                            )
-                        )
-                        all_params.append(
-                            PreFlopParams(
-                                table_type,
-                                Position.BIG_BLIND,
-                                0,
-                                2,
-                                num_pl,
-                                prev_action,
-                                in_pos,
-                            )
-                        )
-
         return tuple(all_params)
 
     def __str__(self) -> str:

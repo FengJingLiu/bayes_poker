@@ -117,7 +117,7 @@ class TestActionStats:
 class TestPreFlopParams:
     def test_get_all_params_six_max_count(self):
         params = PreFlopParams.get_all_params(TableType.SIX_MAX)
-        assert len(params) == 54
+        assert len(params) == 30
 
     def test_get_all_params_heads_up_count(self):
         params = PreFlopParams.get_all_params(TableType.HEADS_UP)
@@ -185,7 +185,7 @@ class TestPlayerStats:
         stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
         assert stats.player_name == "Hero"
         assert stats.table_type == TableType.SIX_MAX
-        assert len(stats.preflop_stats) == 54
+        assert len(stats.preflop_stats) == 30
         assert len(stats.postflop_stats) == 216
         assert stats.vpip.total == 0
 
