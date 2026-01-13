@@ -121,6 +121,22 @@ class ActionStats:
         total = self.total_samples()
         return self.fold_samples / total if total > 0 else 1 / 3
 
+    def bet_0_33_probability(self) -> float:
+        total = self.bet_samples
+        return self.bet_0_33 / total if total > 0 else 0.25
+
+    def bet_33_66_probability(self) -> float:
+        total = self.bet_samples
+        return self.bet_33_66 / total if total > 0 else 0.25
+
+    def bet_66_100_probability(self) -> float:
+        total = self.bet_samples
+        return self.bet_66_100 / total if total > 0 else 0.25
+
+    def bet_over_100_probability(self) -> float:
+        total = self.bet_samples
+        return self.bet_over_100 / total if total > 0 else 0.25
+
     def __str__(self) -> str:
         return (
             f"BR: {self.bet_raise_probability():.2f}, "
