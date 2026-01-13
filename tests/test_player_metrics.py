@@ -266,3 +266,96 @@ class TestBetSizingCategory:
         assert ads.bet_samples == 2
         assert ads.raise_samples == 3
         assert ads.bet_raise_samples == 5
+
+
+class TestParsedActionPotPercentage:
+    def test_bet_pot_percentage(self):
+        from bayes_poker.player_metrics.builder import ParsedAction
+        
+        action = ParsedAction(
+            street=Street.FLOP,
+            player_name="Hero",
+            action_type=ActionType.BET,
+            amount=50,
+            pot_size_before_action=100,
+            call_amount=0,
+        )
+        assert action.pot_percentage == pytest.approx(0.5)
+
+    def test_raise_pot_percentage(self):
+        from bayes_poker.player_metrics.builder import ParsedAction
+        
+        action = ParsedAction(
+            street=Street.FLOP,
+            player_name="Hero",
+            action_type=ActionType.RAISE,
+            amount=300,
+            pot_size_before_action=100,
+            call_amount=100,
+        )
+        assert action.pot_percentage == pytest.approx(2.0)
+
+    def test_raise_pot_percentage_small_raise(self):
+        from bayes_poker.player_metrics.builder import ParsedAction
+        
+        action = ParsedAction(
+            street=Street.FLOP,
+            player_name="Hero",
+            action_type=ActionType.RAISE,
+            amount=150,
+            pot_size_before_action=100,
+            call_amount=100,
+        )
+        assert action.pot_percentage == pytest.approx(0.5)
+
+    def test_fold_returns_none(self):
+        from bayes_poker.player_metrics.builder import ParsedAction
+        
+        action = ParsedAction(
+            street=Street.FLOP,
+            player_name="Hero",
+            action_type=ActionType.FOLD,
+            amount=0,
+            pot_size_before_action=100,
+            call_amount=0,
+        )
+        assert action.pot_percentage is None
+
+    def test_call_returns_none(self):
+        from bayes_poker.player_metrics.builder import ParsedAction
+        
+        action = ParsedAction(
+            street=Street.FLOP,
+            player_name="Hero",
+            action_type=ActionType.CALL,
+            amount=50,
+            pot_size_before_action=100,
+            call_amount=50,
+        )
+        assert action.pot_percentage is None
+
+    def test_zero_pot_returns_none(self):
+        from bayes_poker.player_metrics.builder import ParsedAction
+        
+        action = ParsedAction(
+            street=Street.FLOP,
+            player_name="Hero",
+            action_type=ActionType.BET,
+            amount=50,
+            pot_size_before_action=0,
+            call_amount=0,
+        )
+        assert action.pot_percentage is None
+
+    def test_raise_no_increment_returns_none(self):
+        from bayes_poker.player_metrics.builder import ParsedAction
+        
+        action = ParsedAction(
+            street=Street.FLOP,
+            player_name="Hero",
+            action_type=ActionType.RAISE,
+            amount=100,
+            pot_size_before_action=100,
+            call_amount=100,
+        )
+        assert action.pot_percentage is None

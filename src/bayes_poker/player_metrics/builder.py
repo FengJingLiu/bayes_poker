@@ -21,6 +21,26 @@ class ParsedAction:
     action_type: ActionType
     amount: int
     pot_size_before_action: int = 0
+    call_amount: int = 0
+
+    @property
+    def pot_percentage(self) -> float | None:
+        """计算下注/加注量占底池的百分比。
+
+        - BET: amount / pot_size_before_action
+        - RAISE: (amount - call_amount) / pot_size_before_action (加注增量)
+        - 其他行动类型返回 None
+        """
+        if self.pot_size_before_action <= 0:
+            return None
+        if self.action_type == ActionType.BET:
+            return self.amount / self.pot_size_before_action
+        if self.action_type == ActionType.RAISE:
+            raise_increment = self.amount - self.call_amount
+            if raise_increment <= 0:
+                return None
+            return raise_increment / self.pot_size_before_action
+        return None
 
 
 def get_player_position(player_index: int, num_players: int) -> Position:
@@ -99,6 +119,7 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
     current_street = Street.PREFLOP
     board_cards = 0
     pot_size = sum(antes) + sum(blinds_or_straddles)
+    current_bet = max(blinds_or_straddles) if blinds_or_straddles else 0
     player_bets: dict[str, int] = {}
     for i, player_name in enumerate(players):
         if i < len(blinds_or_straddles):
@@ -126,6 +147,7 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
                 current_street = _get_street_from_board_count(board_cards)
                 for pn in players:
                     player_bets[pn] = 0
+                current_bet = 0
             continue
 
         if not actor.startswith("p"):
@@ -154,6 +176,7 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
             continue
 
         current_pot_size = pot_size
+        call_amount = current_bet
 
         yield ParsedAction(
             street=current_street,
@@ -161,6 +184,7 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
             action_type=action_type,
             amount=amount,
             pot_size_before_action=current_pot_size,
+            call_amount=call_amount,
         )
 
         if action_type in (ActionType.CALL, ActionType.BET, ActionType.RAISE, ActionType.ALL_IN):
@@ -169,6 +193,8 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
             if new_contribution > 0:
                 pot_size += new_contribution
             player_bets[player_name] = amount
+            if amount > current_bet:
+                current_bet = amount
 
 
 def increment_player_stats(
@@ -276,10 +302,12 @@ def increment_player_stats(
                     idx = postflop_params.to_index()
                     if 0 <= idx < len(player_stats.postflop_stats):
                         sizing_category = None
-                        if action.action_type == ActionType.BET:
-                            sizing_category = calculate_bet_sizing_category(
-                                action.amount, action.pot_size_before_action
-                            )
+                        if action.action_type in (ActionType.BET, ActionType.RAISE):
+                            pot_pct = action.pot_percentage
+                            if pot_pct is not None:
+                                sizing_category = calculate_bet_sizing_category(
+                                    int(pot_pct * 100), 100
+                                )
                         player_stats.postflop_stats[idx].add_sample(
                             action.action_type, sizing_category=sizing_category
                         )
