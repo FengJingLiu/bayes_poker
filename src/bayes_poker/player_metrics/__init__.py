@@ -14,18 +14,24 @@ from __future__ import annotations
 from .builder import (
     ParsedAction,
     build_player_stats_from_hands,
+    calculate_aggression,
+    calculate_bet_sizing_category,
+    calculate_pfr,
+    calculate_total_hands,
+    calculate_wtp,
     extract_actions_from_hand_history,
     get_player_position,
     increment_player_stats,
     is_in_position,
 )
 from .enums import ActionType, Position, Street, TableType
-from .models import ActionStats, PlayerStats, StatValue
+from .models import ActionStats, BetSizingCategory, PlayerStats, StatValue
 from .params import PostFlopParams, PreFlopParams
 
 __all__ = [
     "ActionStats",
     "ActionType",
+    "BetSizingCategory",
     "ParsedAction",
     "PlayerStats",
     "Position",
@@ -35,6 +41,11 @@ __all__ = [
     "Street",
     "TableType",
     "build_player_stats_from_hands",
+    "calculate_aggression",
+    "calculate_bet_sizing_category",
+    "calculate_pfr",
+    "calculate_total_hands",
+    "calculate_wtp",
     "extract_actions_from_hand_history",
     "get_player_position",
     "increment_player_stats",

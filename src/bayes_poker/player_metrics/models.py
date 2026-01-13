@@ -30,27 +30,79 @@ class StatValue:
         return f"{self.to_float():.2f} ({self.total})"
 
 
+class BetSizingCategory:
+    """Bet 尺度分类常量。
+
+    区间定义（占底池百分比）:
+    - BET_0_33: [0%, 33%) 小注
+    - BET_33_66: [33%, 66%) 中注
+    - BET_66_100: [66%, 100%) 大注
+    - BET_OVER_100: [100%, ∞) 超池
+    """
+
+    BET_0_33 = "bet_0_33"
+    BET_33_66 = "bet_33_66"
+    BET_66_100 = "bet_66_100"
+    BET_OVER_100 = "bet_over_100"
+
+
 @dataclass
 class ActionStats:
-    bet_raise_samples: int = 0
+    bet_0_33: int = 0
+    bet_33_66: int = 0
+    bet_66_100: int = 0
+    bet_over_100: int = 0
+    raise_samples: int = 0
     check_call_samples: int = 0
     fold_samples: int = 0
 
-    def add_sample(self, action_type: ActionType) -> None:
+    @property
+    def bet_samples(self) -> int:
+        return self.bet_0_33 + self.bet_33_66 + self.bet_66_100 + self.bet_over_100
+
+    @property
+    def bet_raise_samples(self) -> int:
+        return self.bet_samples + self.raise_samples
+
+    def add_sample(
+        self,
+        action_type: ActionType,
+        *,
+        sizing_category: str | None = None,
+    ) -> None:
         if action_type == ActionType.FOLD:
             self.fold_samples += 1
         elif action_type in (ActionType.CALL, ActionType.CHECK):
             self.check_call_samples += 1
-        elif action_type in (ActionType.ALL_IN, ActionType.BET, ActionType.RAISE):
-            self.bet_raise_samples += 1
+        elif action_type == ActionType.BET:
+            if sizing_category == BetSizingCategory.BET_0_33:
+                self.bet_0_33 += 1
+            elif sizing_category == BetSizingCategory.BET_33_66:
+                self.bet_33_66 += 1
+            elif sizing_category == BetSizingCategory.BET_66_100:
+                self.bet_66_100 += 1
+            else:
+                self.bet_over_100 += 1
+        elif action_type == ActionType.RAISE:
+            self.raise_samples += 1
+        elif action_type == ActionType.ALL_IN:
+            self.raise_samples += 1
 
     def append(self, other: ActionStats) -> None:
-        self.bet_raise_samples += other.bet_raise_samples
+        self.bet_0_33 += other.bet_0_33
+        self.bet_33_66 += other.bet_33_66
+        self.bet_66_100 += other.bet_66_100
+        self.bet_over_100 += other.bet_over_100
+        self.raise_samples += other.raise_samples
         self.check_call_samples += other.check_call_samples
         self.fold_samples += other.fold_samples
 
     def clear(self) -> None:
-        self.bet_raise_samples = 0
+        self.bet_0_33 = 0
+        self.bet_33_66 = 0
+        self.bet_66_100 = 0
+        self.bet_over_100 = 0
+        self.raise_samples = 0
         self.check_call_samples = 0
         self.fold_samples = 0
 
@@ -103,54 +155,6 @@ class PlayerStats:
 
     def get_postflop_stats(self, params: PostFlopParams) -> ActionStats:
         return self.postflop_stats[params.to_index()]
-
-    @property
-    def total_hands(self) -> int:
-        from .params import PreFlopParams
-
-        total = 0
-        all_params = PreFlopParams.get_all_params(self.table_type)
-        for i, params in enumerate(all_params):
-            if params.previous_action == ActionType.FOLD:
-                total += self.preflop_stats[i].total_samples()
-        return total
-
-    def calculate_pfr(self) -> tuple[int, int]:
-        from .params import PreFlopParams
-
-        total_ad = ActionStats()
-        all_params = PreFlopParams.get_all_params(self.table_type)
-        for i, params in enumerate(all_params):
-            if params.num_raises == 0:
-                total_ad.append(self.preflop_stats[i])
-        return total_ad.bet_raise_samples, total_ad.total_samples()
-
-    def calculate_aggression(self) -> tuple[int, int]:
-        from .params import PostFlopParams
-
-        total_forced = ActionStats()
-        total_unforced = ActionStats()
-        all_params = PostFlopParams.get_all_params(self.table_type)
-        for i, params in enumerate(all_params):
-            if params.num_bets > 0:
-                total_forced.append(self.postflop_stats[i])
-            else:
-                total_unforced.append(self.postflop_stats[i])
-        raise_count = total_forced.bet_raise_samples + total_unforced.bet_raise_samples
-        total_count = raise_count + total_forced.check_call_samples
-        return raise_count, total_count
-
-    def calculate_wtp(self) -> tuple[int, int]:
-        from .params import PostFlopParams
-
-        total_forced = ActionStats()
-        all_params = PostFlopParams.get_all_params(self.table_type)
-        for i, params in enumerate(all_params):
-            if params.num_bets > 0:
-                total_forced.append(self.postflop_stats[i])
-        positive_count = total_forced.check_call_samples + total_forced.bet_raise_samples
-        total_count = positive_count + total_forced.fold_samples
-        return positive_count, total_count
 
     def __str__(self) -> str:
         return f"{self.player_name}, VPIP: {self.vpip}"

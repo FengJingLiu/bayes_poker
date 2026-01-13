@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pokerkit import HandHistory
 
 from .enums import ActionType, Position, Street, TableType
-from .models import ActionStats, PlayerStats, StatValue
+from .models import ActionStats, BetSizingCategory, PlayerStats, StatValue
 from .params import PostFlopParams, PreFlopParams
 
 if TYPE_CHECKING:
@@ -20,6 +20,7 @@ class ParsedAction:
     player_name: str
     action_type: ActionType
     amount: int
+    pot_size_before_action: int = 0
 
 
 def get_player_position(player_index: int, num_players: int) -> Position:
@@ -75,12 +76,35 @@ def _map_pokerkit_action(action_str: str) -> ActionType:
     return ActionType.NO_ACTION
 
 
+def calculate_bet_sizing_category(bet_amount: int, pot_size: int) -> str:
+    if pot_size <= 0:
+        return BetSizingCategory.BET_OVER_100
+    ratio = bet_amount / pot_size
+    if ratio < 0.33:
+        return BetSizingCategory.BET_0_33
+    elif ratio < 0.66:
+        return BetSizingCategory.BET_33_66
+    elif ratio < 1.0:
+        return BetSizingCategory.BET_66_100
+    else:
+        return BetSizingCategory.BET_OVER_100
+
+
 def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]:
     players = list(hh.players) if hh.players else []
     actions = hh.actions if hh.actions else []
+    antes = list(hh.antes) if hh.antes else []
+    blinds_or_straddles = list(hh.blinds_or_straddles) if hh.blinds_or_straddles else []
 
     current_street = Street.PREFLOP
     board_cards = 0
+    pot_size = sum(antes) + sum(blinds_or_straddles)
+    player_bets: dict[str, int] = {}
+    for i, player_name in enumerate(players):
+        if i < len(blinds_or_straddles):
+            player_bets[player_name] = blinds_or_straddles[i]
+        else:
+            player_bets[player_name] = 0
 
     for action_str in actions:
         action_str = action_str.strip()
@@ -100,6 +124,8 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
                 new_cards = len(cards_str) // 2 if cards_str else 0
                 board_cards += new_cards
                 current_street = _get_street_from_board_count(board_cards)
+                for pn in players:
+                    player_bets[pn] = 0
             continue
 
         if not actor.startswith("p"):
@@ -127,12 +153,22 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
         if action_type == ActionType.NO_ACTION:
             continue
 
+        current_pot_size = pot_size
+
         yield ParsedAction(
             street=current_street,
             player_name=player_name,
             action_type=action_type,
             amount=amount,
+            pot_size_before_action=current_pot_size,
         )
+
+        if action_type in (ActionType.CALL, ActionType.BET, ActionType.RAISE, ActionType.ALL_IN):
+            old_bet = player_bets.get(player_name, 0)
+            new_contribution = amount - old_bet
+            if new_contribution > 0:
+                pot_size += new_contribution
+            player_bets[player_name] = amount
 
 
 def increment_player_stats(
@@ -239,7 +275,14 @@ def increment_player_stats(
                 try:
                     idx = postflop_params.to_index()
                     if 0 <= idx < len(player_stats.postflop_stats):
-                        player_stats.postflop_stats[idx].add_sample(action.action_type)
+                        sizing_category = None
+                        if action.action_type == ActionType.BET:
+                            sizing_category = calculate_bet_sizing_category(
+                                action.amount, action.pot_size_before_action
+                            )
+                        player_stats.postflop_stats[idx].add_sample(
+                            action.action_type, sizing_category=sizing_category
+                        )
                 except (ValueError, AssertionError):
                     pass
 
@@ -283,3 +326,46 @@ def build_player_stats_from_hands(
                 increment_player_stats(player_stats_map[player_name], hh)
 
     return player_stats_map
+
+
+def calculate_total_hands(player_stats: PlayerStats) -> int:
+    total = 0
+    all_params = PreFlopParams.get_all_params(player_stats.table_type)
+    for i, params in enumerate(all_params):
+        if params.previous_action == ActionType.FOLD:
+            total += player_stats.preflop_stats[i].total_samples()
+    return total
+
+
+def calculate_pfr(player_stats: PlayerStats) -> tuple[int, int]:
+    total_ad = ActionStats()
+    all_params = PreFlopParams.get_all_params(player_stats.table_type)
+    for i, params in enumerate(all_params):
+        if params.num_raises == 0:
+            total_ad.append(player_stats.preflop_stats[i])
+    return total_ad.bet_raise_samples, total_ad.total_samples()
+
+
+def calculate_aggression(player_stats: PlayerStats) -> tuple[int, int]:
+    total_forced = ActionStats()
+    total_unforced = ActionStats()
+    all_params = PostFlopParams.get_all_params(player_stats.table_type)
+    for i, params in enumerate(all_params):
+        if params.num_bets > 0:
+            total_forced.append(player_stats.postflop_stats[i])
+        else:
+            total_unforced.append(player_stats.postflop_stats[i])
+    raise_count = total_forced.bet_raise_samples + total_unforced.bet_raise_samples
+    total_count = raise_count + total_forced.check_call_samples
+    return raise_count, total_count
+
+
+def calculate_wtp(player_stats: PlayerStats) -> tuple[int, int]:
+    total_forced = ActionStats()
+    all_params = PostFlopParams.get_all_params(player_stats.table_type)
+    for i, params in enumerate(all_params):
+        if params.num_bets > 0:
+            total_forced.append(player_stats.postflop_stats[i])
+    positive_count = total_forced.check_call_samples + total_forced.bet_raise_samples
+    total_count = positive_count + total_forced.fold_samples
+    return positive_count, total_count

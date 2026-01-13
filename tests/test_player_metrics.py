@@ -1,8 +1,15 @@
 import pytest
 
 from bayes_poker.player_metrics.enums import ActionType, Position, Street, TableType
-from bayes_poker.player_metrics.models import ActionStats, PlayerStats, StatValue
+from bayes_poker.player_metrics.models import ActionStats, BetSizingCategory, PlayerStats, StatValue
 from bayes_poker.player_metrics.params import PostFlopParams, PreFlopParams
+from bayes_poker.player_metrics.builder import (
+    calculate_aggression,
+    calculate_bet_sizing_category,
+    calculate_pfr,
+    calculate_total_hands,
+    calculate_wtp,
+)
 
 
 class TestStatValue:
@@ -65,16 +72,20 @@ class TestActionStats:
     def test_add_raise_sample(self):
         ads = ActionStats()
         ads.add_sample(ActionType.RAISE)
+        assert ads.raise_samples == 1
         assert ads.bet_raise_samples == 1
 
     def test_add_bet_sample(self):
         ads = ActionStats()
         ads.add_sample(ActionType.BET)
+        assert ads.bet_over_100 == 1
+        assert ads.bet_samples == 1
         assert ads.bet_raise_samples == 1
 
     def test_add_all_in_sample(self):
         ads = ActionStats()
         ads.add_sample(ActionType.ALL_IN)
+        assert ads.raise_samples == 1
         assert ads.bet_raise_samples == 1
 
     def test_probabilities_empty(self):
@@ -84,21 +95,21 @@ class TestActionStats:
         assert ads.fold_probability() == pytest.approx(1 / 3)
 
     def test_probabilities_with_samples(self):
-        ads = ActionStats(bet_raise_samples=10, check_call_samples=5, fold_samples=5)
+        ads = ActionStats(raise_samples=10, check_call_samples=5, fold_samples=5)
         assert ads.bet_raise_probability() == pytest.approx(0.5)
         assert ads.check_call_probability() == pytest.approx(0.25)
         assert ads.fold_probability() == pytest.approx(0.25)
 
     def test_append(self):
-        ads1 = ActionStats(bet_raise_samples=2, check_call_samples=3, fold_samples=4)
-        ads2 = ActionStats(bet_raise_samples=1, check_call_samples=2, fold_samples=3)
+        ads1 = ActionStats(raise_samples=2, check_call_samples=3, fold_samples=4)
+        ads2 = ActionStats(raise_samples=1, check_call_samples=2, fold_samples=3)
         ads1.append(ads2)
         assert ads1.bet_raise_samples == 3
         assert ads1.check_call_samples == 5
         assert ads1.fold_samples == 7
 
     def test_clear(self):
-        ads = ActionStats(bet_raise_samples=5, check_call_samples=3, fold_samples=2)
+        ads = ActionStats(raise_samples=5, check_call_samples=3, fold_samples=2)
         ads.clear()
         assert ads.total_samples() == 0
 
@@ -180,18 +191,78 @@ class TestPlayerStats:
 
     def test_calculate_pfr_empty(self):
         stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
-        positive, total = stats.calculate_pfr()
+        positive, total = calculate_pfr(stats)
         assert positive == 0
         assert total == 0
 
     def test_calculate_aggression_empty(self):
         stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
-        positive, total = stats.calculate_aggression()
+        positive, total = calculate_aggression(stats)
         assert positive == 0
         assert total == 0
 
     def test_calculate_wtp_empty(self):
         stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
-        positive, total = stats.calculate_wtp()
+        positive, total = calculate_wtp(stats)
         assert positive == 0
         assert total == 0
+
+
+class TestBetSizingCategory:
+    def test_bet_sizing_small_bet(self):
+        category = calculate_bet_sizing_category(30, 100)
+        assert category == BetSizingCategory.BET_0_33
+
+    def test_bet_sizing_medium_bet(self):
+        category = calculate_bet_sizing_category(50, 100)
+        assert category == BetSizingCategory.BET_33_66
+
+    def test_bet_sizing_large_bet(self):
+        category = calculate_bet_sizing_category(75, 100)
+        assert category == BetSizingCategory.BET_66_100
+
+    def test_bet_sizing_over_pot(self):
+        category = calculate_bet_sizing_category(150, 100)
+        assert category == BetSizingCategory.BET_OVER_100
+
+    def test_bet_sizing_pot_sized(self):
+        category = calculate_bet_sizing_category(100, 100)
+        assert category == BetSizingCategory.BET_OVER_100
+
+    def test_bet_sizing_zero_pot(self):
+        category = calculate_bet_sizing_category(50, 0)
+        assert category == BetSizingCategory.BET_OVER_100
+
+    def test_bet_sizing_boundary_33(self):
+        category = calculate_bet_sizing_category(33, 100)
+        assert category == BetSizingCategory.BET_33_66
+
+    def test_bet_sizing_boundary_66(self):
+        category = calculate_bet_sizing_category(66, 100)
+        assert category == BetSizingCategory.BET_66_100
+
+    def test_add_sample_with_sizing_categories(self):
+        ads = ActionStats()
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_0_33)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_33_66)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_66_100)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_OVER_100)
+        
+        assert ads.bet_0_33 == 1
+        assert ads.bet_33_66 == 1
+        assert ads.bet_66_100 == 1
+        assert ads.bet_over_100 == 1
+        assert ads.bet_samples == 4
+        assert ads.bet_raise_samples == 4
+
+    def test_backward_compatibility_bet_raise_samples(self):
+        ads = ActionStats()
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_33_66)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_33_66)
+        ads.add_sample(ActionType.RAISE)
+        ads.add_sample(ActionType.RAISE)
+        ads.add_sample(ActionType.RAISE)
+        
+        assert ads.bet_samples == 2
+        assert ads.raise_samples == 3
+        assert ads.bet_raise_samples == 5
