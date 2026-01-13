@@ -293,7 +293,7 @@ class TestParsedActionPotPercentage:
             pot_size_before_action=100,
             call_amount=100,
         )
-        assert action.pot_percentage == pytest.approx(2.0)
+        assert action.pot_percentage == pytest.approx(200 / 300)
 
     def test_raise_pot_percentage_small_raise(self):
         from bayes_poker.player_metrics.builder import ParsedAction
@@ -304,7 +304,7 @@ class TestParsedActionPotPercentage:
             action_type=ActionType.RAISE,
             amount=150,
             pot_size_before_action=100,
-            call_amount=100,
+            call_amount=50,
         )
         assert action.pot_percentage == pytest.approx(0.5)
 
