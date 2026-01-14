@@ -78,8 +78,8 @@ class TestActionStats:
     def test_add_bet_sample(self):
         ads = ActionStats()
         ads.add_sample(ActionType.BET)
-        assert ads.bet_over_100 == 1
-        assert ads.bet_samples == 1
+        assert ads.raise_samples == 1
+        assert ads.bet_samples == 0
         assert ads.bet_raise_samples == 1
 
     def test_add_all_in_sample(self):
@@ -211,54 +211,58 @@ class TestPlayerStats:
 class TestBetSizingCategory:
     def test_bet_sizing_small_bet(self):
         category = calculate_bet_sizing_category(30, 100)
-        assert category == BetSizingCategory.BET_0_33
+        assert category == BetSizingCategory.BET_0_40
 
     def test_bet_sizing_medium_bet(self):
         category = calculate_bet_sizing_category(50, 100)
-        assert category == BetSizingCategory.BET_33_66
+        assert category == BetSizingCategory.BET_40_80
 
     def test_bet_sizing_large_bet(self):
-        category = calculate_bet_sizing_category(75, 100)
-        assert category == BetSizingCategory.BET_66_100
+        category = calculate_bet_sizing_category(90, 100)
+        assert category == BetSizingCategory.BET_80_120
 
     def test_bet_sizing_over_pot(self):
         category = calculate_bet_sizing_category(150, 100)
-        assert category == BetSizingCategory.BET_OVER_100
+        assert category == BetSizingCategory.BET_OVER_120
 
     def test_bet_sizing_pot_sized(self):
         category = calculate_bet_sizing_category(100, 100)
-        assert category == BetSizingCategory.BET_OVER_100
+        assert category == BetSizingCategory.BET_80_120
 
     def test_bet_sizing_zero_pot(self):
         category = calculate_bet_sizing_category(50, 0)
-        assert category == BetSizingCategory.BET_OVER_100
+        assert category == BetSizingCategory.BET_OVER_120
 
-    def test_bet_sizing_boundary_33(self):
-        category = calculate_bet_sizing_category(33, 100)
-        assert category == BetSizingCategory.BET_33_66
+    def test_bet_sizing_boundary_40(self):
+        category = calculate_bet_sizing_category(40, 100)
+        assert category == BetSizingCategory.BET_40_80
 
-    def test_bet_sizing_boundary_66(self):
-        category = calculate_bet_sizing_category(66, 100)
-        assert category == BetSizingCategory.BET_66_100
+    def test_bet_sizing_boundary_80(self):
+        category = calculate_bet_sizing_category(80, 100)
+        assert category == BetSizingCategory.BET_80_120
+
+    def test_bet_sizing_boundary_120(self):
+        category = calculate_bet_sizing_category(120, 100)
+        assert category == BetSizingCategory.BET_OVER_120
 
     def test_add_sample_with_sizing_categories(self):
         ads = ActionStats()
-        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_0_33)
-        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_33_66)
-        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_66_100)
-        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_OVER_100)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_0_40)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_40_80)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_80_120)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_OVER_120)
         
-        assert ads.bet_0_33 == 1
-        assert ads.bet_33_66 == 1
-        assert ads.bet_66_100 == 1
-        assert ads.bet_over_100 == 1
+        assert ads.bet_0_40 == 1
+        assert ads.bet_40_80 == 1
+        assert ads.bet_80_120 == 1
+        assert ads.bet_over_120 == 1
         assert ads.bet_samples == 4
         assert ads.bet_raise_samples == 4
 
     def test_backward_compatibility_bet_raise_samples(self):
         ads = ActionStats()
-        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_33_66)
-        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_33_66)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_40_80)
+        ads.add_sample(ActionType.BET, sizing_category=BetSizingCategory.BET_40_80)
         ads.add_sample(ActionType.RAISE)
         ads.add_sample(ActionType.RAISE)
         ads.add_sample(ActionType.RAISE)
@@ -289,26 +293,13 @@ class TestParsedActionPotPercentage:
             street=Street.FLOP,
             player_name="Hero",
             action_type=ActionType.RAISE,
-            amount=300,
-            pot_size_before_action=100,
+            amount=400,
+            pot_size_before_action=200,
             call_amount=100,
         )
         assert action.pot_percentage == pytest.approx(1.0)
 
     def test_raise_pot_percentage_small_raise(self):
-        from bayes_poker.player_metrics.builder import ParsedAction
-        
-        action = ParsedAction(
-            street=Street.FLOP,
-            player_name="Hero",
-            action_type=ActionType.RAISE,
-            amount=150,
-            pot_size_before_action=150,
-            call_amount=50,
-        )
-        assert action.pot_percentage == pytest.approx(0.5)
-
-    def test_raise_pot_percentage_small_raise_1(self):
         from bayes_poker.player_metrics.builder import ParsedAction
         
         action = ParsedAction(

@@ -31,34 +31,25 @@ class StatValue:
 
 
 class BetSizingCategory:
-    """Bet 尺度分类常量。
-
-    区间定义（占底池百分比）:
-    - BET_0_33: [0%, 33%) 小注
-    - BET_33_66: [33%, 66%) 中注
-    - BET_66_100: [66%, 100%) 大注
-    - BET_OVER_100: [100%, ∞) 超池
-    """
-
-    BET_0_33 = "bet_0_33"
-    BET_33_66 = "bet_33_66"
-    BET_66_100 = "bet_66_100"
-    BET_OVER_100 = "bet_over_100"
+    BET_0_40 = "bet_0_40"
+    BET_40_80 = "bet_40_80"
+    BET_80_120 = "bet_80_120"
+    BET_OVER_120 = "bet_over_120"
 
 
 @dataclass
 class ActionStats:
-    bet_0_33: int = 0
-    bet_33_66: int = 0
-    bet_66_100: int = 0
-    bet_over_100: int = 0
+    bet_0_40: int = 0
+    bet_40_80: int = 0
+    bet_80_120: int = 0
+    bet_over_120: int = 0
     raise_samples: int = 0
     check_call_samples: int = 0
     fold_samples: int = 0
 
     @property
     def bet_samples(self) -> int:
-        return self.bet_0_33 + self.bet_33_66 + self.bet_66_100 + self.bet_over_100
+        return self.bet_0_40 + self.bet_40_80 + self.bet_80_120 + self.bet_over_120
 
     @property
     def bet_raise_samples(self) -> int:
@@ -74,34 +65,34 @@ class ActionStats:
             self.fold_samples += 1
         elif action_type in (ActionType.CALL, ActionType.CHECK):
             self.check_call_samples += 1
-        elif action_type == ActionType.BET:
-            if sizing_category == BetSizingCategory.BET_0_33:
-                self.bet_0_33 += 1
-            elif sizing_category == BetSizingCategory.BET_33_66:
-                self.bet_33_66 += 1
-            elif sizing_category == BetSizingCategory.BET_66_100:
-                self.bet_66_100 += 1
+        elif action_type in (ActionType.BET, ActionType.RAISE):
+            if sizing_category == BetSizingCategory.BET_0_40:
+                self.bet_0_40 += 1
+            elif sizing_category == BetSizingCategory.BET_40_80:
+                self.bet_40_80 += 1
+            elif sizing_category == BetSizingCategory.BET_80_120:
+                self.bet_80_120 += 1
+            elif sizing_category == BetSizingCategory.BET_OVER_120:
+                self.bet_over_120 += 1
             else:
-                self.bet_over_100 += 1
-        elif action_type == ActionType.RAISE:
-            self.raise_samples += 1
+                self.raise_samples += 1
         elif action_type == ActionType.ALL_IN:
             self.raise_samples += 1
 
     def append(self, other: ActionStats) -> None:
-        self.bet_0_33 += other.bet_0_33
-        self.bet_33_66 += other.bet_33_66
-        self.bet_66_100 += other.bet_66_100
-        self.bet_over_100 += other.bet_over_100
+        self.bet_0_40 += other.bet_0_40
+        self.bet_40_80 += other.bet_40_80
+        self.bet_80_120 += other.bet_80_120
+        self.bet_over_120 += other.bet_over_120
         self.raise_samples += other.raise_samples
         self.check_call_samples += other.check_call_samples
         self.fold_samples += other.fold_samples
 
     def clear(self) -> None:
-        self.bet_0_33 = 0
-        self.bet_33_66 = 0
-        self.bet_66_100 = 0
-        self.bet_over_100 = 0
+        self.bet_0_40 = 0
+        self.bet_40_80 = 0
+        self.bet_80_120 = 0
+        self.bet_over_120 = 0
         self.raise_samples = 0
         self.check_call_samples = 0
         self.fold_samples = 0
@@ -121,21 +112,21 @@ class ActionStats:
         total = self.total_samples()
         return self.fold_samples / total if total > 0 else 1 / 3
 
-    def bet_0_33_probability(self) -> float:
+    def bet_0_40_probability(self) -> float:
         total = self.bet_samples
-        return self.bet_0_33 / total if total > 0 else 0.25
+        return self.bet_0_40 / total if total > 0 else 0.25
 
-    def bet_33_66_probability(self) -> float:
+    def bet_40_80_probability(self) -> float:
         total = self.bet_samples
-        return self.bet_33_66 / total if total > 0 else 0.25
+        return self.bet_40_80 / total if total > 0 else 0.25
 
-    def bet_66_100_probability(self) -> float:
+    def bet_80_120_probability(self) -> float:
         total = self.bet_samples
-        return self.bet_66_100 / total if total > 0 else 0.25
+        return self.bet_80_120 / total if total > 0 else 0.25
 
-    def bet_over_100_probability(self) -> float:
+    def bet_over_120_probability(self) -> float:
         total = self.bet_samples
-        return self.bet_over_100 / total if total > 0 else 0.25
+        return self.bet_over_120 / total if total > 0 else 0.25
 
     def __str__(self) -> str:
         return (

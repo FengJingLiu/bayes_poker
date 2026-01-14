@@ -100,16 +100,16 @@ def _map_pokerkit_action(action_str: str) -> ActionType:
 
 def calculate_bet_sizing_category(bet_amount: int, pot_size: int) -> str:
     if pot_size <= 0:
-        return BetSizingCategory.BET_OVER_100
+        return BetSizingCategory.BET_OVER_120
     ratio = bet_amount / pot_size
-    if ratio < 0.33:
-        return BetSizingCategory.BET_0_33
-    elif ratio < 0.66:
-        return BetSizingCategory.BET_33_66
-    elif ratio < 1.0:
-        return BetSizingCategory.BET_66_100
+    if ratio < 0.40:
+        return BetSizingCategory.BET_0_40
+    elif ratio < 0.80:
+        return BetSizingCategory.BET_40_80
+    elif ratio < 1.20:
+        return BetSizingCategory.BET_80_120
     else:
-        return BetSizingCategory.BET_OVER_100
+        return BetSizingCategory.BET_OVER_120
 
 
 def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]:
