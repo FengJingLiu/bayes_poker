@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""批量解析 GGPoker 手牌历史文件。"""
+"""批量解析 GGPoker 手牌历史文件。
+
+该模块提供了一个命令行工具，用于批量处理 GGPoker 的手牌历史文本文件。
+支持将解析结果保存为 .phhs 文件或导入到 SQLite 数据库中。
+
+使用示例:
+    1. 解析目录下的所有文件并保存为 .phhs:
+        python scripts/batch_parse_handhistory.py data/input_dir -o data/output_dir
+
+    2. 使用多进程解析文件到 SQLite 数据库:
+        python scripts/batch_parse_handhistory.py data/input_dir --sqlite data/poker.db -w 4
+
+    3. 递归解析目录并指定批量写入大小:
+        python scripts/batch_parse_handhistory.py data/input_dir --sqlite data/poker.db -r --batch-size 1000
+"""
 
 from __future__ import annotations
 
@@ -11,7 +25,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -33,6 +47,17 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class ParseResult:
+    """解析结果数据类。
+
+    Attributes:
+        file_path: 输入文件的路径。
+        success_count: 成功解析的手牌数量。
+        total_count: 文件中的总手牌数量。
+        output_path: 解析结果的输出路径（如果成功）。
+        skipped: 是否跳过了解析。
+        skip_reason: 跳过解析的原因。
+        error: 如果解析失败，存储错误消息。
+    """
     file_path: Path
     success_count: int
     total_count: int
@@ -44,13 +69,34 @@ class ParseResult:
 
 @dataclass
 class ConvertResult:
+    """转换结果数据类。
+
+    Attributes:
+        file_path: 输入文件的路径。
+        records: 转换后的手牌记录列表。
+        total_count: 文件中的总手牌数量。
+        error: 如果转换失败，存储错误消息。
+    """
     file_path: Path
-    records: list
+    records: list[dict[str, Any]]
     total_count: int
     error: str | None = None
 
 
 def get_input_files(input_path: Path, recursive: bool = False) -> list[Path]:
+    """获取输入路径下的所有手牌历史文件。
+
+    Args:
+        input_path: 输入的文件或目录路径。
+        recursive: 是否递归搜索子目录。
+
+    Returns:
+        包含所有符合条件的文件路径列表。
+
+    Raises:
+        FileNotFoundError: 如果输入路径不存在。
+        ValueError: 如果输入路径无效。
+    """
     if not input_path.exists():
         raise FileNotFoundError(f"输入路径不存在: {input_path}")
 
@@ -69,6 +115,16 @@ def generate_output_path(
     output_dir: Path,
     input_base: Path | None = None,
 ) -> Path:
+    """生成解析结果的输出路径。
+
+    Args:
+        input_file: 输入文件路径。
+        output_dir: 输出目录路径。
+        input_base: 输入的基础目录，用于保持目录结构。
+
+    Returns:
+        生成的输出文件路径。
+    """
     if input_base and input_base.is_dir():
         relative = input_file.relative_to(input_base)
         output_path = output_dir / relative.with_suffix(".phhs")
@@ -79,6 +135,14 @@ def generate_output_path(
 
 
 def is_already_parsed(output_path: Path) -> tuple[bool, str | None]:
+    """检查文件是否已经被解析过。
+
+    Args:
+        output_path: 输出文件路径。
+
+    Returns:
+        一个元组 (是否已解析, 理由)。
+    """
     try:
         if output_path.exists():
             size = output_path.stat().st_size
@@ -95,6 +159,15 @@ def parse_single_file(
     input_file: Path,
     output_path: Path,
 ) -> ParseResult:
+    """解析单个手牌历史文件并保存。
+
+    Args:
+        input_file: 输入文件路径。
+        output_path: 输出文件路径。
+
+    Returns:
+        解析结果对象。
+    """
     try:
         configure_logging(FAILED_HANDS_LOG_PATH)
 
@@ -122,6 +195,14 @@ def parse_single_file(
 
 
 def parse_and_convert_file(input_file: Path) -> ConvertResult:
+    """解析单个文件并转换为数据库记录。
+
+    Args:
+        input_file: 输入文件路径。
+
+    Returns:
+        转换结果对象。
+    """
     try:
         configure_logging(FAILED_HANDS_LOG_PATH)
         hand_histories, total = parse_hand_histories(input_file)
@@ -159,6 +240,15 @@ def parse_single_file_to_sqlite(
     input_file: Path,
     db_path: Path,
 ) -> ParseResult:
+    """解析单个文件并将结果保存到 SQLite 数据库。
+
+    Args:
+        input_file: 输入文件路径。
+        db_path: SQLite 数据库路径。
+
+    Returns:
+        解析结果对象。
+    """
     try:
         configure_logging(FAILED_HANDS_LOG_PATH)
 
@@ -202,6 +292,16 @@ def parse_files_sequential(
     output_dir: Path,
     input_base: Path | None = None,
 ) -> list[ParseResult]:
+    """顺序解析文件列表。
+
+    Args:
+        files: 待处理的文件路径列表。
+        output_dir: 输出目录路径。
+        input_base: 输入的基础目录。
+
+    Returns:
+        所有文件的解析结果列表。
+    """
     results: list[ParseResult] = []
 
     for i, input_file in enumerate(files, 1):
@@ -250,6 +350,17 @@ def parse_files_parallel(
     input_base: Path | None = None,
     max_workers: int | None = None,
 ) -> list[ParseResult]:
+    """并发解析文件列表。
+
+    Args:
+        files: 待处理的文件路径列表。
+        output_dir: 输出目录路径。
+        input_base: 输入的基础目录。
+        max_workers: 并发工作进程数。
+
+    Returns:
+        所有文件的解析结果列表。
+    """
     if max_workers is None:
         max_workers = cpu_count()
 
@@ -324,6 +435,17 @@ def parse_files_to_sqlite_parallel(
     max_workers: int | None = None,
     batch_size: int = 5000,
 ) -> list[ParseResult]:
+    """并发解析文件并将结果批量写入 SQLite 数据库。
+
+    Args:
+        files: 待处理的文件路径列表。
+        db_path: SQLite 数据库路径。
+        max_workers: 并发解析进程数。
+        batch_size: 数据库批量写入大小。
+
+    Returns:
+        所有文件的解析结果列表。
+    """
     if max_workers is None:
         max_workers = min(cpu_count(), 8)
 
@@ -332,7 +454,7 @@ def parse_files_to_sqlite_parallel(
     LOGGER.info("启动 %d 个解析进程...", max_workers)
 
     results: list[ParseResult] = []
-    all_records: list = []
+    all_records: list[dict[str, Any]] = []
     total_parsed = 0
     total_files = len(files)
 
@@ -401,6 +523,12 @@ def parse_files_to_sqlite_parallel(
 
 
 def print_summary(results: list[ParseResult], elapsed: float) -> None:
+    """打印解析统计摘要。
+
+    Args:
+        results: 所有文件的解析结果列表。
+        elapsed: 总耗时（秒）。
+    """
     total_files = len(results)
     skipped_files = sum(1 for r in results if r.skipped)
     success_files = sum(
@@ -443,6 +571,11 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
 
 
 def setup_logging(verbose: bool = False) -> None:
+    """配置日志系统。
+
+    Args:
+        verbose: 是否启用详细日志输出。
+    """
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
@@ -452,6 +585,11 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """解析命令行参数。
+
+    Returns:
+        解析后的参数命名空间。
+    """
     parser = argparse.ArgumentParser(
         description="批量解析 GGPoker 手牌历史文件",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -505,6 +643,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """主入口函数。
+
+    Returns:
+        退出码（0 表示成功，1 表示有错误）。
+    """
     args = parse_args()
     setup_logging(args.verbose)
 
@@ -560,6 +703,15 @@ def parse_files_to_sqlite(
     files: list[Path],
     db_path: Path,
 ) -> list[ParseResult]:
+    """顺序解析文件并将结果保存到 SQLite 数据库。
+
+    Args:
+        files: 待处理的文件路径列表。
+        db_path: SQLite 数据库路径。
+
+    Returns:
+        所有文件的解析结果列表。
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     results: list[ParseResult] = []
