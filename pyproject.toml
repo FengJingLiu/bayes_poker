@@ -12,6 +12,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
 markers = [
     "large_sample: 依赖本地手牌数据集的大样本回归测试（默认跳过）",
 ]
