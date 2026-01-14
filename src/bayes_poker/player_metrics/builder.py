@@ -28,8 +28,8 @@ class ParsedAction:
         """计算下注/加注量占底池的百分比。
 
         - BET: amount / pot_size_before_action
-        - RAISE: (amount - call_amount) / (pot_size_before_action + 2 * call_amount)
-          即加注增量 / 跟注后总底池
+        - RAISE: (amount - call_amount) / (pot_size_before_action + call_amount)
+          即加注增量 / 跟注后总底池（pot_size_before_action 已包含对手下注）
         - 其他行动类型返回 None
         """
         if self.pot_size_before_action <= 0:
@@ -40,7 +40,7 @@ class ParsedAction:
             raise_increment = self.amount - self.call_amount
             if raise_increment <= 0:
                 return None
-            pot_after_call = self.pot_size_before_action + 2 * self.call_amount
+            pot_after_call = self.pot_size_before_action + self.call_amount
             return raise_increment / pot_after_call
         return None
 
