@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
-from .enums import ActionType, Position, Street, TableType
+from .enums import ActionType, Position, PreflopPotType, Street, TableType
 
 
 @dataclass(frozen=True)
@@ -134,6 +134,8 @@ class PostFlopParams:
     num_bets: int
     in_position: bool
     num_players: int
+    preflop_pot_type: PreflopPotType = PreflopPotType.SINGLE_RAISED
+    is_preflop_aggressor: bool = False
 
     def forced_action(self) -> bool:
         return self.num_bets > 0
@@ -153,22 +155,24 @@ class PostFlopParams:
         if self.table_type == TableType.HEADS_UP:
             assert self.street in (Street.FLOP, Street.TURN, Street.RIVER)
 
-            index = 0
+            base_index = 0
             if self.street == Street.TURN:
-                index = 15
+                base_index = 15
             elif self.street == Street.RIVER:
-                index = 30
+                base_index = 30
 
             if self.in_position:
                 if self.num_bets < 2:
-                    index += prev_action_mod if self.num_bets == 0 else (3 + prev_action_mod)
+                    base_index += prev_action_mod if self.num_bets == 0 else (3 + prev_action_mod)
                 else:
-                    index += 6 if self.num_bets == 2 else 7
+                    base_index += 6 if self.num_bets == 2 else 7
             else:
-                index += 8
-                index += prev_action_mod if self.num_bets == 0 else (min(self.num_bets, 4) + 2)
+                base_index += 8
+                base_index += prev_action_mod if self.num_bets == 0 else (min(self.num_bets, 4) + 2)
 
-            return index
+            pot_type_val = int(self.preflop_pot_type)
+            aggressor_val = 1 if self.is_preflop_aggressor else 0
+            return base_index + (45 * pot_type_val) + (45 * 3 * aggressor_val)
 
         a0 = -1
         if self.street == Street.FLOP:
@@ -195,86 +199,100 @@ class PostFlopParams:
 
         a5 = 0 if self.num_players <= 2 else 1
 
-        return a5 + (2 * a4) + (4 * a3) + (12 * prev_action_mod) + (36 * a1) + (72 * a0)
+        pot_type_val = int(self.preflop_pot_type)
+        aggressor_val = 1 if self.is_preflop_aggressor else 0
+
+        base_idx = a5 + (2 * a4) + (4 * a3) + (12 * prev_action_mod) + (36 * a1) + (72 * a0)
+        return base_idx + (216 * pot_type_val) + (216 * 3 * aggressor_val)
 
     @staticmethod
     @lru_cache(maxsize=4)
     def get_all_params(table_type: TableType) -> tuple[PostFlopParams, ...]:
         all_params: list[PostFlopParams] = []
         streets = [Street.FLOP, Street.TURN, Street.RIVER]
+        pot_types = [PreflopPotType.LIMPED, PreflopPotType.SINGLE_RAISED, PreflopPotType.THREE_BET_PLUS]
 
         if table_type == TableType.HEADS_UP:
-            for street in streets:
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.RAISE, 0, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.CALL, 0, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.CHECK, 0, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.RAISE, 1, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.CALL, 1, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.CHECK, 1, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 1, ActionType.RAISE, 2, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 1, ActionType.RAISE, 3, True, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.RAISE, 0, False, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.CALL, 0, False, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 0, ActionType.CHECK, 0, False, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 1, ActionType.CHECK, 1, False, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 1, ActionType.RAISE, 2, False, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 2, ActionType.RAISE, 3, False, 2)
-                )
-                all_params.append(
-                    PostFlopParams(table_type, street, 2, ActionType.RAISE, 4, False, 2)
-                )
+            for pot_type in pot_types:
+                for is_aggressor in (False, True):
+                    for street in streets:
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.RAISE, 0, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.CALL, 0, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.CHECK, 0, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.RAISE, 1, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.CALL, 1, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.CHECK, 1, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 1, ActionType.RAISE, 2, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 1, ActionType.RAISE, 3, True, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.RAISE, 0, False, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.CALL, 0, False, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 0, ActionType.CHECK, 0, False, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 1, ActionType.CHECK, 1, False, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 1, ActionType.RAISE, 2, False, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 2, ActionType.RAISE, 3, False, 2, pot_type, is_aggressor)
+                        )
+                        all_params.append(
+                            PostFlopParams(table_type, street, 2, ActionType.RAISE, 4, False, 2, pot_type, is_aggressor)
+                        )
         else:
             prev_actions = [ActionType.RAISE, ActionType.CALL, ActionType.CHECK]
-            for street in streets:
-                for round_num in range(2):
-                    for prev_action in prev_actions:
-                        for num_bets in range(3):
-                            for in_pos in (False, True):
-                                for num_pl in (2, 3):
-                                    all_params.append(
-                                        PostFlopParams(
-                                            table_type,
-                                            street,
-                                            round_num,
-                                            prev_action,
-                                            num_bets,
-                                            in_pos,
-                                            num_pl,
-                                        )
-                                    )
+            for pot_type in pot_types:
+                for is_aggressor in (False, True):
+                    for street in streets:
+                        for round_num in range(2):
+                            for prev_action in prev_actions:
+                                for num_bets in range(3):
+                                    for in_pos in (False, True):
+                                        for num_pl in (2, 3):
+                                            all_params.append(
+                                                PostFlopParams(
+                                                    table_type,
+                                                    street,
+                                                    round_num,
+                                                    prev_action,
+                                                    num_bets,
+                                                    in_pos,
+                                                    num_pl,
+                                                    pot_type,
+                                                    is_aggressor,
+                                                )
+                                            )
 
         return tuple(all_params)
 
     def __str__(self) -> str:
         pos_str = "inp" if self.in_position else "oop"
+        pot_type_str = self.preflop_pot_type.name.lower()
+        aggressor_str = "aggr" if self.is_preflop_aggressor else "caller"
         return (
             f"{self.street.name}, round: {self.round} {self.prev_action.name}, "
-            f"bets: {self.num_bets}, {pos_str}, pl: {self.num_players}"
+            f"bets: {self.num_bets}, {pos_str}, pl: {self.num_players}, "
+            f"pot: {pot_type_str}, {aggressor_str}"
         )

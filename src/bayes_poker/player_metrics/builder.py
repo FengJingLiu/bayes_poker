@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from pokerkit import HandHistory
 
-from .enums import ActionType, Position, Street, TableType
+from .enums import ActionType, Position, PreflopPotType, Street, TableType
 from .models import ActionStats, BetSizingCategory, PlayerStats, StatValue
 from .params import PostFlopParams, PreFlopParams
 
@@ -224,6 +224,9 @@ def increment_player_stats(
     num_callers = 0
     current_street = Street.PREFLOP
 
+    preflop_raise_count = 0
+    preflop_aggressor: str | None = None
+
     for action in extract_actions_from_hand_history(hh):
         if action.street != current_street:
             current_street = action.street
@@ -279,6 +282,8 @@ def increment_player_stats(
             if action.action_type in (ActionType.RAISE, ActionType.BET, ActionType.ALL_IN):
                 num_raises += 1
                 num_callers = 0
+                preflop_raise_count += 1
+                preflop_aggressor = action.player_name
             elif action.action_type == ActionType.CALL:
                 num_callers += 1
 
@@ -290,6 +295,15 @@ def increment_player_stats(
                 current_num_players = len(active_players) + len(all_in_list)
                 in_pos = is_in_position(active_players, player_name, current_num_players)
 
+                if preflop_raise_count == 0:
+                    pot_type = PreflopPotType.LIMPED
+                elif preflop_raise_count == 1:
+                    pot_type = PreflopPotType.SINGLE_RAISED
+                else:
+                    pot_type = PreflopPotType.THREE_BET_PLUS
+
+                is_aggressor = (preflop_aggressor == player_name)
+
                 postflop_params = PostFlopParams(
                     table_type=table_type,
                     street=current_street,
@@ -298,6 +312,8 @@ def increment_player_stats(
                     num_bets=min(num_raises, 2),
                     in_position=in_pos,
                     num_players=min(current_num_players, 3),
+                    preflop_pot_type=pot_type,
+                    is_preflop_aggressor=is_aggressor,
                 )
 
                 try:

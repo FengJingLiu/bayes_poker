@@ -72,3 +72,16 @@ class ActionType(IntEnum):
             ActionType.RAISE,
             ActionType.ALL_IN,
         )
+
+
+class PreflopPotType(IntEnum):
+    """翻前底池类型，根据翻前加注次数确定。
+
+    - LIMPED: 无人加注的 limp 底池（0次加注）
+    - SINGLE_RAISED: 单次加注底池/Open底池（1次加注）
+    - THREE_BET_PLUS: 3Bet及以上底池（2次及以上加注）
+    """
+
+    LIMPED = 0
+    SINGLE_RAISED = 1
+    THREE_BET_PLUS = 2

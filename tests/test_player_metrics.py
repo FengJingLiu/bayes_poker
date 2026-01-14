@@ -1,6 +1,6 @@
 import pytest
 
-from bayes_poker.player_metrics.enums import ActionType, Position, Street, TableType
+from bayes_poker.player_metrics.enums import ActionType, Position, PreflopPotType, Street, TableType
 from bayes_poker.player_metrics.models import ActionStats, BetSizingCategory, PlayerStats, StatValue
 from bayes_poker.player_metrics.params import PostFlopParams, PreFlopParams
 from bayes_poker.player_metrics.builder import (
@@ -156,11 +156,11 @@ class TestPreFlopParams:
 class TestPostFlopParams:
     def test_get_all_params_six_max_count(self):
         params = PostFlopParams.get_all_params(TableType.SIX_MAX)
-        assert len(params) == 216
+        assert len(params) == 1296
 
     def test_get_all_params_heads_up_count(self):
         params = PostFlopParams.get_all_params(TableType.HEADS_UP)
-        assert len(params) == 45
+        assert len(params) == 270
 
     def test_to_index_flop_first_action(self):
         params = PostFlopParams(
@@ -171,6 +171,8 @@ class TestPostFlopParams:
             num_bets=0,
             in_position=False,
             num_players=2,
+            preflop_pot_type=PreflopPotType.LIMPED,
+            is_preflop_aggressor=False,
         )
         assert params.to_index() == 0
 
@@ -186,7 +188,7 @@ class TestPlayerStats:
         assert stats.player_name == "Hero"
         assert stats.table_type == TableType.SIX_MAX
         assert len(stats.preflop_stats) == 30
-        assert len(stats.postflop_stats) == 216
+        assert len(stats.postflop_stats) == 1296
         assert stats.vpip.total == 0
 
     def test_calculate_pfr_empty(self):
