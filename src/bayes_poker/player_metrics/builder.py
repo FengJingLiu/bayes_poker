@@ -61,7 +61,9 @@ def get_player_position(player_index: int, num_players: int) -> Position:
     return Position.EMPTY
 
 
-def is_in_position(active_players: list[str], player_name: str, num_players: int) -> bool:
+def is_in_position(
+    active_players: list[str], player_name: str, num_players: int
+) -> bool:
     if not active_players:
         return False
     if num_players == 2:
@@ -173,9 +175,23 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
             except ValueError:
                 pass
 
-        action_type = _map_pokerkit_action(action_code)
-        if action_type == ActionType.NO_ACTION:
-            continue
+        action_lower = action_code.lower()
+        if action_lower == "f":
+            action_type = ActionType.FOLD
+        elif action_lower == "cc":
+            old_bet = player_bets.get(player_name, 0)
+            if current_bet <= old_bet:
+                action_type = ActionType.CHECK
+            else:
+                action_type = ActionType.CALL
+                if amount <= 0:
+                    amount = current_bet
+        else:
+            action_type = _map_pokerkit_action(action_code)
+            if action_type == ActionType.NO_ACTION:
+                continue
+            if action_type == ActionType.CALL and amount <= 0 and current_bet > 0:
+                amount = current_bet
 
         current_pot_size = pot_size
         call_amount = current_bet
@@ -189,7 +205,12 @@ def extract_actions_from_hand_history(hh: HandHistory) -> Iterator[ParsedAction]
             call_amount=call_amount,
         )
 
-        if action_type in (ActionType.CALL, ActionType.BET, ActionType.RAISE, ActionType.ALL_IN):
+        if action_type in (
+            ActionType.CALL,
+            ActionType.BET,
+            ActionType.RAISE,
+            ActionType.ALL_IN,
+        ):
             old_bet = player_bets.get(player_name, 0)
             new_contribution = amount - old_bet
             if new_contribution > 0:
@@ -239,7 +260,9 @@ def increment_player_stats(
 
             if action.player_name == player_name:
                 current_num_players = len(active_players) + len(all_in_list)
-                in_pos = is_in_position(active_players, player_name, current_num_players)
+                in_pos = is_in_position(
+                    active_players, player_name, current_num_players
+                )
 
                 preflop_params = PreFlopParams(
                     table_type=table_type,
@@ -279,7 +302,11 @@ def increment_player_stats(
                         active_players.remove(action.player_name)
                         all_in_list.append(action.player_name)
 
-            if action.action_type in (ActionType.RAISE, ActionType.BET, ActionType.ALL_IN):
+            if action.action_type in (
+                ActionType.RAISE,
+                ActionType.BET,
+                ActionType.ALL_IN,
+            ):
                 num_raises += 1
                 num_callers = 0
                 preflop_raise_count += 1
@@ -293,7 +320,9 @@ def increment_player_stats(
 
             if action.player_name == player_name:
                 current_num_players = len(active_players) + len(all_in_list)
-                in_pos = is_in_position(active_players, player_name, current_num_players)
+                in_pos = is_in_position(
+                    active_players, player_name, current_num_players
+                )
 
                 if preflop_raise_count == 0:
                     pot_type = PreflopPotType.LIMPED
@@ -302,7 +331,7 @@ def increment_player_stats(
                 else:
                     pot_type = PreflopPotType.THREE_BET_PLUS
 
-                is_aggressor = (preflop_aggressor == player_name)
+                is_aggressor = preflop_aggressor == player_name
 
                 postflop_params = PostFlopParams(
                     table_type=table_type,
@@ -345,7 +374,11 @@ def increment_player_stats(
                         active_players.remove(action.player_name)
                         all_in_list.append(action.player_name)
 
-            if action.action_type in (ActionType.RAISE, ActionType.BET, ActionType.ALL_IN):
+            if action.action_type in (
+                ActionType.RAISE,
+                ActionType.BET,
+                ActionType.ALL_IN,
+            ):
                 num_raises += 1
 
     player_stats.vpip.add_sample(player_put_money_in_pot)
