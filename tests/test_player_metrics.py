@@ -207,6 +207,134 @@ class TestPlayerStats:
         assert positive == 0
         assert total == 0
 
+    def test_calculate_pfr_with_data(self):
+        stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
+        all_preflop = PreFlopParams.get_all_params(TableType.SIX_MAX)
+        
+        for i, params in enumerate(all_preflop):
+            if params.num_raises == 0:
+                stats.preflop_stats[i].raise_samples = 3
+                stats.preflop_stats[i].check_call_samples = 5
+                stats.preflop_stats[i].fold_samples = 2
+        
+        positive, total = calculate_pfr(stats)
+        num_zero_raise_params = sum(1 for p in all_preflop if p.num_raises == 0)
+        assert positive == 3 * num_zero_raise_params
+        assert total == 10 * num_zero_raise_params
+
+    def test_calculate_aggression_with_data(self):
+        stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
+        all_postflop = PostFlopParams.get_all_params(TableType.SIX_MAX)
+        
+        forced_count = 0
+        unforced_count = 0
+        for i, params in enumerate(all_postflop):
+            if params.num_bets > 0:
+                stats.postflop_stats[i].raise_samples = 4
+                stats.postflop_stats[i].check_call_samples = 3
+                stats.postflop_stats[i].fold_samples = 3
+                forced_count += 1
+            else:
+                stats.postflop_stats[i].raise_samples = 2
+                stats.postflop_stats[i].check_call_samples = 6
+                stats.postflop_stats[i].fold_samples = 2
+                unforced_count += 1
+        
+        positive, total = calculate_aggression(stats)
+        expected_raise = 4 * forced_count + 2 * unforced_count
+        expected_total = expected_raise + 3 * forced_count
+        assert positive == expected_raise
+        assert total == expected_total
+
+    def test_calculate_wtp_with_data(self):
+        stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
+        all_postflop = PostFlopParams.get_all_params(TableType.SIX_MAX)
+        
+        forced_count = 0
+        for i, params in enumerate(all_postflop):
+            if params.num_bets > 0:
+                stats.postflop_stats[i].raise_samples = 2
+                stats.postflop_stats[i].check_call_samples = 5
+                stats.postflop_stats[i].fold_samples = 3
+                forced_count += 1
+        
+        positive, total = calculate_wtp(stats)
+        expected_positive = (2 + 5) * forced_count
+        expected_total = (2 + 5 + 3) * forced_count
+        assert positive == expected_positive
+        assert total == expected_total
+
+    def test_vpip_calculation(self):
+        stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
+        
+        for _ in range(7):
+            stats.vpip.add_sample(True)
+        for _ in range(3):
+            stats.vpip.add_sample(False)
+        
+        assert stats.vpip.positive == 7
+        assert stats.vpip.total == 10
+        assert stats.vpip.to_float() == pytest.approx(0.7)
+
+    def test_complex_player_stats(self):
+        stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
+        all_preflop = PreFlopParams.get_all_params(TableType.SIX_MAX)
+        all_postflop = PostFlopParams.get_all_params(TableType.SIX_MAX)
+        
+        for i, params in enumerate(all_preflop):
+            if params.num_raises == 0:
+                if params.position == Position.BUTTON:
+                    stats.preflop_stats[i].raise_samples = 8
+                    stats.preflop_stats[i].fold_samples = 2
+                elif params.position == Position.SMALL_BLIND:
+                    stats.preflop_stats[i].raise_samples = 4
+                    stats.preflop_stats[i].check_call_samples = 3
+                    stats.preflop_stats[i].fold_samples = 3
+                else:
+                    stats.preflop_stats[i].raise_samples = 2
+                    stats.preflop_stats[i].check_call_samples = 3
+                    stats.preflop_stats[i].fold_samples = 5
+        
+        for i, params in enumerate(all_postflop):
+            if params.num_bets > 0:
+                if params.in_position:
+                    stats.postflop_stats[i].raise_samples = 5
+                    stats.postflop_stats[i].check_call_samples = 3
+                    stats.postflop_stats[i].fold_samples = 2
+                else:
+                    stats.postflop_stats[i].raise_samples = 2
+                    stats.postflop_stats[i].check_call_samples = 4
+                    stats.postflop_stats[i].fold_samples = 4
+            else:
+                if params.in_position:
+                    stats.postflop_stats[i].raise_samples = 6
+                    stats.postflop_stats[i].check_call_samples = 4
+                else:
+                    stats.postflop_stats[i].raise_samples = 3
+                    stats.postflop_stats[i].check_call_samples = 7
+        
+        for _ in range(25):
+            stats.vpip.add_sample(True)
+        for _ in range(75):
+            stats.vpip.add_sample(False)
+        
+        pfr_pos, pfr_total = calculate_pfr(stats)
+        assert pfr_pos > 0
+        assert pfr_total > 0
+        assert 0 < pfr_pos / pfr_total < 1
+        
+        agg_pos, agg_total = calculate_aggression(stats)
+        assert agg_pos > 0
+        assert agg_total > 0
+        assert 0 < agg_pos / agg_total < 1
+        
+        wtp_pos, wtp_total = calculate_wtp(stats)
+        assert wtp_pos > 0
+        assert wtp_total > 0
+        assert 0 < wtp_pos / wtp_total < 1
+        
+        assert stats.vpip.to_float() == pytest.approx(0.25)
+
 
 class TestBetSizingCategory:
     def test_bet_sizing_small_bet(self):
