@@ -11,5 +11,13 @@ wheels/
 # Virtual environments
 .venv
 
+# Data and logs
 data/
 logs/
+
+# Rust
+target/
+Cargo.lock
+*.so
+*.dylib
+*.dll

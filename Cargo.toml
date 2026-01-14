@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/poker_stats_rs",
+]
+resolver = "2"
