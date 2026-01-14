@@ -338,8 +338,75 @@ class PlayerStatsRepository:
         Args:
             stats_map: 玩家名称 -> PlayerStats 的字典。
         """
-        for stats in stats_map.values():
-            self.upsert_with_merge(stats)
+        if not stats_map:
+            return
+
+        stats_list = list(stats_map.values())
+        keys = [(s.player_name, int(s.table_type)) for s in stats_list]
+
+        existing_map: dict[tuple[str, int], PlayerStats] = {}
+        cursor = self.conn.cursor()
+
+        chunk_size = 450
+        for i in range(0, len(keys), chunk_size):
+            chunk_keys = keys[i : i + chunk_size]
+            conditions = " OR ".join(
+                ["(player_name = ? AND table_type = ?)"] * len(chunk_keys)
+            )
+            params = [v for k in chunk_keys for v in k]
+            cursor.execute(
+                f"""
+                SELECT player_name, table_type, vpip_positive, vpip_total,
+                       preflop_stats_json, postflop_stats_json
+                FROM player_stats
+                WHERE {conditions}
+                """,
+                params,
+            )
+            for row in cursor.fetchall():
+                ps = player_stats_from_row(dict(row))
+                existing_map[(ps.player_name, int(ps.table_type))] = ps
+
+        now = datetime.now().isoformat()
+        rows_to_upsert = []
+
+        for new_stats in stats_list:
+            key = (new_stats.player_name, int(new_stats.table_type))
+            existing = existing_map.get(key)
+            if existing:
+                merge_player_stats(existing, new_stats)
+                final = existing
+            else:
+                final = new_stats
+
+            row = player_stats_to_row(final)
+            rows_to_upsert.append((
+                row["player_name"],
+                row["table_type"],
+                row["vpip_positive"],
+                row["vpip_total"],
+                row["preflop_stats_json"],
+                row["postflop_stats_json"],
+                now,
+                now,
+            ))
+
+        cursor.executemany(
+            """
+            INSERT INTO player_stats (
+                player_name, table_type, vpip_positive, vpip_total,
+                preflop_stats_json, postflop_stats_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(player_name, table_type) DO UPDATE SET
+                vpip_positive = excluded.vpip_positive,
+                vpip_total = excluded.vpip_total,
+                preflop_stats_json = excluded.preflop_stats_json,
+                postflop_stats_json = excluded.postflop_stats_json,
+                updated_at = excluded.updated_at
+            """,
+            rows_to_upsert,
+        )
+        self.conn.commit()
 
     # ========== 统计信息 ==========
 
