@@ -18,12 +18,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from multiprocessing import cpu_count
+from multiprocessing import Lock, cpu_count
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -36,13 +38,47 @@ from bayes_poker.hand_history.parse_gg_poker import (
     parse_hand_histories,
     save_hand_histories,
 )
-from bayes_poker.storage.converter import HandHistoryConverter
-from bayes_poker.storage.repository import HandRepository
+from bayes_poker.player_metrics.serialization import compute_hand_hash
 
 if TYPE_CHECKING:
     from pokerkit.notation import HandHistory
 
 LOGGER = logging.getLogger(__name__)
+
+
+_GLOBAL_BLOOM: Any | None = None
+_GLOBAL_BLOOM_LOCK: Any | None = None
+
+
+def _require_bloomfilter() -> Any:
+    try:
+        from pybloomfilter import BloomFilter
+    except Exception as exc:
+        raise RuntimeError("未安装 pybloomfiltermmap3（import pybloomfilter 失败）") from exc
+
+    return BloomFilter
+
+
+def _init_worker_bloom_dedupe(bloom_path: str, lock: Any) -> None:
+    global _GLOBAL_BLOOM, _GLOBAL_BLOOM_LOCK
+
+    BloomFilter = _require_bloomfilter()
+    _GLOBAL_BLOOM = BloomFilter.open(bloom_path)
+    _GLOBAL_BLOOM_LOCK = lock
+
+
+def _require_sqlite_storage() -> tuple[type[Any], type[Any]]:
+    try:
+        converter_module = importlib.import_module("bayes_poker.storage.converter")
+        repository_module = importlib.import_module("bayes_poker.storage.repository")
+        HandHistoryConverter = getattr(converter_module, "HandHistoryConverter")
+        HandRepository = getattr(repository_module, "HandRepository")
+    except Exception as exc:
+        raise RuntimeError(
+            "SQLite 输出模式当前不可用：缺少 bayes_poker.storage.converter/bayes_poker.storage.repository"
+        ) from exc
+
+    return HandHistoryConverter, HandRepository
 
 
 @dataclass
@@ -62,6 +98,7 @@ class ParseResult:
     success_count: int
     total_count: int
     output_path: Path | None
+    duplicate_count: int = 0
     skipped: bool = False
     skip_reason: str | None = None
     error: str | None = None
@@ -158,6 +195,7 @@ def is_already_parsed(output_path: Path) -> tuple[bool, str | None]:
 def parse_single_file(
     input_file: Path,
     output_path: Path,
+    bloom: Any | None = None,
 ) -> ParseResult:
     """解析单个手牌历史文件并保存。
 
@@ -173,6 +211,28 @@ def parse_single_file(
 
         hand_histories, total = parse_hand_histories(input_file)
 
+        bloom_filter = bloom or _GLOBAL_BLOOM
+        duplicate_count = 0
+        if bloom_filter is not None and hand_histories:
+            hands_with_hash: list[tuple[HandHistory, str]] = [
+                (hh, compute_hand_hash(hh)) for hh in hand_histories
+            ]
+
+            if _GLOBAL_BLOOM_LOCK is not None:
+                with _GLOBAL_BLOOM_LOCK:
+                    keep = [not bloom_filter.add(h) for _, h in hands_with_hash]
+            else:
+                keep = [not bloom_filter.add(h) for _, h in hands_with_hash]
+
+            filtered: list[HandHistory] = []
+            for (hh, _h), keep_flag in zip(hands_with_hash, keep, strict=True):
+                if keep_flag:
+                    filtered.append(hh)
+                else:
+                    duplicate_count += 1
+
+            hand_histories = filtered
+
         if hand_histories:
             save_hand_histories(output_path, hand_histories)
 
@@ -181,6 +241,7 @@ def parse_single_file(
             success_count=len(hand_histories),
             total_count=total,
             output_path=output_path if hand_histories else None,
+            duplicate_count=duplicate_count,
         )
 
     except Exception as e:
@@ -214,6 +275,7 @@ def parse_and_convert_file(input_file: Path) -> ConvertResult:
                 total_count=total,
             )
 
+        HandHistoryConverter, _HandRepository = _require_sqlite_storage()
         converter = HandHistoryConverter(None)  # type: ignore
         records = []
         for hh in hand_histories:
@@ -262,9 +324,10 @@ def parse_single_file_to_sqlite(
                 output_path=None,
             )
 
+        HandHistoryConverter, HandRepository = _require_sqlite_storage()
         with HandRepository(db_path) as repo:
             converter = HandHistoryConverter(repo)
-            success, failed = converter.batch_convert_and_save(
+            success, _failed = converter.batch_convert_and_save(
                 hand_histories,
                 source=str(input_file),
             )
@@ -291,6 +354,7 @@ def parse_files_sequential(
     files: list[Path],
     output_dir: Path,
     input_base: Path | None = None,
+    bloom: Any | None = None,
 ) -> list[ParseResult]:
     """顺序解析文件列表。
 
@@ -330,7 +394,7 @@ def parse_files_sequential(
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         LOGGER.info("解析 [%d/%d]: %s", i, len(files), input_file.name)
-        result = parse_single_file(input_file, output_path)
+        result = parse_single_file(input_file, output_path, bloom=bloom)
         results.append(result)
 
         LOGGER.info(
@@ -349,6 +413,8 @@ def parse_files_parallel(
     output_dir: Path,
     input_base: Path | None = None,
     max_workers: int | None = None,
+    dedupe_bloom_path: Path | None = None,
+    dedupe_lock: Any | None = None,
 ) -> list[ParseResult]:
     """并发解析文件列表。
 
@@ -395,7 +461,48 @@ def parse_files_parallel(
 
     LOGGER.info("启动 %d 个工作进程...", max_workers)
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    if dedupe_bloom_path is None:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {
+                executor.submit(parse_single_file, input_file, output_path): input_file
+                for input_file, output_path in tasks
+            }
+
+            for i, future in enumerate(as_completed(future_to_file), 1):
+                input_file = future_to_file[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    LOGGER.info(
+                        "完成 [%d/%d]: %s - %d/%d 手成功",
+                        i,
+                        len(tasks),
+                        input_file.name,
+                        result.success_count,
+                        result.total_count,
+                    )
+                except Exception as e:
+                    LOGGER.exception("进程执行失败: %s", input_file)
+                    results.append(
+                        ParseResult(
+                            file_path=input_file,
+                            success_count=0,
+                            total_count=0,
+                            output_path=None,
+                            error=str(e),
+                        )
+                    )
+
+        return results
+
+    if dedupe_lock is None:
+        raise ValueError("启用去重时必须提供 dedupe_lock")
+
+    with ProcessPoolExecutor(
+        max_workers=max_workers,
+        initializer=_init_worker_bloom_dedupe,
+        initargs=(str(dedupe_bloom_path), dedupe_lock),
+    ) as executor:
         future_to_file = {
             executor.submit(parse_single_file, input_file, output_path): input_file
             for input_file, output_path in tasks
@@ -511,6 +618,7 @@ def parse_files_to_sqlite_parallel(
                 dups,
             )
 
+        _HandHistoryConverter, HandRepository = _require_sqlite_storage()
         with HandRepository(db_path, wal_mode=True) as repo:
             success, duplicates = repo.insert_hands_batch(
                 all_records,
@@ -539,6 +647,8 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
     failed_files = sum(1 for r in results if (not r.skipped) and r.error is not None)
     total_hands = sum(r.total_count for r in results)
     success_hands = sum(r.success_count for r in results)
+    total_duplicates = sum(r.duplicate_count for r in results)
+    failed_hands = total_hands - success_hands - total_duplicates
 
     print("\n" + "=" * 60)
     print("                    解析摘要")
@@ -550,10 +660,13 @@ def print_summary(results: list[ParseResult], elapsed: float) -> None:
     print("-" * 60)
     print(f"  手牌总数:     {total_hands}")
     print(f"  成功解析:     {success_hands}")
-    print(f"  解析失败:     {total_hands - success_hands}")
+    if total_duplicates:
+        print(f"  去重跳过:     {total_duplicates}")
+    print(f"  解析失败:     {failed_hands}")
+    effective_total = total_hands - total_duplicates
     print(
-        f"  成功率:       {success_hands / total_hands * 100:.2f}%"
-        if total_hands
+        f"  成功率:       {success_hands / effective_total * 100:.2f}%"
+        if effective_total > 0
         else "  成功率:       N/A"
     )
     print("-" * 60)
@@ -639,6 +752,30 @@ def parse_args() -> argparse.Namespace:
         help="批量写入大小 (默认: 5000)",
     )
 
+    parser.add_argument(
+        "--dedupe",
+        action="store_true",
+        help="生成 .phhs 时启用近似全局去重（Bloom Filter）",
+    )
+    parser.add_argument(
+        "--dedupe-capacity",
+        type=int,
+        default=100_000_000,
+        help="布隆过滤器期望手牌数 (默认: 100000000)",
+    )
+    parser.add_argument(
+        "--dedupe-error-rate",
+        type=float,
+        default=0.01,
+        help="布隆过滤器误判率 (默认: 0.01)",
+    )
+    parser.add_argument(
+        "--dedupe-bloom-path",
+        type=Path,
+        default=None,
+        help="布隆过滤器 mmap 文件路径（默认在输出目录内创建）",
+    )
+
     return parser.parse_args()
 
 
@@ -667,30 +804,93 @@ def main() -> int:
 
     start_time = time.time()
 
+    bloom_local: Any | None = None
+    dedupe_bloom_path: Path | None = None
+    dedupe_lock: Any | None = None
+
+    if args.dedupe:
+        if args.sqlite:
+            LOGGER.warning("当前启用 --sqlite 时忽略 --dedupe")
+        else:
+            BloomFilter = _require_bloomfilter()
+            args.output.mkdir(parents=True, exist_ok=True)
+
+            if args.dedupe_bloom_path is None:
+                dedupe_path = args.output / "hand_hashes.bloom"
+            else:
+                dedupe_path = args.dedupe_bloom_path
+
+            dedupe_path.parent.mkdir(parents=True, exist_ok=True)
+
+            bloom_path_str = str(dedupe_path)
+            if dedupe_path.exists():
+                bf = BloomFilter.open(bloom_path_str)
+            else:
+                bf = BloomFilter(args.dedupe_capacity, args.dedupe_error_rate, bloom_path_str)
+
+            dedupe_bloom_path = dedupe_path
+
+            if args.workers > 1:
+                bf.close()
+                dedupe_lock = Lock()
+            else:
+                bloom_local = bf
+
+            LOGGER.info(
+                "启用去重(Bloom mmap): path=%s expected=%d error_rate=%s",
+                dedupe_bloom_path,
+                args.dedupe_capacity,
+                args.dedupe_error_rate,
+            )
+
     if args.sqlite:
-        LOGGER.info("使用 SQLite 输出模式: %s", args.sqlite)
-        if args.workers > 1:
-            results = parse_files_to_sqlite_parallel(
+        try:
+            _require_sqlite_storage()
+        except RuntimeError as exc:
+            LOGGER.error(str(exc))
+            return 1
+
+    try:
+        if args.sqlite:
+            LOGGER.info("使用 SQLite 输出模式: %s", args.sqlite)
+            if args.workers > 1:
+                results = parse_files_to_sqlite_parallel(
+                    files,
+                    args.sqlite,
+                    max_workers=args.workers,
+                    batch_size=args.batch_size,
+                )
+            else:
+                results = parse_files_to_sqlite(files, args.sqlite)
+        elif args.workers > 1:
+            args.output.mkdir(parents=True, exist_ok=True)
+            LOGGER.info("使用多进程模式 (workers=%d)", args.workers)
+            results = parse_files_parallel(
                 files,
-                args.sqlite,
-                max_workers=args.workers,
-                batch_size=args.batch_size,
+                args.output,
+                input_base,
+                args.workers,
+                dedupe_bloom_path=dedupe_bloom_path,
+                dedupe_lock=dedupe_lock,
             )
         else:
-            results = parse_files_to_sqlite(files, args.sqlite)
-    elif args.workers > 1:
-        args.output.mkdir(parents=True, exist_ok=True)
-        LOGGER.info("使用多进程模式 (workers=%d)", args.workers)
-        results = parse_files_parallel(files, args.output, input_base, args.workers)
-    else:
-        args.output.mkdir(parents=True, exist_ok=True)
-        LOGGER.info("使用顺序模式")
-        results = parse_files_sequential(files, args.output, input_base)
+            args.output.mkdir(parents=True, exist_ok=True)
+            LOGGER.info("使用顺序模式")
+            results = parse_files_sequential(
+                files,
+                args.output,
+                input_base,
+                bloom=bloom_local,
+            )
+    finally:
+        if bloom_local is not None and args.workers <= 1 and args.dedupe and (not args.sqlite):
+            bloom_local.close()
 
     elapsed = time.time() - start_time
     print_summary(results, elapsed)
 
     if args.sqlite:
+        _HandHistoryConverter, HandRepository = _require_sqlite_storage()
         with HandRepository(args.sqlite) as repo:
             stats = repo.get_stats()
             print(f"\n数据库统计: 手牌={stats['hands']} 玩家={stats['players']}")
@@ -727,6 +927,7 @@ def parse_files_to_sqlite(
             result.total_count,
         )
 
+    _HandHistoryConverter, HandRepository = _require_sqlite_storage()
     with HandRepository(db_path) as repo:
         stats = repo.get_stats()
         LOGGER.info(

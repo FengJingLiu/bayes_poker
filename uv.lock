@@ -8,6 +8,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "pokerkit" },
+    { name = "pybloomfiltermmap3" },
 ]
 
 [package.dev-dependencies]
@@ -16,7 +17,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pokerkit" }]
+requires-dist = [
+    { name = "pokerkit" },
+    { name = "pybloomfiltermmap3" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.0.2" }]
@@ -64,6 +68,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d4/a1/57b400e462869f84dd4fc557c5ff1138640a72fa63e88073ec3fdc5e5044/pokerkit-0.7.1.tar.gz", hash = "sha256:f2a09bc1060e201c8cff02bb563b4d254f77201bcd39def640e0d8d951753f51", size = 109354, upload-time = "2026-01-02T07:10:04.006Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/98/a370481b208ea01ca4db78014838a85f7d0fe8ee24c3cd2ab296252a9c11/pokerkit-0.7.1-py3-none-any.whl", hash = "sha256:ca3551cce08802a67159a7f9b6b883f954d5d407087b178f1ac33bccb1671a4c", size = 113695, upload-time = "2026-01-02T07:10:02.369Z" },
+]
+
+[[package]]
+name = "pybloomfiltermmap3"
+version = "0.6.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/f3/f542895a8db1c731ceb68e2a97ba073594b133c55f7d7459d88f860e197e/pybloomfiltermmap3-0.6.3.tar.gz", hash = "sha256:d0eaaa443ee6320e4469b861a61215165f90facbc2db57226a546e04993b85dd", size = 635120, upload-time = "2025-09-14T20:13:03.12Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/98/7cb648023034a66b0f1d62723228a891f3440a05bc993e58dc0ffd18222c/pybloomfiltermmap3-0.6.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:e8b4a5229c87bcd2948f70ecfe19e115a47a30133b7a4adb62a34a1050a4eaff", size = 77599, upload-time = "2025-09-14T20:12:15.011Z" },
 ]
 
 [[package]]
