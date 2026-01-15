@@ -66,6 +66,10 @@ impl PreFlopParams {
     }
 
     pub fn get_all_params_count(table_type: TableType) -> usize {
-        if table_type == TableType::HeadsUp { 10 } else { 54 }
+        if table_type == TableType::HeadsUp {
+            10
+        } else {
+            54
+        }
     }
 }

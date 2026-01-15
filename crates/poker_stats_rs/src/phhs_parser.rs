@@ -1,7 +1,7 @@
+use crate::{Action, Hand};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
-use crate::{Action, Hand};
 
 #[derive(Debug, Deserialize)]
 struct PhhsHand {
@@ -54,7 +54,7 @@ pub fn parse_phhs_file(path: &Path) -> Vec<Hand> {
 
 fn parse_single_hand(toml_content: &str) -> Option<Hand> {
     let phhs: PhhsHand = toml::from_str(toml_content).ok()?;
-    
+
     if phhs.players.is_empty() {
         return None;
     }
@@ -65,8 +65,13 @@ fn parse_single_hand(toml_content: &str) -> Option<Hand> {
 
     let mut pot_size: i64 = antes.iter().sum::<i64>() + blinds.iter().sum::<i64>();
     let mut current_bet: i64 = blinds.iter().cloned().max().unwrap_or(0);
-    let mut player_bets: Vec<i64> = blinds.iter().cloned().chain(std::iter::repeat(0)).take(players.len()).collect();
-    
+    let mut player_bets: Vec<i64> = blinds
+        .iter()
+        .cloned()
+        .chain(std::iter::repeat(0))
+        .take(players.len())
+        .collect();
+
     let mut actions = Vec::new();
     let mut current_street = "preflop";
     let mut board_cards = 0;
@@ -144,7 +149,7 @@ fn parse_single_hand(toml_content: &str) -> Option<Hand> {
         }
 
         let call_amount = current_bet - old_bet;
-        
+
         actions.push(Action {
             street: current_street.to_string(),
             player: player_name.clone(),
@@ -169,6 +174,7 @@ fn parse_single_hand(toml_content: &str) -> Option<Hand> {
     Some(Hand {
         players,
         actions,
+        raw_actions: phhs.actions.clone(),
         blinds: blinds.clone(),
         antes: antes.clone(),
     })
@@ -178,11 +184,8 @@ pub fn load_phhs_directory(dir_path: &Path) -> Vec<Hand> {
     use walkdir::WalkDir;
 
     let mut all_hands = Vec::new();
-    
-    for entry in WalkDir::new(dir_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+
+    for entry in WalkDir::new(dir_path).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.extension().map(|e| e == "phhs").unwrap_or(false) {
             let hands = parse_phhs_file(path);

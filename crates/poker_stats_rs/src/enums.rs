@@ -49,7 +49,11 @@ pub enum Position {
 impl Position {
     pub fn from_index(idx: usize, total: usize) -> Self {
         if total == 2 {
-            if idx == 0 { Position::SmallBlind } else { Position::BigBlind }
+            if idx == 0 {
+                Position::SmallBlind
+            } else {
+                Position::BigBlind
+            }
         } else {
             match idx {
                 0 => Position::SmallBlind,
@@ -86,9 +90,12 @@ impl ActionType {
             _ => ActionType::Fold,
         }
     }
-    
+
     pub fn is_raise_action(&self) -> bool {
-        matches!(self, ActionType::Bet | ActionType::Raise | ActionType::AllIn)
+        matches!(
+            self,
+            ActionType::Bet | ActionType::Raise | ActionType::AllIn
+        )
     }
 }
 

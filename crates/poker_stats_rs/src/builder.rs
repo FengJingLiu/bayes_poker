@@ -1,13 +1,13 @@
+use crate::{
+    ActionType, BetSizingCategory, Hand, PlayerStats, Position, PostFlopParams, PreFlopParams,
+    PreflopPotType, Street, TableType,
+};
 use rayon::prelude::*;
 use std::collections::HashMap;
-use crate::{
-    ActionType, BetSizingCategory, Hand, PlayerStats, Position, PreFlopParams, 
-    PostFlopParams, PreflopPotType, Street, TableType,
-};
 
 pub fn build_player_stats_parallel(hands: &[Hand], table_type: TableType) -> Vec<PlayerStats> {
     let mut player_hands: HashMap<String, Vec<&Hand>> = HashMap::new();
-    
+
     for hand in hands {
         for player in &hand.players {
             player_hands.entry(player.clone()).or_default().push(hand);
@@ -47,10 +47,10 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
 
     let num_players = hand.players.len();
     let position = Position::from_index(player_index, num_players);
-    
+
     let mut active_players: Vec<String> = hand.players.clone();
     let mut all_in_players: Vec<String> = Vec::new();
-    
+
     let mut last_player_action = ActionType::Fold;
     let mut player_put_money_in_pot = false;
     let mut player_folded_or_allin = false;
@@ -128,7 +128,10 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
     }
 
     let pot_type = PreflopPotType::from_raise_count(preflop_raise_count);
-    let is_aggressor = preflop_aggressor.as_ref().map(|s| s == player_name).unwrap_or(false);
+    let is_aggressor = preflop_aggressor
+        .as_ref()
+        .map(|s| s == player_name)
+        .unwrap_or(false);
 
     for street in [Street::Flop, Street::Turn, Street::River] {
         if player_folded_or_allin || active_players.len() <= 1 {
@@ -163,11 +166,14 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
 
                 let idx = postflop_params.to_index();
                 if idx < stats.postflop_stats.len() {
-                    let sizing = if action_type == ActionType::Bet || action_type == ActionType::Raise {
-                        action.get_pot_percentage().map(BetSizingCategory::from_pot_percentage)
-                    } else {
-                        None
-                    };
+                    let sizing =
+                        if action_type == ActionType::Bet || action_type == ActionType::Raise {
+                            action
+                                .get_pot_percentage()
+                                .map(BetSizingCategory::from_pot_percentage)
+                        } else {
+                            None
+                        };
                     stats.postflop_stats[idx].add_sample(action_type, sizing);
                 }
 

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::{ActionType, Street};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Action {
@@ -50,6 +50,8 @@ pub struct Hand {
     pub players: Vec<String>,
     #[serde(default)]
     pub actions: Vec<Action>,
+    #[serde(default)]
+    pub raw_actions: Vec<String>,
     #[serde(default)]
     pub blinds: Vec<i64>,
     #[serde(default)]

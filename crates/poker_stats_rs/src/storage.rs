@@ -1,9 +1,15 @@
-use rusqlite::{Connection, Result, params};
 use crate::PlayerStats;
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Result};
+use std::collections::HashSet;
 
 pub struct PlayerStatsRepository {
     conn: Connection,
 }
+
+const CREATE_PROCESSED_HANDS_TABLE: &str = "CREATE TABLE IF NOT EXISTS processed_hands (\
+    hand_hash TEXT PRIMARY KEY,\
+    processed_at TEXT NOT NULL\
+)";
 
 impl PlayerStatsRepository {
     pub fn open(path: &str) -> Result<Self> {
@@ -28,6 +34,7 @@ impl PlayerStatsRepository {
             )",
             [],
         )?;
+        self.ensure_processed_hands_schema()?;
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_player_name ON player_stats(player_name)",
             [],
@@ -35,9 +42,62 @@ impl PlayerStatsRepository {
         Ok(())
     }
 
+    fn ensure_processed_hands_schema(&self) -> Result<()> {
+        let existing: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='processed_hands'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if existing.is_none() {
+            self.conn.execute(CREATE_PROCESSED_HANDS_TABLE, [])?;
+            return Ok(());
+        }
+
+        let mut stmt = self.conn.prepare("PRAGMA table_info(processed_hands)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<String>, _>>()?;
+
+        let has_hand_hash = columns.iter().any(|c| c == "hand_hash");
+        if has_hand_hash {
+            return Ok(());
+        }
+
+        let has_hand_id = columns.iter().any(|c| c == "hand_id");
+        if has_hand_id {
+            let legacy: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='processed_hands_legacy'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()?;
+
+            if legacy.is_none() {
+                self.conn.execute(
+                    "ALTER TABLE processed_hands RENAME TO processed_hands_legacy",
+                    [],
+                )?;
+            } else {
+                self.conn.execute("DROP TABLE processed_hands", [])?;
+            }
+            self.conn.execute(CREATE_PROCESSED_HANDS_TABLE, [])?;
+            return Ok(());
+        }
+
+        self.conn.execute("DROP TABLE processed_hands", [])?;
+        self.conn.execute(CREATE_PROCESSED_HANDS_TABLE, [])?;
+        Ok(())
+    }
+
     pub fn upsert(&self, stats: &PlayerStats) -> Result<()> {
         let binary_data = stats.to_binary();
-        
+
         self.conn.execute(
             "INSERT INTO player_stats (player_name, table_type, vpip_positive, vpip_total, stats_binary, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP)
@@ -59,19 +119,19 @@ impl PlayerStatsRepository {
 
     pub fn upsert_batch(&mut self, stats_list: &[PlayerStats]) -> Result<()> {
         let tx = self.conn.transaction()?;
-        
+
         for stats in stats_list {
             let existing = Self::get_existing(&tx, &stats.player_name, stats.table_type as u8)?;
-            
+
             let final_stats = if let Some(mut existing_stats) = existing {
                 existing_stats.merge(stats);
                 existing_stats
             } else {
                 stats.clone()
             };
-            
+
             let binary_data = final_stats.to_binary();
-            
+
             tx.execute(
                 "INSERT INTO player_stats (player_name, table_type, vpip_positive, vpip_total, stats_binary, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP)
@@ -89,18 +149,70 @@ impl PlayerStatsRepository {
                 ],
             )?;
         }
-        
+
         tx.commit()?;
         Ok(())
     }
 
-    fn get_existing(conn: &Connection, player_name: &str, table_type: u8) -> Result<Option<PlayerStats>> {
-        let mut stmt = conn.prepare(
-            "SELECT stats_binary FROM player_stats WHERE player_name = ?1 AND table_type = ?2"
+    pub fn get_processed_hand_hashes(&self, hand_hashes: &[String]) -> Result<HashSet<String>> {
+        if hand_hashes.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let mut processed = HashSet::new();
+        let mut chunk_start = 0;
+        let chunk_size = 900;
+
+        while chunk_start < hand_hashes.len() {
+            let chunk_end = (chunk_start + chunk_size).min(hand_hashes.len());
+            let chunk = &hand_hashes[chunk_start..chunk_end];
+            let placeholders = std::iter::repeat("?")
+                .take(chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT hand_hash FROM processed_hands WHERE hand_hash IN ({})",
+                placeholders
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(chunk.iter()), |row| row.get(0))?;
+            for row in rows {
+                processed.insert(row?);
+            }
+            chunk_start = chunk_end;
+        }
+
+        Ok(processed)
+    }
+
+    pub fn mark_hands_processed(&mut self, hand_hashes: &[String]) -> Result<()> {
+        if hand_hashes.is_empty() {
+            return Ok(());
+        }
+
+        let tx = self.conn.transaction()?;
+        let mut stmt = tx.prepare(
+            "INSERT OR IGNORE INTO processed_hands (hand_hash, processed_at) VALUES (?1, CURRENT_TIMESTAMP)",
         )?;
-        
+        for hand_hash in hand_hashes {
+            stmt.execute(params![hand_hash])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn get_existing(
+        conn: &Connection,
+        player_name: &str,
+        table_type: u8,
+    ) -> Result<Option<PlayerStats>> {
+        let mut stmt = conn.prepare(
+            "SELECT stats_binary FROM player_stats WHERE player_name = ?1 AND table_type = ?2",
+        )?;
+
         let mut rows = stmt.query(params![player_name, table_type])?;
-        
+
         if let Some(row) = rows.next()? {
             let binary_data: Vec<u8> = row.get(0)?;
             match PlayerStats::from_binary(&binary_data) {
@@ -120,9 +232,9 @@ impl PlayerStatsRepository {
         let mut stmt = self.conn.prepare(
             "SELECT stats_binary FROM player_stats WHERE player_name = ?1 ORDER BY table_type LIMIT 1"
         )?;
-        
+
         let mut rows = stmt.query(params![player_name])?;
-        
+
         if let Some(row) = rows.next()? {
             let binary_data: Vec<u8> = row.get(0)?;
             match PlayerStats::from_binary(&binary_data) {

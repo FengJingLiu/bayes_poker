@@ -28,7 +28,9 @@ class BatchResult:
 
     @property
     def speed(self) -> float:
-        return self.hands_count / self.duration_seconds if self.duration_seconds > 0 else 0
+        return (
+            self.hands_count / self.duration_seconds if self.duration_seconds > 0 else 0
+        )
 
 
 def batch_process_phhs(
@@ -36,7 +38,7 @@ def batch_process_phhs(
     db_path: str | Path,
     *,
     max_files_in_memory: int | None = None,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """批量处理 PHHS 文件并保存到 SQLite。
 
     Args:
@@ -45,7 +47,7 @@ def batch_process_phhs(
         max_files_in_memory: 可选；每批最多同时加载的 PHHS 文件数量，用于控制内存占用。
 
     Returns:
-        (手牌数, 玩家数) 元组
+        (新增手牌数, 玩家数, 跳过手牌数) 元组
     """
     return poker_stats_rs.py_batch_process_phhs(
         str(phhs_dir),

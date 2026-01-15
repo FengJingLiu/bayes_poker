@@ -59,9 +59,17 @@ impl PostFlopParams {
 
             let street_offset = if self.in_position {
                 if self.num_bets < 2 {
-                    if self.num_bets == 0 { prev_action_mod } else { 3 + prev_action_mod }
+                    if self.num_bets == 0 {
+                        prev_action_mod
+                    } else {
+                        3 + prev_action_mod
+                    }
                 } else {
-                    if self.num_bets == 2 { 6 } else { 7 }
+                    if self.num_bets == 2 {
+                        6
+                    } else {
+                        7
+                    }
                 }
             } else {
                 let mut idx = 8;
@@ -86,7 +94,8 @@ impl PostFlopParams {
             let a4 = if self.in_position { 1 } else { 0 };
             let a5 = if self.num_players <= 2 { 0 } else { 1 };
 
-            let base_idx = a5 + (2 * a4) + (4 * a3) + (12 * prev_action_mod) + (36 * a1) + (72 * a0);
+            let base_idx =
+                a5 + (2 * a4) + (4 * a3) + (12 * prev_action_mod) + (36 * a1) + (72 * a0);
             base_idx + (216 * pot_type_val) + (216 * 3 * aggressor_val)
         }
     }

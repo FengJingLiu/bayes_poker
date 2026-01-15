@@ -1,6 +1,6 @@
+use crate::{ActionType, BetSizingCategory};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
-use crate::{ActionType, BetSizingCategory};
 
 #[derive(Debug, Clone, Default)]
 pub struct ActionStats {
@@ -30,19 +30,21 @@ impl ActionStats {
         self.bet_raise_samples() + self.check_call_samples + self.fold_samples
     }
 
-    pub fn add_sample(&mut self, action_type: ActionType, sizing_category: Option<BetSizingCategory>) {
+    pub fn add_sample(
+        &mut self,
+        action_type: ActionType,
+        sizing_category: Option<BetSizingCategory>,
+    ) {
         match action_type {
             ActionType::Fold => self.fold_samples += 1,
             ActionType::Check | ActionType::Call => self.check_call_samples += 1,
-            ActionType::Bet | ActionType::Raise => {
-                match sizing_category {
-                    Some(BetSizingCategory::Bet0To40) => self.bet_0_40 += 1,
-                    Some(BetSizingCategory::Bet40To80) => self.bet_40_80 += 1,
-                    Some(BetSizingCategory::Bet80To120) => self.bet_80_120 += 1,
-                    Some(BetSizingCategory::BetOver120) => self.bet_over_120 += 1,
-                    None => self.raise_samples += 1,
-                }
-            }
+            ActionType::Bet | ActionType::Raise => match sizing_category {
+                Some(BetSizingCategory::Bet0To40) => self.bet_0_40 += 1,
+                Some(BetSizingCategory::Bet40To80) => self.bet_40_80 += 1,
+                Some(BetSizingCategory::Bet80To120) => self.bet_80_120 += 1,
+                Some(BetSizingCategory::BetOver120) => self.bet_over_120 += 1,
+                None => self.raise_samples += 1,
+            },
             ActionType::AllIn => self.raise_samples += 1,
         }
     }
