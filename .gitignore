@@ -21,3 +21,6 @@ Cargo.lock
 *.so
 *.dylib
 *.dll
+.env
+.envsource
+all_py_files.txt
