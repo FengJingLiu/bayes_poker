@@ -73,7 +73,7 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
 
         if action.player == player_name {
             let num_active = active_players.len() + all_in_players.len();
-            let in_pos = in_position(&active_players, player_name, num_active);
+            let in_pos = in_position(&active_players, player_name, num_players);
 
             let preflop_params = PreFlopParams::new(
                 stats.table_type,
@@ -150,7 +150,7 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
 
             if action.player == player_name {
                 let num_active = active_players.len() + all_in_players.len();
-                let in_pos = in_position(&active_players, player_name, num_active);
+                let in_pos = in_position(&active_players, player_name, num_players);
 
                 let postflop_params = PostFlopParams::new(
                     stats.table_type,

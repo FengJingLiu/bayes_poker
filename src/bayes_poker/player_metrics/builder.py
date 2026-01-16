@@ -408,21 +408,18 @@ def build_player_stats_from_hands(
 
 
 def calculate_total_hands(player_stats: PlayerStats) -> int:
-    total = 0
-    all_params = PreFlopParams.get_all_params(player_stats.table_type)
-    for i, params in enumerate(all_params):
-        if params.previous_action == ActionType.FOLD:
-            total += player_stats.preflop_stats[i].total_samples()
-    return total
+    return player_stats.vpip.total
 
 
 def calculate_pfr(player_stats: PlayerStats) -> tuple[int, int]:
-    total_ad = ActionStats()
+    """PFR = 翻前主动加注次数 / 总手数。"""
+    total_raise = 0
     all_params = PreFlopParams.get_all_params(player_stats.table_type)
     for i, params in enumerate(all_params):
-        if params.num_raises == 0:
-            total_ad.append(player_stats.preflop_stats[i])
-    return total_ad.bet_raise_samples, total_ad.total_samples()
+        # 只统计首次行动（面前无加注或者首次面对加注）时的加注样本
+        if params.previous_action == ActionType.FOLD:
+            total_raise += player_stats.preflop_stats[i].bet_raise_samples
+    return total_raise, player_stats.vpip.total
 
 
 def calculate_aggression(player_stats: PlayerStats) -> tuple[int, int]:

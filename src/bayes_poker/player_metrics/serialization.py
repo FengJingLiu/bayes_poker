@@ -1,13 +1,13 @@
 """PlayerStats 序列化/反序列化模块。
 
-提供 PlayerStats、ActionStats、StatValue 与数据库/JSON 之间的转换。
+提供 PlayerStats 与 Rust 二进制格式之间的转换。
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
-from typing import TYPE_CHECKING, Any
+import struct
+from typing import TYPE_CHECKING
 
 from .enums import TableType
 from .models import ActionStats, PlayerStats, StatValue
@@ -16,96 +16,101 @@ if TYPE_CHECKING:
     from pokerkit import HandHistory
 
 
-def stat_value_to_dict(sv: StatValue) -> dict[str, int]:
-    """将 StatValue 转换为字典。"""
-    return {"positive": sv.positive, "total": sv.total}
+def action_stats_from_binary(data: bytes, offset: int) -> tuple[ActionStats, int]:
+    """从二进制数据反序列化单个 ActionStats。
 
-
-def stat_value_from_dict(d: dict[str, int]) -> StatValue:
-    """从字典创建 StatValue。"""
-    return StatValue(positive=d["positive"], total=d["total"])
-
-
-def action_stats_to_dict(stats: ActionStats) -> dict[str, int]:
-    """将 ActionStats 转换为字典。"""
-    return {
-        "bet_0_40": stats.bet_0_40,
-        "bet_40_80": stats.bet_40_80,
-        "bet_80_120": stats.bet_80_120,
-        "bet_over_120": stats.bet_over_120,
-        "raise_samples": stats.raise_samples,
-        "check_call_samples": stats.check_call_samples,
-        "fold_samples": stats.fold_samples,
-    }
-
-
-def action_stats_from_dict(d: dict[str, int]) -> ActionStats:
-    """从字典创建 ActionStats。"""
-    return ActionStats(
-        bet_0_40=d.get("bet_0_40", 0),
-        bet_40_80=d.get("bet_40_80", 0),
-        bet_80_120=d.get("bet_80_120", 0),
-        bet_over_120=d.get("bet_over_120", 0),
-        raise_samples=d.get("raise_samples", 0),
-        check_call_samples=d.get("check_call_samples", 0),
-        fold_samples=d.get("fold_samples", 0),
-    )
-
-
-def action_stats_list_to_json(stats_list: list[ActionStats]) -> str:
-    """将 ActionStats 列表序列化为 JSON 字符串。"""
-    return json.dumps([action_stats_to_dict(s) for s in stats_list], separators=(",", ":"))
-
-
-def action_stats_list_from_json(json_str: str) -> list[ActionStats]:
-    """从 JSON 字符串反序列化 ActionStats 列表。"""
-    data = json.loads(json_str)
-    return [action_stats_from_dict(d) for d in data]
-
-
-def player_stats_to_row(stats: PlayerStats) -> dict[str, Any]:
-    """将 PlayerStats 转换为数据库行字典。
-
-    Returns:
-        包含以下键的字典：
-        - player_name: str
-        - table_type: int
-        - vpip_positive: int
-        - vpip_total: int
-        - preflop_stats_json: str
-        - postflop_stats_json: str
-    """
-    return {
-        "player_name": stats.player_name,
-        "table_type": int(stats.table_type),
-        "vpip_positive": stats.vpip.positive,
-        "vpip_total": stats.vpip.total,
-        "preflop_stats_json": action_stats_list_to_json(stats.preflop_stats),
-        "postflop_stats_json": action_stats_list_to_json(stats.postflop_stats),
-    }
-
-
-def player_stats_from_row(row: dict[str, Any]) -> PlayerStats:
-    """从数据库行字典创建 PlayerStats。
+    与 Rust ActionStats::deserialize 兼容的二进制格式：
+    - bet_0_40: i32 (little-endian)
+    - bet_40_80: i32
+    - bet_80_120: i32
+    - bet_over_120: i32
+    - raise_samples: i32
+    - check_call_samples: i32
+    - fold_samples: i32
 
     Args:
-        row: 数据库行，包含 player_name, table_type, vpip_positive 等字段。
+        data: 二进制数据。
+        offset: 起始偏移量。
+
+    Returns:
+        (ActionStats 实例, 新的偏移量)。
+    """
+    # 每个 ActionStats 占用 7 个 i32 = 28 字节
+    values = struct.unpack_from("<7i", data, offset)
+    stats = ActionStats(
+        bet_0_40=values[0],
+        bet_40_80=values[1],
+        bet_80_120=values[2],
+        bet_over_120=values[3],
+        raise_samples=values[4],
+        check_call_samples=values[5],
+        fold_samples=values[6],
+    )
+    return stats, offset + 28
+
+
+def player_stats_from_binary(data: bytes) -> PlayerStats:
+    """从二进制数据反序列化 PlayerStats。
+
+    与 Rust PlayerStats::deserialize 兼容的二进制格式：
+    - name_len: u32 (little-endian)
+    - name_bytes: [u8; name_len]
+    - table_type: u8
+    - vpip_positive: i32
+    - vpip_total: i32
+    - preflop_len: u32
+    - preflop_stats: [ActionStats; preflop_len]
+    - postflop_len: u32
+    - postflop_stats: [ActionStats; postflop_len]
+
+    Args:
+        data: 二进制数据。
 
     Returns:
         PlayerStats 实例。
+
+    Raises:
+        struct.error: 如果数据格式不正确。
     """
-    table_type = TableType(row["table_type"])
-    stats = PlayerStats(
-        player_name=row["player_name"],
-        table_type=table_type,
-    )
-    stats.vpip = StatValue(
-        positive=row["vpip_positive"],
-        total=row["vpip_total"],
-    )
-    stats.preflop_stats = action_stats_list_from_json(row["preflop_stats_json"])
-    stats.postflop_stats = action_stats_list_from_json(row["postflop_stats_json"])
-    return stats
+    offset = 0
+
+    # 读取 player_name
+    (name_len,) = struct.unpack_from("<I", data, offset)
+    offset += 4
+    name_bytes = data[offset : offset + name_len]
+    player_name = name_bytes.decode("utf-8", errors="replace")
+    offset += name_len
+
+    # 读取 table_type, vpip_positive, vpip_total
+    (table_type_raw,) = struct.unpack_from("<B", data, offset)
+    offset += 1
+    vpip_positive, vpip_total = struct.unpack_from("<2i", data, offset)
+    offset += 8
+
+    # 读取 preflop_stats
+    (preflop_len,) = struct.unpack_from("<I", data, offset)
+    offset += 4
+    preflop_stats: list[ActionStats] = []
+    for _ in range(preflop_len):
+        stats, offset = action_stats_from_binary(data, offset)
+        preflop_stats.append(stats)
+
+    # 读取 postflop_stats
+    (postflop_len,) = struct.unpack_from("<I", data, offset)
+    offset += 4
+    postflop_stats: list[ActionStats] = []
+    for _ in range(postflop_len):
+        stats, offset = action_stats_from_binary(data, offset)
+        postflop_stats.append(stats)
+
+    # 构建 PlayerStats
+    table_type = TableType(table_type_raw)
+    result = PlayerStats(player_name=player_name, table_type=table_type)
+    result.vpip = StatValue(positive=vpip_positive, total=vpip_total)
+    result.preflop_stats = preflop_stats
+    result.postflop_stats = postflop_stats
+
+    return result
 
 
 def merge_player_stats(target: PlayerStats, source: PlayerStats) -> None:
