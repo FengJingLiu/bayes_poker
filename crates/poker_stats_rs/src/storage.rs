@@ -258,4 +258,54 @@ impl PlayerStatsRepository {
             |row| row.get(0),
         )
     }
+
+    /// 获取指定 table_type 下 vpip_total > min_hands 的所有玩家统计
+    pub fn get_stats_by_min_hands(
+        &self,
+        table_type: u8,
+        min_hands: i32,
+    ) -> Result<Vec<PlayerStats>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT stats_binary FROM player_stats WHERE table_type = ?1 AND vpip_total > ?2",
+        )?;
+
+        let rows = stmt.query_map(params![table_type, min_hands], |row| {
+            let binary_data: Vec<u8> = row.get(0)?;
+            Ok(binary_data)
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let binary_data = row?;
+            if let Ok(stats) = PlayerStats::from_binary(&binary_data) {
+                results.push(stats);
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// 聚合指定 table_type 下 vpip_total > min_hands 的所有玩家统计，并以 aggregated_name 写回数据库
+    pub fn aggregate_and_upsert(
+        &mut self,
+        table_type: u8,
+        min_hands: i32,
+        aggregated_name: &str,
+    ) -> Result<Option<PlayerStats>> {
+        let stats_list = self.get_stats_by_min_hands(table_type, min_hands)?;
+
+        if stats_list.is_empty() {
+            return Ok(None);
+        }
+
+        let tt = crate::TableType::from_u8(table_type);
+        let mut aggregated = PlayerStats::new(aggregated_name.to_string(), tt);
+
+        for stats in &stats_list {
+            aggregated.merge(stats);
+        }
+
+        self.upsert(&aggregated)?;
+        Ok(Some(aggregated))
+    }
 }
