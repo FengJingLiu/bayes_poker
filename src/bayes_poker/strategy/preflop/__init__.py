@@ -1,13 +1,15 @@
-"""策略模块。
+"""翻前策略解析模块。
 
-包含扑克博弈策略相关的解析和处理逻辑。
+提供 GTOWizard 风格翻前策略 JSON 文件的解析功能。
 """
 
-from bayes_poker.strategy.preflop import (
+from bayes_poker.strategy.preflop.models import (
     STRATEGY_VECTOR_LENGTH,
     PreflopStrategy,
     StrategyAction,
     StrategyNode,
+)
+from bayes_poker.strategy.preflop.parser import (
     normalize_token,
     parse_all_strategies,
     parse_bet_size_from_code,
@@ -19,7 +21,6 @@ from bayes_poker.strategy.preflop import (
 )
 
 __all__ = [
-    # preflop 子模块导出
     "STRATEGY_VECTOR_LENGTH",
     "PreflopStrategy",
     "StrategyAction",
