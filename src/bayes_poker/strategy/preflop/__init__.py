@@ -19,12 +19,20 @@ from bayes_poker.strategy.preflop.parser import (
     parse_strategy_node,
     split_history_tokens,
 )
+from bayes_poker.strategy.preflop.query import (
+    QueryResult,
+    generate_call_to_fold_variants,
+    normalize_history,
+    query_node,
+)
 
 __all__ = [
+    # Models
     "STRATEGY_VECTOR_LENGTH",
     "PreflopStrategy",
     "StrategyAction",
     "StrategyNode",
+    # Parser
     "normalize_token",
     "parse_all_strategies",
     "parse_bet_size_from_code",
@@ -33,4 +41,9 @@ __all__ = [
     "parse_strategy_file",
     "parse_strategy_node",
     "split_history_tokens",
+    # Query
+    "QueryResult",
+    "generate_call_to_fold_variants",
+    "normalize_history",
+    "query_node",
 ]

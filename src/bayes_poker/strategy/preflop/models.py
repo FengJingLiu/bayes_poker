@@ -129,3 +129,23 @@ class PreflopStrategy:
         if stack_bb is not None:
             return len(self.nodes_by_stack.get(stack_bb, {}))
         return sum(len(nodes) for nodes in self.nodes_by_stack.values())
+
+    def query(
+        self,
+        stack_bb: int,
+        history: str,
+    ) -> "QueryResult | None":
+        """查询指定行动历史下的策略节点。
+
+        支持多级回退匹配：精确匹配 → 去量匹配 → CALL→FOLD 替换。
+
+        Args:
+            stack_bb: 筹码深度（BB 数）
+            history: 行动历史，如 "R2-C-R6"
+
+        Returns:
+            QueryResult 如果找到匹配，否则 None
+        """
+        from bayes_poker.strategy.preflop.query import query_node
+
+        return query_node(self, stack_bb, history)
