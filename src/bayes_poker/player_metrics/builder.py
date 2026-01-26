@@ -412,14 +412,17 @@ def calculate_total_hands(player_stats: PlayerStats) -> int:
 
 
 def calculate_pfr(player_stats: PlayerStats) -> tuple[int, int]:
-    """PFR = 翻前主动加注次数 / 总手数。"""
+    """PFR = 翻前主动加注次数 / 翻前决策样本数。"""
     total_raise = 0
+    total_samples = 0
     all_params = PreFlopParams.get_all_params(player_stats.table_type)
     for i, params in enumerate(all_params):
         # 只统计首次行动（面前无加注或者首次面对加注）时的加注样本
         if params.previous_action == ActionType.FOLD:
-            total_raise += player_stats.preflop_stats[i].bet_raise_samples
-    return total_raise, player_stats.vpip.total
+            stats = player_stats.preflop_stats[i]
+            total_raise += stats.bet_raise_samples
+            total_samples += stats.total_samples()
+    return total_raise, total_samples
 
 
 def calculate_aggression(player_stats: PlayerStats) -> tuple[int, int]:
