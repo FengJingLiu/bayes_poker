@@ -15,12 +15,9 @@ from bayes_poker.comm.protocol import MessageEnvelope, MessageType, generate_ses
 from bayes_poker.comm.messages import (
     TableSnapshotPayload,
     TableStateUpdatePayload,
-    ActionEventPayload,
     StrategyRequestPayload,
     StrategyResponsePayload,
 )
-from bayes_poker.comm.strategy_history import build_preflop_history
-from bayes_poker.table.layout.base import get_position_by_seat
 
 if TYPE_CHECKING:
     from bayes_poker.table.parser import TableContext
@@ -328,48 +325,43 @@ class TableClientAgent:
     async def _request_strategy(
         self, session_id: str, state: dict[str, Any], context: "TableContext"
     ) -> None:
-        """请求策略建议。"""
+        """请求策略建议（使用 PHH 格式）。"""
+        from bayes_poker.comm.phh_serializer import state_to_phh
+
         state_version = state.get("state_version", 0)
         self._last_strategy_version[session_id] = state_version
 
-        hero_seat = 0
-        hero_player = None
-        for p in state.get("players", []):
-            if p.get("seat_index") == hero_seat:
-                hero_player = p
-                break
+        # 获取 Hero 手牌
+        hero_cards: list[str] = []
+        if context.hero_cards:
+            hero_cards = [c.to_pokerkit_str() for c in context.hero_cards]
+
+        # 从 state_bridge 序列化为 PHH
+        phh_data = ""
+        if context.state_bridge:
+            try:
+                result = state_to_phh(
+                    game=context.state_bridge.game,
+                    state=context.state_bridge.state,
+                )
+                if result.success:
+                    phh_data = result.phh_str
+                else:
+                    LOGGER.warning("PHH 序列化失败: %s", result.error)
+            except Exception as e:
+                LOGGER.warning("PHH 序列化异常: %s", e)
+
+        if not phh_data:
+            LOGGER.warning("无法生成 PHH 数据，跳过策略请求")
+            return
 
         payload = StrategyRequestPayload(
             session_id=session_id,
+            phh_data=phh_data,
+            hero_seat=0,
+            hero_cards=hero_cards,
             state_version=state_version,
-            street=state.get("street", "preflop"),
-            pot=state.get("pot", 0.0),
-            board=state.get("board", []),
-            hero_cards=state.get("hero_cards", []),
-            hero_seat=hero_seat,
-            hero_stack=hero_player.get("stack", 0.0) if hero_player else 0.0,
-            hero_position="",
-            btn_seat=state.get("btn_seat", 0),
-            players=state.get("players", []),
-            history="",
         )
-
-        player_count = len(payload.players) if payload.players else 0
-        if player_count > 0 and payload.btn_seat >= 0:
-            try:
-                payload.hero_position = get_position_by_seat(
-                    hero_seat,
-                    payload.btn_seat,
-                    player_count,
-                ).value
-            except Exception:
-                payload.hero_position = ""
-
-        if context.state_bridge and payload.street == "preflop":
-            payload.history = build_preflop_history(
-                context.state_bridge.get_action_history(),
-                big_blind=context.state_bridge.big_blind,
-            )
 
         await self._client.request_strategy(session_id, payload.to_dict())
 

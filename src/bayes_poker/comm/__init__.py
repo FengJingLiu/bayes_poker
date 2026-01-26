@@ -53,6 +53,13 @@ from bayes_poker.comm.agent import (
     TableClientAgent,
     create_agent,
 )
+from bayes_poker.comm.phh_serializer import (
+    PHHDeserializeResult,
+    PHHSerializeResult,
+    extract_state_info,
+    phh_to_state,
+    state_to_phh,
+)
 
 __all__ = [
     "PROTOCOL_VERSION",
@@ -93,4 +100,9 @@ __all__ = [
     "AgentConfig",
     "TableClientAgent",
     "create_agent",
+    "PHHSerializeResult",
+    "PHHDeserializeResult",
+    "state_to_phh",
+    "phh_to_state",
+    "extract_state_info",
 ]

@@ -166,30 +166,32 @@ class ActionEventPayload:
 
 @dataclass
 class StrategyRequestPayload:
-    """策略请求。"""
+    """策略请求（基于 PHH 格式）。
+
+    使用 pokerkit 的 PHH (Poker Hand History) 格式传输游戏状态，
+    服务端使用 phh_to_state() 恢复为 pokerkit State 对象。
+
+    Attributes:
+        session_id: 会话 ID
+        phh_data: PHH 格式字符串（包含完整游戏状态）
+        hero_seat: Hero 座位索引
+        hero_cards: Hero 手牌（如 ["Ah", "Kd"]）
+        state_version: 状态版本号
+    """
 
     session_id: str
-    state_version: int
-    street: str = "preflop"
-    pot: float = 0.0
-    board: list[str] = field(default_factory=list)
-    hero_cards: list[str] = field(default_factory=list)
+    phh_data: str
     hero_seat: int = 0
-    hero_stack: float = 0.0
-    hero_position: str = ""
-    effective_stack: float = 0.0
-    btn_seat: int = 0
-    players: list[dict[str, Any]] = field(default_factory=list)
-    history: str = ""
-    action_sequence: list[dict[str, Any]] = field(default_factory=list)
-    opponent_ranges: dict[int, Any] = field(default_factory=dict)
-    bet_sizes: list[float] = field(default_factory=list)
+    hero_cards: list[str] = field(default_factory=list)
+    state_version: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        """转换为字典。"""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StrategyRequestPayload:
+        """从字典创建。"""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 

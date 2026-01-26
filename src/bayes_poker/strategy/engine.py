@@ -88,18 +88,59 @@ class StrategyDispatcher:
         return _handler
 
     async def handle(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """处理策略请求并返回响应 payload。"""
-        street = str(payload.get("street", "preflop")).lower()
+        """处理策略请求并返回响应 payload。
+
+        从 payload 中提取 phh_data，反序列化为 pokerkit State，
+        然后根据当前街道分发到对应的策略处理器。
+        """
+        from bayes_poker.comm.phh_serializer import phh_to_state, extract_state_info
+
         state_version = int(payload.get("state_version", 0) or 0)
+        phh_data = payload.get("phh_data", "")
+
+        if not phh_data:
+            return _base_response(state_version, "缺少 phh_data 字段")
+
+        # 从 PHH 恢复 pokerkit State
+        result = phh_to_state(phh_data)
+        if not result.success or result.state is None:
+            return _base_response(
+                state_version,
+                f"PHH 反序列化失败: {result.error}",
+            )
+
+        # 提取状态信息用于路由
+        state_info = extract_state_info(result.state)
+        street = state_info["street"]
+
+        # 将 State 对象和提取的信息添加到 payload
+        enriched_payload = {
+            **payload,
+            "pokerkit_game": result.game,
+            "pokerkit_state": result.state,
+            "hand_history": result.hand_history,
+            "street": street,
+            "pot": state_info["pot"],
+            "board": state_info["board"],
+            "stacks": state_info["stacks"],
+            "actor_index": state_info["actor_index"],
+        }
+
+        LOGGER.debug(
+            "PHH 解析成功，street=%s, pot=%s, actor=%s",
+            street,
+            state_info["pot"],
+            state_info["actor_index"],
+        )
 
         if street == "preflop":
             if not self.preflop_strategy:
                 return _base_response(state_version, "preflopStrategy 未注册")
-            return await self.preflop_strategy(session_id, payload)
+            return await self.preflop_strategy(session_id, enriched_payload)
 
         if not self.postflop_strategy:
             return _base_response(
                 state_version,
                 f"postflopStrategy 未注册 (street={street})",
             )
-        return await self.postflop_strategy(session_id, payload)
+        return await self.postflop_strategy(session_id, enriched_payload)

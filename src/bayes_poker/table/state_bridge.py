@@ -60,6 +60,7 @@ class PokerKitStateBridge:
     starting_stacks: list[float]
     ante: float = 0.0
 
+    _game: object = field(default=None, repr=False)
     _state: object = field(default=None, repr=False)
     _action_history: list[PlayerAction] = field(default_factory=list, repr=False)
     _current_street: Street = field(default=Street.PREFLOP, repr=False)
@@ -82,7 +83,8 @@ class PokerKitStateBridge:
                 f"筹码数量 ({len(stacks)}) 与玩家数量 ({self.player_count}) 不匹配"
             )
 
-        self._state = NoLimitTexasHoldem.create_state(
+        # 创建 Game 对象（用于 PHH 序列化）
+        self._game = NoLimitTexasHoldem(
             automations=(
                 Automation.ANTE_POSTING,
                 Automation.BET_COLLECTION,
@@ -97,9 +99,10 @@ class PokerKitStateBridge:
             raw_antes={-1: self.ante} if self.ante > 0 else {},
             raw_blinds_or_straddles=(self.small_blind, self.big_blind),
             min_bet=self.big_blind,
-            raw_starting_stacks=stacks,
-            player_count=self.player_count,
         )
+
+        # 创建 State 对象
+        self._state = self._game(stacks, self.player_count)
 
         self._action_history.clear()
         self._current_street = Street.PREFLOP
@@ -116,6 +119,13 @@ class PokerKitStateBridge:
         if self._state is None:
             raise RuntimeError("尚未创建手牌，请先调用 create_new_hand()")
         return self._state
+
+    @property
+    def game(self):
+        """获取 pokerkit Game 对象（用于 PHH 序列化）。"""
+        if self._game is None:
+            raise RuntimeError("尚未创建手牌，请先调用 create_new_hand()")
+        return self._game
 
     @property
     def current_street(self) -> Street:
