@@ -25,7 +25,28 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - 语言/版本：Python `>=3.12`（见 `pyproject.toml`）。
 - 包管理/运行：使用 `uv`。
 - 代码布局：`src/` 下为可导入包；测试在 `tests/`；脚本在 `scripts/`。
-- 主要依赖：`pokerkit`（文档：https://pokerkit.readthedocs.io/）。
+- 主要依赖：`pokerkit`（文档：https://pokerkit.readthedocs.io/）、`websockets`、`cnocr`（可选）。
+
+## 模块结构
+```
+src/bayes_poker/
+├── hand_history/    # 手牌历史解析（离线分析）
+├── table/           # 实时牌桌解析（Windows OCR）
+│   ├── layout/      # 牌桌布局配置（支持动态缩放）
+│   ├── parser.py    # TableParser 多进程解析器
+│   ├── detector.py  # 游戏阶段/动作检测
+│   └── state_bridge.py  # pokerkit.State 集成
+├── screen/          # 截屏与窗口管理
+├── ocr/             # OCR 引擎封装
+├── comm/            # Windows ↔ Linux 通信
+│   ├── client.py    # WebSocket 客户端（Windows 端）
+│   ├── server.py    # WebSocket 服务器（Linux 端）
+│   ├── session.py   # 会话管理与消息重放
+│   └── agent.py     # TableParser 集成代理
+├── strategy/        # 策略引擎
+├── player_metrics/  # 玩家统计
+└── config/          # 配置管理
+```
 
 ## 快速开始（环境）
 - 创建并同步虚拟环境：
