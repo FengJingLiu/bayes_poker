@@ -178,6 +178,9 @@ class StrategyRequestPayload:
     hero_stack: float = 0.0
     hero_position: str = ""
     effective_stack: float = 0.0
+    btn_seat: int = 0
+    players: list[dict[str, Any]] = field(default_factory=list)
+    history: str = ""
     action_sequence: list[dict[str, Any]] = field(default_factory=list)
     opponent_ranges: dict[int, Any] = field(default_factory=dict)
     bet_sizes: list[float] = field(default_factory=list)

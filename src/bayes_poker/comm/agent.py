@@ -19,6 +19,8 @@ from bayes_poker.comm.messages import (
     StrategyRequestPayload,
     StrategyResponsePayload,
 )
+from bayes_poker.comm.strategy_history import build_preflop_history
+from bayes_poker.table.layout.base import get_position_by_seat
 
 if TYPE_CHECKING:
     from bayes_poker.table.parser import TableContext
@@ -198,7 +200,7 @@ class TableClientAgent:
             and self._is_hero_turn(context)
             and self._should_request_strategy(session_id, state)
         ):
-            await self._request_strategy(session_id, state)
+            await self._request_strategy(session_id, state, context)
 
     def _context_to_state(self, context: TableContext) -> dict[str, Any]:
         """将 TableContext 转换为状态字典。"""
@@ -323,7 +325,9 @@ class TableClientAgent:
 
         await self._client.send_state_update(session_id, payload.to_dict())
 
-    async def _request_strategy(self, session_id: str, state: dict[str, Any]) -> None:
+    async def _request_strategy(
+        self, session_id: str, state: dict[str, Any], context: "TableContext"
+    ) -> None:
         """请求策略建议。"""
         state_version = state.get("state_version", 0)
         self._last_strategy_version[session_id] = state_version
@@ -345,7 +349,27 @@ class TableClientAgent:
             hero_seat=hero_seat,
             hero_stack=hero_player.get("stack", 0.0) if hero_player else 0.0,
             hero_position="",
+            btn_seat=state.get("btn_seat", 0),
+            players=state.get("players", []),
+            history="",
         )
+
+        player_count = len(payload.players) if payload.players else 0
+        if player_count > 0 and payload.btn_seat >= 0:
+            try:
+                payload.hero_position = get_position_by_seat(
+                    hero_seat,
+                    payload.btn_seat,
+                    player_count,
+                ).value
+            except Exception:
+                payload.hero_position = ""
+
+        if context.state_bridge and payload.street == "preflop":
+            payload.history = build_preflop_history(
+                context.state_bridge.get_action_history(),
+                big_blind=context.state_bridge.big_blind,
+            )
 
         await self._client.request_strategy(session_id, payload.to_dict())
 
