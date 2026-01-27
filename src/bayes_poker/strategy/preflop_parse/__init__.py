@@ -3,13 +3,13 @@
 提供 GTOWizard 风格翻前策略 JSON 文件的解析功能。
 """
 
-from bayes_poker.strategy.preflop.models import (
+from bayes_poker.strategy.preflop_parse.models import (
     STRATEGY_VECTOR_LENGTH,
     PreflopStrategy,
     StrategyAction,
     StrategyNode,
 )
-from bayes_poker.strategy.preflop.parser import (
+from bayes_poker.strategy.preflop_parse.parser import (
     normalize_token,
     parse_all_strategies,
     parse_bet_size_from_code,
@@ -19,7 +19,7 @@ from bayes_poker.strategy.preflop.parser import (
     parse_strategy_node,
     split_history_tokens,
 )
-from bayes_poker.strategy.preflop.query import (
+from bayes_poker.strategy.preflop_parse.query import (
     QueryResult,
     generate_call_to_fold_variants,
     normalize_history,

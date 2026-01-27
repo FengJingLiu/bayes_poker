@@ -1,6 +1,6 @@
 import asyncio
 
-from bayes_poker.strategy.preflop.models import PreflopStrategy, StrategyAction, StrategyNode
+from bayes_poker.strategy.preflop_parse.models import PreflopStrategy, StrategyAction, StrategyNode
 from bayes_poker.strategy.range import (
     RANGE_169_LENGTH,
     PreflopRange,

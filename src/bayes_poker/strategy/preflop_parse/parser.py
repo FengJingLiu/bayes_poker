@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from bayes_poker.strategy.preflop.models import (
+from bayes_poker.strategy.preflop_parse.models import (
     STRATEGY_VECTOR_LENGTH,
     PreflopStrategy,
     StrategyAction,

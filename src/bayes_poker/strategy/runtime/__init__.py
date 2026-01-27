@@ -1,6 +1,6 @@
 """实时策略执行（runtime）。
 
-与 `bayes_poker.strategy.preflop`（策略文件解析/查询）区分：本包面向 server 的实时决策，
+与 `bayes_poker.strategy.preflop_parse`（策略文件解析/查询）区分：本包面向 server 的实时决策，
 用于实现可注册到 `StrategyDispatcher` 的 preflop/postflop 策略处理器。
 """
 

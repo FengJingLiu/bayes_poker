@@ -4,7 +4,7 @@
 """
 
 from bayes_poker.strategy.engine import StrategyDispatcher, StrategyHandler
-from bayes_poker.strategy.preflop import (
+from bayes_poker.strategy.preflop_parse import (
     STRATEGY_VECTOR_LENGTH,
     PreflopStrategy,
     StrategyAction,

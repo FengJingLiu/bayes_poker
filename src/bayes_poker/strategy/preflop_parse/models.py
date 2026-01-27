@@ -146,6 +146,6 @@ class PreflopStrategy:
         Returns:
             QueryResult 如果找到匹配，否则 None
         """
-        from bayes_poker.strategy.preflop.query import query_node
+        from bayes_poker.strategy.preflop_parse.query import query_node
 
         return query_node(self, stack_bb, history)

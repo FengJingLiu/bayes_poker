@@ -24,8 +24,8 @@ from typing import Any
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
 from bayes_poker.strategy.engine import StrategyHandler, _base_response
-from bayes_poker.strategy.preflop.models import PreflopStrategy, StrategyAction, StrategyNode
-from bayes_poker.strategy.preflop.parser import parse_strategy_directory
+from bayes_poker.strategy.preflop_parse.models import PreflopStrategy, StrategyAction, StrategyNode
+from bayes_poker.strategy.preflop_parse.parser import parse_strategy_directory
 from bayes_poker.strategy.range import (
     card_to_index52,
     combo_to_index1326,

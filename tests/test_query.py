@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bayes_poker.strategy.preflop import (
+from bayes_poker.strategy.preflop_parse import (
     QueryResult,
     generate_call_to_fold_variants,
     normalize_history,
