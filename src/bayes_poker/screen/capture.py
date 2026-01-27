@@ -1,6 +1,6 @@
 """屏幕截图模块。
 
-提供跨平台的屏幕截图功能，支持 Windows (win32) 和 Linux。
+提供屏幕截图功能，目前主要支持 Windows (win32)。
 """
 
 from __future__ import annotations
@@ -111,8 +111,12 @@ class Win32ScreenCapture(ScreenCapture):
     def get_window_rect(self, hwnd: int) -> tuple[int, int, int, int] | None:
         if hwnd == 0:
             try:
-                width = self._win32api.GetSystemMetrics(self._win32con.SM_CXVIRTUALSCREEN)
-                height = self._win32api.GetSystemMetrics(self._win32con.SM_CYVIRTUALSCREEN)
+                width = self._win32api.GetSystemMetrics(
+                    self._win32con.SM_CXVIRTUALSCREEN
+                )
+                height = self._win32api.GetSystemMetrics(
+                    self._win32con.SM_CYVIRTUALSCREEN
+                )
                 return (0, 0, int(width), int(height))
             except Exception as e:
                 LOGGER.warning("获取桌面尺寸失败: %s", e)
@@ -167,8 +171,12 @@ class Win32ScreenCapture(ScreenCapture):
         与 `capture_window(hwnd=0)` 返回的图像坐标保持一致（从 0,0 开始）。
         """
         try:
-            desktop_left = self._win32api.GetSystemMetrics(self._win32con.SM_XVIRTUALSCREEN)
-            desktop_top = self._win32api.GetSystemMetrics(self._win32con.SM_YVIRTUALSCREEN)
+            desktop_left = self._win32api.GetSystemMetrics(
+                self._win32con.SM_XVIRTUALSCREEN
+            )
+            desktop_top = self._win32api.GetSystemMetrics(
+                self._win32con.SM_YVIRTUALSCREEN
+            )
         except Exception:
             desktop_left = 0
             desktop_top = 0
@@ -181,49 +189,6 @@ class Win32ScreenCapture(ScreenCapture):
             width=width,
             height=height,
         )
-
-
-class LinuxScreenCapture(ScreenCapture):
-    """Linux 平台屏幕截图实现（基于 mss）。"""
-
-    def __init__(self) -> None:
-        try:
-            import mss  # type: ignore[import-not-found]
-
-            self._mss = mss.mss()
-        except ImportError as e:
-            raise ImportError("需要安装 mss: uv add mss") from e
-
-    def capture_window(self, hwnd: int) -> np.ndarray | None:
-        LOGGER.warning("Linux 平台暂不支持按窗口句柄截图，使用全屏截图")
-        try:
-            import cv2  # type: ignore[import-not-found]
-
-            monitor = self._mss.monitors[1]
-            screenshot = self._mss.grab(monitor)
-            img = np.array(screenshot)
-            return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        except Exception as e:
-            LOGGER.warning("截图失败: %s", e)
-            return None
-
-    def capture_region(
-        self, hwnd: int, x: int, y: int, width: int, height: int
-    ) -> np.ndarray | None:
-        try:
-            import cv2  # type: ignore[import-not-found]
-
-            monitor = {"left": x, "top": y, "width": width, "height": height}
-            screenshot = self._mss.grab(monitor)
-            img = np.array(screenshot)
-            return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        except Exception as e:
-            LOGGER.warning("区域截图失败: %s", e)
-            return None
-
-    def get_window_rect(self, hwnd: int) -> tuple[int, int, int, int] | None:
-        LOGGER.warning("Linux 平台暂不支持获取窗口位置")
-        return None
 
 
 class MockScreenCapture(ScreenCapture):
@@ -263,18 +228,23 @@ class MockScreenCapture(ScreenCapture):
 
 
 def get_screen_capture(use_mock: bool = False) -> ScreenCapture:
-    """获取当前平台的屏幕截图实例。
+    """获取屏幕截图实例。
+
+    目前仅支持 Windows 平台（除 Mock 外）。
 
     Args:
-        use_mock: 是否使用模拟实现（用于测试）
+        use_mock: 确定是否使用模拟实现（用于测试）。
 
     Returns:
-        ScreenCapture 实例
+        ScreenCapture: 屏幕截图实例。
+
+    Raises:
+        RuntimeError: 当在非 Windows 平台且未启用 Mock 时执行。
     """
     if use_mock:
         return MockScreenCapture()
 
     if sys.platform == "win32":
         return Win32ScreenCapture()
-    else:
-        return LinuxScreenCapture()
+
+    raise RuntimeError(f"不支持的平台: {sys.platform}，目前截图功能仅支持 Windows")
