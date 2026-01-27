@@ -7,24 +7,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from enum import Enum, auto
 from typing import TYPE_CHECKING
+
+from bayes_poker.domain.poker import ActionType, Street
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 LOGGER = logging.getLogger(__name__)
-
-
-class ActionType(Enum):
-    """玩家动作类型。"""
-
-    FOLD = auto()
-    CHECK = auto()
-    CALL = auto()
-    BET = auto()
-    RAISE = auto()
-    ALL_IN = auto()
 
 
 @dataclass
@@ -34,16 +24,6 @@ class PlayerAction:
     player_index: int
     action_type: ActionType
     amount: float = 0.0
-
-
-class Street(Enum):
-    """游戏阶段。"""
-
-    PREFLOP = "preflop"
-    FLOP = "flop"
-    TURN = "turn"
-    RIVER = "river"
-    SHOWDOWN = "showdown"
 
 
 @dataclass

@@ -5,34 +5,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from enum import Enum
+from dataclasses import dataclass, field
 from typing import Any
 
-
-class ActionType(str, Enum):
-    """玩家动作类型。"""
-
-    FOLD = "fold"
-    CHECK = "check"
-    CALL = "call"
-    BET = "bet"
-    RAISE = "raise"
-    ALL_IN = "all_in"
-
-
-class Street(str, Enum):
-    """游戏阶段。"""
-
-    PREFLOP = "preflop"
-    FLOP = "flop"
-    TURN = "turn"
-    RIVER = "river"
-    SHOWDOWN = "showdown"
-
+from bayes_poker.comm.payload_base import PayloadBase
+from bayes_poker.domain.poker import ActionType, Street
 
 @dataclass
-class PlayerState:
+class PlayerState(PayloadBase):
     """玩家状态。"""
 
     seat_index: int
@@ -45,28 +25,18 @@ class PlayerState:
     is_hero: bool = False
     position: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PlayerState:
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-
 
 @dataclass
-class HelloPayload:
+class HelloPayload(PayloadBase):
     """客户端 Hello 消息。"""
 
     client_version: str = "1.0.0"
     parser_version: str = "1.0.0"
     capabilities: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class AuthPayload:
+class AuthPayload(PayloadBase):
     """认证消息。"""
 
     api_key: str = ""
@@ -74,12 +44,9 @@ class AuthPayload:
     timestamp: int = 0
     signature: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class AuthResponsePayload:
+class AuthResponsePayload(PayloadBase):
     """认证响应。"""
 
     success: bool = False
@@ -87,12 +54,9 @@ class AuthResponsePayload:
     expires_at: int = 0
     message: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class SubscribePayload:
+class SubscribePayload(PayloadBase):
     """订阅牌桌。"""
 
     session_id: str
@@ -100,23 +64,17 @@ class SubscribePayload:
     small_blind: float = 0.5
     big_blind: float = 1.0
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class ResumePayload:
+class ResumePayload(PayloadBase):
     """断线重连恢复。"""
 
     session_id: str
     last_ack_seq: int
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class TableSnapshotPayload:
+class TableSnapshotPayload(PayloadBase):
     """牌桌全量快照。"""
 
     session_id: str
@@ -130,28 +88,18 @@ class TableSnapshotPayload:
     actor_seat: int | None = None
     state_version: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> TableSnapshotPayload:
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-
 
 @dataclass
-class TableStateUpdatePayload:
+class TableStateUpdatePayload(PayloadBase):
     """牌桌增量更新。"""
 
     session_id: str
     changes: dict[str, Any] = field(default_factory=dict)
     state_version: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class ActionEventPayload:
+class ActionEventPayload(PayloadBase):
     """玩家动作事件。"""
 
     session_id: str
@@ -160,12 +108,9 @@ class ActionEventPayload:
     amount: float = 0.0
     state_version: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class StrategyRequestPayload:
+class StrategyRequestPayload(PayloadBase):
     """策略请求（基于 PHH 格式）。
 
     使用 pokerkit 的 PHH (Poker Hand History) 格式传输游戏状态，
@@ -185,18 +130,9 @@ class StrategyRequestPayload:
     hero_cards: list[str] = field(default_factory=list)
     state_version: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
-        """转换为字典。"""
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> StrategyRequestPayload:
-        """从字典创建。"""
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
-
 
 @dataclass
-class StrategyResponsePayload:
+class StrategyResponsePayload(PayloadBase):
     """策略响应。"""
 
     session_id: str
@@ -215,39 +151,27 @@ class StrategyResponsePayload:
     is_stale: bool = False
     compute_time_ms: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class AckPayload:
+class AckPayload(PayloadBase):
     """消息确认。"""
 
     last_seq: int
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class ErrorPayload:
+class ErrorPayload(PayloadBase):
     """错误消息。"""
 
     code: str
     message: str
     details: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
 
 @dataclass
-class ServerNoticePayload:
+class ServerNoticePayload(PayloadBase):
     """服务器通知。"""
 
     notice_type: str
     message: str
     severity: str = "info"
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)

@@ -15,7 +15,6 @@ import numpy as np
 from bayes_poker.ocr.interface import OCREngine
 from bayes_poker.ocr.schema import Area, Color, Point, CARD_SUIT_COLORS
 from bayes_poker.table.layout.base import ScaledLayout
-from bayes_poker.table.state_bridge import ActionType, Street
 
 LOGGER = logging.getLogger(__name__)
 

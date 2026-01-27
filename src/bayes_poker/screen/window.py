@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from bayes_poker.screen.types import WindowInfo
+
 if TYPE_CHECKING:
     import numpy as np
 
@@ -17,19 +19,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 GG_POKER_WINDOW_CLASS = "ApolloRuntimeContentWindow"
-
-
-@dataclass
-class WindowInfo:
-    """窗口信息。"""
-
-    hwnd: int
-    title: str
-    class_name: str
-    x: int
-    y: int
-    width: int
-    height: int
 
 
 @dataclass

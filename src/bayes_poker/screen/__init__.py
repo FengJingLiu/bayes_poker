@@ -6,11 +6,11 @@ from bayes_poker.screen.capture import (
     Win32ScreenCapture,
     get_screen_capture,
 )
+from bayes_poker.screen.types import WindowInfo
 from bayes_poker.screen.window import (
     GG_POKER_WINDOW_CLASS,
     TrackedWindow,
     WindowDiscovery,
-    WindowInfo,
     WindowManager,
 )
 

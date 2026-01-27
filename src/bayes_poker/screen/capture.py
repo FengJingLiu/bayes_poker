@@ -8,33 +8,16 @@ from __future__ import annotations
 import logging
 import sys
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+from bayes_poker.screen.types import WindowInfo
 
 if TYPE_CHECKING:
     from bayes_poker.ocr.schema import Area
 
 LOGGER = logging.getLogger(__name__)
-
-
-@dataclass
-class WindowInfo:
-    """窗口信息。"""
-
-    hwnd: int
-    title: str
-    class_name: str
-    x: int
-    y: int
-    width: int
-    height: int
-
-    @property
-    def area(self) -> tuple[int, int, int, int]:
-        """返回窗口区域 (x, y, width, height)。"""
-        return (self.x, self.y, self.width, self.height)
 
 
 class ScreenCapture(ABC):
