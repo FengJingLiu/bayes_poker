@@ -29,7 +29,6 @@ from bayes_poker.table.state_bridge import (
     ActionType,
     PlayerAction,
     PokerKitStateBridge,
-    Street,
     create_state_bridge,
 )
 
@@ -52,9 +51,8 @@ class ParserState(Enum):
 class TableContext:
     """牌桌上下文。"""
 
-    hwnd: int
-    window_index: int
-    capture_area: Area | None = None
+    table_index: int
+    capture_area: Area
 
     width: int = 0
     height: int = 0
@@ -75,24 +73,33 @@ class TableContext:
 class TableParser(multiprocessing.Process):
     """牌桌解析器进程。
 
-    每个窗口一个进程，独立解析牌桌状态。
+    每个牌桌区域一个进程，独立解析牌桌状态。
     """
 
     def __init__(
         self,
-        hwnd: int,
-        window_index: int,
-        capture_area: Area | None = None,
+        table_index: int,
+        capture_area: Area,
         small_blind: float = 0.5,
         big_blind: float = 1.0,
         stop_event: multiprocessing.Event | None = None,
         lock: Lock | None = None,
         poll_interval: float = 0.1,
     ) -> None:
+        """初始化牌桌解析器。
+
+        Args:
+            table_index: 牌桌索引。
+            capture_area: 牌桌在桌面上的截图区域。
+            small_blind: 小盲注金额。
+            big_blind: 大盲注金额。
+            stop_event: 停止事件（可选）。
+            lock: 进程锁（可选）。
+            poll_interval: 轮询间隔（秒）。
+        """
         super().__init__(daemon=True)
 
-        self._hwnd = hwnd
-        self._window_index = window_index
+        self._table_index = table_index
         self._capture_area = capture_area
         self._small_blind = small_blind
         self._big_blind = big_blind
@@ -114,7 +121,7 @@ class TableParser(multiprocessing.Process):
     def run(self) -> None:
         """进程主循环。"""
         LOGGER.info(
-            "TableParser 启动: hwnd=%d, index=%d", self._hwnd, self._window_index
+            "TableParser 启动: index=%d, area=%s", self._table_index, self._capture_area
         )
 
         self._initialize()
@@ -127,7 +134,7 @@ class TableParser(multiprocessing.Process):
                 time.sleep(1.0)
 
         self._state = ParserState.STOPPED
-        LOGGER.info("TableParser 停止: hwnd=%d", self._hwnd)
+        LOGGER.info("TableParser 停止: index=%d", self._table_index)
 
     def stop(self) -> None:
         """停止解析器。"""
@@ -140,21 +147,14 @@ class TableParser(multiprocessing.Process):
 
         layout = get_gg_6max_layout()
 
-        if self._capture_area is not None:
-            width = self._capture_area.width
-            height = self._capture_area.height
-            if width <= 0 or height <= 0:
-                LOGGER.error(
-                    "无效截图区域: hwnd=%d, area=%s", self._hwnd, self._capture_area
-                )
-                return
-        else:
-            rect = self._capture.get_window_rect(self._hwnd)
-            if rect is None:
-                LOGGER.error("无法获取窗口尺寸: hwnd=%d", self._hwnd)
-                return
+        width = self._capture_area.width
+        height = self._capture_area.height
 
-            _, _, width, height = rect
+        if width <= 0 or height <= 0:
+            LOGGER.error(
+                "无效截图区域: index=%d, area=%s", self._table_index, self._capture_area
+            )
+            return
 
         self._scaled_layout = ScaledLayout(
             layout=layout,
@@ -165,8 +165,7 @@ class TableParser(multiprocessing.Process):
         self._detector = TableDetector(self._scaled_layout, ocr_engine)
 
         self._context = TableContext(
-            hwnd=self._hwnd,
-            window_index=self._window_index,
+            table_index=self._table_index,
             capture_area=self._capture_area,
             width=width,
             height=height,
@@ -180,16 +179,12 @@ class TableParser(multiprocessing.Process):
             time.sleep(self._poll_interval)
             return
 
-        if self._capture_area is not None:
-            img = self._capture.capture_region(
-                hwnd=0,
-                x=self._capture_area.x1,
-                y=self._capture_area.y1,
-                width=self._capture_area.width,
-                height=self._capture_area.height,
-            )
-        else:
-            img = self._capture.capture_window(self._hwnd)
+        img = self._capture.capture_region(
+            x=self._capture_area.x1,
+            y=self._capture_area.y1,
+            width=self._capture_area.width,
+            height=self._capture_area.height,
+        )
         if img is None:
             time.sleep(self._poll_interval)
             return
