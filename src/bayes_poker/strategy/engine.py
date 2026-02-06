@@ -89,6 +89,11 @@ class StrategyDispatcher:
     preflop_strategy: StrategyHandler | None = None
     postflop_strategy: StrategyHandler | None = None
     range_predictor: OpponentRangePredictor | None = None
+    _processed_action_offsets: dict[str, int] = field(
+        default_factory=dict,
+        init=False,
+    )
+    _last_hand_by_table: dict[str, str] = field(default_factory=dict, init=False)
 
     def register_preflop(self, handler: StrategyHandler) -> None:
         """注册翻前策略处理器。
@@ -200,7 +205,7 @@ class StrategyDispatcher:
     def _update_opponent_ranges(self, observed_state: ObservedTableState) -> None:
         """更新所有对手的手牌范围。
 
-        根据每个对手最近的行动更新其范围预测。
+        根据全局动作序列中的未处理行动顺序更新其范围预测。
 
         Args:
             observed_state: 当前牌桌状态。
@@ -211,25 +216,32 @@ class StrategyDispatcher:
             return
 
         hero_seat = observed_state.hero_seat
+        table_key = observed_state.table_id or "__default_table__"
+        hand_id = observed_state.hand_id or "__unknown_hand__"
 
-        for player in observed_state.players:
-            # 跳过 hero
-            if player.seat_index == hero_seat:
+        if self._last_hand_by_table.get(table_key) != hand_id:
+            self._processed_action_offsets[table_key] = 0
+            self._last_hand_by_table[table_key] = hand_id
+
+        player_by_seat = {player.seat_index: player for player in observed_state.players}
+        history_len = len(observed_state.action_history)
+        processed_offset = self._processed_action_offsets.get(table_key, 0)
+        if processed_offset < 0 or processed_offset > history_len:
+            processed_offset = 0
+
+        pending_actions = observed_state.action_history[processed_offset:history_len]
+        if not pending_actions:
+            return
+
+        for action in pending_actions:
+            if action.player_index == hero_seat:
                 continue
 
-            # 跳过已弃牌的玩家
-            if player.is_folded:
+            player = player_by_seat.get(action.player_index)
+            if player is None:
                 continue
 
-            # 获取该玩家最近的行动
-            if not player.action_history:
-                continue
-
-            # 处理最后一个行动
-            last_action = player.action_history[-1]
-            self.range_predictor.update_range_on_action(
-                player, last_action, observed_state
-            )
+            self.range_predictor.update_range_on_action(player, action, observed_state)
 
             # 从预测器获取范围信息用于日志
             preflop_range = self.range_predictor.get_preflop_range(player.seat_index)
@@ -241,3 +253,5 @@ class StrategyDispatcher:
                 preflop_range.total_frequency() * 100 if preflop_range else 0.0,
                 postflop_range.total_frequency() * 100 if postflop_range else 0.0,
             )
+
+        self._processed_action_offsets[table_key] = history_len

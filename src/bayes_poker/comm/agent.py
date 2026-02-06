@@ -12,10 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from bayes_poker.comm.client import WebSocketClient, create_client
 from bayes_poker.comm.protocol import MessageEnvelope, MessageType, generate_session_id
-from bayes_poker.comm.messages import (
-    TableSnapshotPayload,
-    StrategyResponsePayload,
-)
+from bayes_poker.comm.messages import StrategyResponsePayload
 
 if TYPE_CHECKING:
     from bayes_poker.table.parser import TableContext
@@ -214,6 +211,8 @@ class TableClientAgent:
     async def _send_snapshot(self, session_id: str, context: TableContext) -> None:
         """发送全量快照。
 
+        直接将 ObservedTableState 序列化后发送。
+
         Args:
             session_id: 会话 ID。
             context: 牌桌上下文。
@@ -221,22 +220,7 @@ class TableClientAgent:
         if not context.observed_state:
             return
 
-        state = context.observed_state
-
-        payload = TableSnapshotPayload(
-            session_id=session_id,
-            hand_id=state.hand_id,
-            street=state.street.value,
-            pot=state.pot,
-            board=state.board_cards,
-            hero_cards=list(state.hero_cards) if state.hero_cards else [],
-            players=[p.to_dict() for p in state.players],
-            btn_seat=state.btn_seat,
-            actor_seat=state.actor_seat,
-            state_version=state.state_version,
-        )
-
-        await self._client.send_snapshot(session_id, payload.to_dict())
+        await self._client.send_snapshot(session_id, context.observed_state.to_dict())
 
 
 def create_agent(

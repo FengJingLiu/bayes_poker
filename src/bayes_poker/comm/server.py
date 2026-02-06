@@ -84,6 +84,9 @@ class WebSocketServer:
         self._strategy_handler = strategy_handler
         self._range_predictor = range_predictor
 
+        self._processed_action_offsets: dict[str, int] = {}
+        self._last_hand_by_table: dict[str, str] = {}
+
         self._running = False
         self._server = None
 
@@ -272,9 +275,6 @@ class WebSocketServer:
             MessageType.UNSUBSCRIBE: self._handle_unsubscribe,
             MessageType.RESUME: self._handle_resume,
             MessageType.TABLE_SNAPSHOT: self._handle_table_snapshot,
-            MessageType.ACTION_EVENT: self._handle_action_event,
-            MessageType.STRATEGY_REQUEST: self._handle_strategy_request,
-            MessageType.CANCEL_REQUEST: self._handle_cancel_request,
             MessageType.ACK: self._handle_ack,
             MessageType.PING: self._handle_ping,
         }
@@ -419,25 +419,38 @@ class WebSocketServer:
             return
 
         hero_seat = observed_state.hero_seat
+        table_key = observed_state.table_id or "__default_table__"
+        hand_id = observed_state.hand_id or "__unknown_hand__"
 
-        for player in observed_state.players:
-            # 跳过 hero
-            if player.seat_index == hero_seat:
+        if self._last_hand_by_table.get(table_key) != hand_id:
+            self._processed_action_offsets[table_key] = 0
+            self._last_hand_by_table[table_key] = hand_id
+
+        player_by_seat = {player.seat_index: player for player in observed_state.players}
+        history_len = len(observed_state.action_history)
+        processed_offset = self._processed_action_offsets.get(table_key, 0)
+        if processed_offset < 0 or processed_offset > history_len:
+            processed_offset = 0
+
+        pending_actions = observed_state.action_history[processed_offset:history_len]
+        if not pending_actions:
+            return
+
+        for action in pending_actions:
+            if action.player_index == hero_seat:
                 continue
 
-            # 跳过已弃牌的玩家
-            if player.is_folded:
+            player = player_by_seat.get(action.player_index)
+            if player is None:
                 continue
 
-            # 获取该玩家最近的行动
-            if not player.action_history:
-                continue
-
-            # 处理最后一个行动
-            last_action = player.action_history[-1]
             self._range_predictor.update_range_on_action(
-                player, last_action, observed_state
+                player,
+                action,
+                observed_state,
             )
+
+        self._processed_action_offsets[table_key] = history_len
 
     async def _trigger_strategy(
         self,
@@ -484,66 +497,6 @@ class WebSocketServer:
 
         except Exception as e:
             LOGGER.exception("策略计算失败: %s", e)
-
-    async def _handle_action_event(
-        self, client_session: ClientSession, msg: MessageEnvelope
-    ) -> None:
-        """处理动作事件。"""
-        session_id = msg.session_id
-        if not session_id:
-            return
-
-        table = self._session_manager.get_table_session(session_id)
-        if table:
-            table.update_activity()
-            table.add_to_replay_buffer(msg.seq or 0, msg)
-
-    async def _handle_strategy_request(
-        self, client_session: ClientSession, msg: MessageEnvelope
-    ) -> None:
-        """处理策略请求。"""
-        if not self._strategy_handler:
-            await self._send_error_to_client(
-                client_session,
-                ErrorCode.INTERNAL_ERROR,
-                "策略服务不可用",
-                request_id=msg.request_id,
-            )
-            return
-
-        session_id = msg.session_id or ""
-
-        try:
-            start_time = time.time()
-            result = await self._strategy_handler(session_id, msg.payload)
-            compute_time = int((time.time() - start_time) * 1000)
-
-            result["compute_time_ms"] = compute_time
-            result["request_id"] = msg.request_id
-            result["session_id"] = session_id
-
-            response = MessageEnvelope(
-                type=MessageType.STRATEGY_RESPONSE,
-                session_id=session_id,
-                request_id=msg.request_id,
-                payload=result,
-            )
-            await self._send_to_client(client_session, response)
-
-        except Exception as e:
-            LOGGER.exception("策略计算失败: %s", e)
-            await self._send_error_to_client(
-                client_session,
-                ErrorCode.INTERNAL_ERROR,
-                str(e),
-                request_id=msg.request_id,
-            )
-
-    async def _handle_cancel_request(
-        self, client_session: ClientSession, msg: MessageEnvelope
-    ) -> None:
-        """处理取消请求。"""
-        pass
 
     async def _handle_ack(
         self, client_session: ClientSession, msg: MessageEnvelope

@@ -9,22 +9,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bayes_poker.comm.payload_base import PayloadBase
-from bayes_poker.domain.poker import ActionType, Street
-
-
-@dataclass
-class PlayerState(PayloadBase):
-    """玩家状态。"""
-
-    seat_index: int
-    player_id: str = ""
-    stack: float = 0.0
-    bet: float = 0.0
-    is_folded: bool = False
-    is_all_in: bool = False
-    is_button: bool = False
-    is_hero: bool = False
-    position: str = ""
 
 
 @dataclass
@@ -72,54 +56,6 @@ class ResumePayload(PayloadBase):
 
     session_id: str
     last_ack_seq: int
-
-
-@dataclass
-class TableSnapshotPayload(PayloadBase):
-    """牌桌全量快照。"""
-
-    session_id: str
-    hand_id: str = ""
-    street: str = "preflop"
-    pot: float = 0.0
-    board: list[str] = field(default_factory=list)
-    hero_cards: list[str] = field(default_factory=list)
-    players: list[dict[str, Any]] = field(default_factory=list)
-    btn_seat: int = 0
-    actor_seat: int | None = None
-    state_version: int = 0
-
-
-@dataclass
-class ActionEventPayload(PayloadBase):
-    """玩家动作事件。"""
-
-    session_id: str
-    seat_index: int
-    action: str
-    amount: float = 0.0
-    state_version: int = 0
-
-
-@dataclass
-class StrategyRequestPayload(PayloadBase):
-    """策略请求（基于 ObservedTableState）。
-
-    使用 ObservedTableState 的序列化格式传输游戏状态。
-
-    Attributes:
-        session_id: 会话 ID
-        table_state: ObservedTableState.to_dict() 序列化结果
-        hero_seat: Hero 座位索引
-        hero_cards: Hero 手牌（如 ["Ah", "Kd"]）
-        state_version: 状态版本号
-    """
-
-    session_id: str
-    table_state: dict[str, Any] = field(default_factory=dict)
-    hero_seat: int = 0
-    hero_cards: list[str] = field(default_factory=list)
-    state_version: int = 0
 
 
 @dataclass

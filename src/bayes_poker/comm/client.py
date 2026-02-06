@@ -296,22 +296,6 @@ class WebSocketClient:
         )
         await self.send(msg)
 
-    async def request_strategy(
-        self, session_id: str, payload: dict[str, Any]
-    ) -> MessageEnvelope | None:
-        """请求策略建议。"""
-        msg = MessageEnvelope(
-            type=MessageType.STRATEGY_REQUEST,
-            session_id=session_id,
-            payload=payload,
-        )
-
-        try:
-            return await self.request(msg)
-        except asyncio.TimeoutError:
-            LOGGER.warning("策略请求超时")
-            return None
-
     async def _send_hello(self) -> None:
         """发送 Hello。"""
         msg = MessageEnvelope(
