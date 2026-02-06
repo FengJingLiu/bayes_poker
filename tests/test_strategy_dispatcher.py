@@ -1,4 +1,4 @@
-"""测试 StrategyDispatcher（使用 PHH 格式）。"""
+"""测试 StrategyDispatcher（使用 ObservedTableState 格式）。"""
 
 import asyncio
 from typing import Any
@@ -6,50 +6,40 @@ from typing import Any
 from bayes_poker.strategy.engine import StrategyDispatcher
 
 
-def _create_test_phh() -> str:
-    """创建用于测试的 PHH 字符串。"""
-    from pokerkit import Automation, NoLimitTexasHoldem, HandHistory
-
-    game = NoLimitTexasHoldem(
-        (
-            Automation.ANTE_POSTING,
-            Automation.BET_COLLECTION,
-            Automation.BLIND_OR_STRADDLE_POSTING,
-            Automation.HOLE_DEALING,
-        ),
-        True,
-        0,
-        (1, 2),
-        2,
-    )
-    state = game((200, 200), 2)
-    hh = HandHistory.from_game_state(game, state)
-    return hh.dumps()
-
-
-def _create_postflop_phh() -> str:
-    """创建翻后阶段的 PHH 字符串。"""
-    from pokerkit import Automation, NoLimitTexasHoldem, HandHistory
-
-    game = NoLimitTexasHoldem(
-        (
-            Automation.ANTE_POSTING,
-            Automation.BET_COLLECTION,
-            Automation.BLIND_OR_STRADDLE_POSTING,
-            Automation.HOLE_DEALING,
-            Automation.BOARD_DEALING,
-        ),
-        True,
-        0,
-        (1, 2),
-        2,
-    )
-    state = game((200, 200), 2)
-    state.check_or_call()  # SB call
-    state.check_or_call()  # BB check
-    # 现在进入 flop
-    hh = HandHistory.from_game_state(game, state)
-    return hh.dumps()
+def _create_test_table_state(street: str = "preflop") -> dict[str, Any]:
+    """创建用于测试的 table_state 字典。"""
+    return {
+        "table_id": "test",
+        "player_count": 6,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+        "hand_id": "test-001",
+        "street": street,
+        "pot": 1.5,
+        "btn_seat": 2,
+        "actor_seat": 0,
+        "hero_seat": 0,
+        "hero_cards": ["Ah", "Kd"],
+        "board_cards": [] if street == "preflop" else ["As", "Ks", "Qs"],
+        "players": [
+            {
+                "seat_index": i,
+                "player_id": f"P{i}",
+                "stack": 100.0,
+                "bet": 0.0,
+                "position": "",
+                "is_folded": False,
+                "is_thinking": False,
+                "is_button": False,
+                "vpip": 0,
+                "action_history": [],
+            }
+            for i in range(6)
+        ],
+        "action_history": [],
+        "state_version": 0,
+        "timestamp": 0.0,
+    }
 
 
 def test_dispatcher_routes_preflop_to_preflop_strategy() -> None:
@@ -68,8 +58,10 @@ def test_dispatcher_routes_preflop_to_preflop_strategy() -> None:
     dispatcher = StrategyDispatcher(preflop_strategy=preflop_strategy)
     handler = dispatcher.as_handler()
 
-    phh_data = _create_test_phh()
-    result = asyncio.run(handler("s1", {"phh_data": phh_data, "state_version": 7}))
+    table_state = _create_test_table_state("preflop")
+    result = asyncio.run(
+        handler("s1", {"table_state": table_state, "state_version": 7})
+    )
     assert result["recommended_action"] == "RFI"
 
 
@@ -89,23 +81,21 @@ def test_dispatcher_routes_postflop_to_postflop_strategy() -> None:
     dispatcher = StrategyDispatcher(postflop_strategy=postflop_strategy)
     handler = dispatcher.as_handler()
 
-    phh_data = _create_postflop_phh()
-    result = asyncio.run(handler("s1", {"phh_data": phh_data, "state_version": 3}))
-    # 由于 postflop 策略已注册，应返回 BET（如果 street 检测正确）
-    # 否则如果 board 为空仍为 preflop，则返回 fallback
-    assert result.get(
-        "recommended_action"
-    ) == "BET" or "postflopStrategy" not in result.get("notes", "")
+    table_state = _create_test_table_state("flop")
+    result = asyncio.run(
+        handler("s1", {"table_state": table_state, "state_version": 3})
+    )
+    assert result["recommended_action"] == "BET"
 
 
-def test_dispatcher_returns_fallback_when_phh_missing() -> None:
-    """测试缺少 phh_data 时返回错误响应。"""
+def test_dispatcher_returns_fallback_when_table_state_missing() -> None:
+    """测试缺少 table_state 时返回错误响应。"""
     dispatcher = StrategyDispatcher()
     handler = dispatcher.as_handler()
 
     result = asyncio.run(handler("s1", {"state_version": 1}))
     assert result["state_version"] == 1
-    assert "phh_data" in str(result.get("notes", ""))
+    assert "table_state" in str(result.get("notes", ""))
 
 
 def test_dispatcher_returns_fallback_when_strategy_missing() -> None:
@@ -113,7 +103,9 @@ def test_dispatcher_returns_fallback_when_strategy_missing() -> None:
     dispatcher = StrategyDispatcher()
     handler = dispatcher.as_handler()
 
-    phh_data = _create_test_phh()
-    result = asyncio.run(handler("s1", {"phh_data": phh_data, "state_version": 1}))
+    table_state = _create_test_table_state("preflop")
+    result = asyncio.run(
+        handler("s1", {"table_state": table_state, "state_version": 1})
+    )
     assert result["state_version"] == 1
     assert "未注册" in str(result.get("notes", ""))

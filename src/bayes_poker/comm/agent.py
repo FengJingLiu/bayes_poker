@@ -201,6 +201,13 @@ class TableClientAgent:
 
     def _context_to_state(self, context: TableContext) -> dict[str, Any]:
         """将 TableContext 转换为状态字典。"""
+        # 直接使用 ObservedTableState 的序列化
+        if context.observed_state:
+            state_dict = context.observed_state.to_dict()
+            state_dict["session_id"] = self._sessions.get(context.table_index, "")
+            return state_dict
+
+        # Fallback：兼容旧逻辑
         players = []
         for p in context.player_states:
             players.append(
@@ -222,20 +229,16 @@ class TableClientAgent:
 
         board = [c.to_pokerkit_str() for c in context.board_cards]
 
-        state_version = 0
-        if context.state_bridge:
-            state_version = len(context.state_bridge.get_action_history())
-
         return {
-            "session_id": self._sessions.get(context.window_index, ""),
+            "session_id": self._sessions.get(context.table_index, ""),
             "street": context.phase.name.lower(),
-            "pot": context.state_bridge.total_pot if context.state_bridge else 0.0,
+            "pot": 0.0,
             "board": board,
             "hero_cards": hero_cards,
             "players": players,
             "btn_seat": context.btn_seat,
             "actor_seat": context.thinking_seat,
-            "state_version": state_version,
+            "state_version": 0,
         }
 
     def _has_changes(
@@ -245,10 +248,11 @@ class TableClientAgent:
         keys_to_check = [
             "street",
             "pot",
-            "board",
+            "board_cards",
             "hero_cards",
             "btn_seat",
             "actor_seat",
+            "state_version",
         ]
 
         for key in keys_to_check:
@@ -288,8 +292,8 @@ class TableClientAgent:
             session_id=session_id,
             street=state.get("street", "preflop"),
             pot=state.get("pot", 0.0),
-            board=state.get("board", []),
-            hero_cards=state.get("hero_cards", []),
+            board=state.get("board_cards", state.get("board", [])),
+            hero_cards=state.get("hero_cards") if state.get("hero_cards") else [],
             players=state.get("players", []),
             btn_seat=state.get("btn_seat", 0),
             actor_seat=state.get("actor_seat"),
@@ -307,7 +311,14 @@ class TableClientAgent:
         """发送增量更新。"""
         changes = {}
 
-        for key in ["street", "pot", "board", "hero_cards", "btn_seat", "actor_seat"]:
+        for key in [
+            "street",
+            "pot",
+            "board_cards",
+            "hero_cards",
+            "btn_seat",
+            "actor_seat",
+        ]:
             if old_state.get(key) != new_state.get(key):
                 changes[key] = new_state.get(key)
 
@@ -325,9 +336,7 @@ class TableClientAgent:
     async def _request_strategy(
         self, session_id: str, state: dict[str, Any], context: "TableContext"
     ) -> None:
-        """请求策略建议（使用 PHH 格式）。"""
-        from bayes_poker.comm.phh_serializer import state_to_phh
-
+        """请求策略建议（直接使用 ObservedTableState）。"""
         state_version = state.get("state_version", 0)
         self._last_strategy_version[session_id] = state_version
 
@@ -336,28 +345,14 @@ class TableClientAgent:
         if context.hero_cards:
             hero_cards = [c.to_pokerkit_str() for c in context.hero_cards]
 
-        # 从 state_bridge 序列化为 PHH
-        phh_data = ""
-        if context.state_bridge:
-            try:
-                result = state_to_phh(
-                    game=context.state_bridge.game,
-                    state=context.state_bridge.state,
-                )
-                if result.success:
-                    phh_data = result.phh_str
-                else:
-                    LOGGER.warning("PHH 序列化失败: %s", result.error)
-            except Exception as e:
-                LOGGER.warning("PHH 序列化异常: %s", e)
-
-        if not phh_data:
-            LOGGER.warning("无法生成 PHH 数据，跳过策略请求")
+        # 直接发送 ObservedTableState 数据
+        if not context.observed_state:
+            LOGGER.warning("无观察者状态，跳过策略请求")
             return
 
         payload = StrategyRequestPayload(
             session_id=session_id,
-            phh_data=phh_data,
+            table_state=context.observed_state.to_dict(),
             hero_seat=0,
             hero_cards=hero_cards,
             state_version=state_version,

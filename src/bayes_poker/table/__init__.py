@@ -1,8 +1,9 @@
 """牌桌解析模块。
 
-提供实时牌桌状态解析和 pokerkit 状态维护功能。
+提供实时牌桌状态解析功能。
 """
 
+from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.table.detector import (
     ParsedCard,
     ParsedPlayerState,
@@ -22,29 +23,29 @@ from bayes_poker.table.manager import (
     ParserInfo,
     create_manager,
 )
+from bayes_poker.table.observed_state import (
+    ObservedPlayer,
+    ObservedTableState,
+    PlayerAction,
+    create_observed_state,
+)
 from bayes_poker.table.parser import (
     ParserState,
     TableContext,
     TableParser,
-)
-from bayes_poker.table.state_bridge import (
-    ActionType,
-    PlayerAction,
-    PokerKitStateBridge,
-    Street,
-    create_state_bridge,
 )
 
 __all__ = [
     "ActionType",
     "GGPoker6MaxLayout",
     "MultiTableManager",
+    "ObservedPlayer",
+    "ObservedTableState",
     "ParsedCard",
     "ParsedPlayerState",
     "ParserInfo",
     "ParserState",
     "PlayerAction",
-    "PokerKitStateBridge",
     "Position",
     "ScaledLayout",
     "Street",
@@ -54,7 +55,7 @@ __all__ = [
     "TableParser",
     "TablePhase",
     "create_manager",
-    "create_state_bridge",
+    "create_observed_state",
     "get_gg_6max_layout",
     "get_position_by_seat",
 ]

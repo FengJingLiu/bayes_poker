@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.ocr.engine import get_ocr_engine
 from bayes_poker.ocr.schema import Area
 from bayes_poker.screen.capture import ScreenCapture, get_screen_capture
@@ -25,11 +26,10 @@ from bayes_poker.table.detector import (
 )
 from bayes_poker.table.layout.base import ScaledLayout
 from bayes_poker.table.layout.gg_6max import get_gg_6max_layout
-from bayes_poker.table.state_bridge import (
-    ActionType,
+from bayes_poker.table.observed_state import (
+    ObservedTableState,
     PlayerAction,
-    PokerKitStateBridge,
-    create_state_bridge,
+    create_observed_state,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +67,8 @@ class TableContext:
     player_states: list[ParsedPlayerState] = field(default_factory=list)
     last_action_seat: int = -1
 
-    state_bridge: PokerKitStateBridge | None = None
+    # 使用轻量级观察者状态替代 pokerkit State
+    observed_state: ObservedTableState | None = None
 
 
 class TableParser(multiprocessing.Process):
@@ -218,13 +219,23 @@ class TableParser(multiprocessing.Process):
 
             if phase == TablePhase.PREFLOP and self._context.hero_cards is None:
                 self._context.hero_cards = self._detector.parse_hero_cards(img)
-                if self._context.hero_cards:
-                    cards_str = "".join(
+                if self._context.hero_cards and self._context.observed_state:
+                    cards_str = tuple(
                         c.to_pokerkit_str() for c in self._context.hero_cards
                     )
+                    self._context.observed_state.set_hero_cards(cards_str)
                     LOGGER.info("Hero 底牌: %s", cards_str)
 
             self._context.player_states = self._detector.parse_all_player_states(img)
+
+            # 更新观察者状态中的玩家信息
+            if self._context.observed_state:
+                self._context.observed_state.update_players(self._context.player_states)
+                self._context.observed_state.actor_seat = thinking_seat
+
+                # 更新底池
+                ori_pot, cur_pot = self._detector.parse_pot_size(img)
+                self._context.observed_state.update_pot(ori_pot + cur_pot)
 
             self._detect_actions(img)
 
@@ -257,18 +268,19 @@ class TableParser(multiprocessing.Process):
         LOGGER.info("新手牌开始: btn_seat=%d", btn_seat)
 
         player_states = self._detector.parse_all_player_states(img)
-        stacks = [p.chip_stack for p in player_states]
 
-        if all(s == 0 for s in stacks):
-            stacks = [self._big_blind * 100] * 6
-
-        self._context.state_bridge = create_state_bridge(
+        # 创建观察者状态
+        self._context.observed_state = create_observed_state(
             player_count=6,
             small_blind=self._small_blind,
             big_blind=self._big_blind,
-            starting_stacks=stacks,
         )
-        self._context.state_bridge.create_new_hand(stacks)
+        self._context.observed_state.start_new_hand(
+            btn_seat=btn_seat,
+            players=player_states,
+            small_blind=self._small_blind,
+            big_blind=self._big_blind,
+        )
 
         self._context.phase = phase
         self._context.btn_seat = btn_seat
@@ -292,18 +304,23 @@ class TableParser(multiprocessing.Process):
         LOGGER.info("阶段变化: %s -> %s", self._prev_phase.name, new_phase.name)
 
         new_cards = self._detector.parse_board(img, new_phase)
-        new_cards_str = "".join(c.to_pokerkit_str() for c in new_cards)
+        new_cards_str = [c.to_pokerkit_str() for c in new_cards]
 
-        existing_count = len(self._context.board_cards)
-        if len(new_cards) > existing_count:
-            added_cards = new_cards[existing_count:]
-            added_str = "".join(c.to_pokerkit_str() for c in added_cards)
+        self._context.board_cards = new_cards
 
-            if self._context.state_bridge:
-                self._context.state_bridge.deal_board(added_str)
+        # 更新观察者状态
+        if self._context.observed_state:
+            # 将 TablePhase 转换为 Street
+            street_map = {
+                TablePhase.PREFLOP: Street.PREFLOP,
+                TablePhase.FLOP: Street.FLOP,
+                TablePhase.TURN: Street.TURN,
+                TablePhase.RIVER: Street.RIVER,
+            }
+            new_street = street_map[new_phase]
+            self._context.observed_state.enter_new_street(new_street, new_cards_str)
 
-            self._context.board_cards = new_cards
-            LOGGER.info("公共牌: %s (新增: %s)", new_cards_str, added_str)
+        LOGGER.info("公共牌: %s", new_cards_str)
 
         self._prev_player_bets = [0.0] * 6
 
@@ -352,14 +369,9 @@ class TableParser(multiprocessing.Process):
         if self._context is None:
             return
 
-        action = PlayerAction(
-            player_index=seat_index,
-            action_type=action_type,
-            amount=amount,
-        )
-
-        if self._context.state_bridge:
-            self._context.state_bridge.apply_action(action)
+        # 记录到观察者状态
+        if self._context.observed_state:
+            self._context.observed_state.record_action(seat_index, action_type, amount)
 
         self._context.last_action_seat = seat_index
         LOGGER.debug(

@@ -1,6 +1,19 @@
-import asyncio
+"""翻前策略 runtime 测试（使用 ObservedTableState）。"""
 
-from bayes_poker.strategy.preflop_parse.models import PreflopStrategy, StrategyAction, StrategyNode
+import asyncio
+from typing import Any
+
+from bayes_poker.domain.poker import ActionType
+from bayes_poker.table.observed_state import (
+    ObservedPlayer,
+    ObservedTableState,
+    create_observed_state,
+)
+from bayes_poker.strategy.preflop_parse.models import (
+    PreflopStrategy,
+    StrategyAction,
+    StrategyNode,
+)
 from bayes_poker.strategy.range import (
     RANGE_169_LENGTH,
     PreflopRange,
@@ -10,12 +23,68 @@ from bayes_poker.strategy.runtime.preflop import create_preflop_strategy
 
 
 def _range_with_single_hand_probability(hand_key: str, prob: float) -> PreflopRange:
+    """创建只有单手牌概率的范围。"""
     vec = [0.0] * RANGE_169_LENGTH
     vec[get_hand_key_to_169_index()[hand_key]] = prob
     return PreflopRange(strategy=vec, evs=[0.0] * RANGE_169_LENGTH)
 
 
+def _create_observed_state_for_test(
+    hero_seat: int = 0,
+    btn_seat: int = 0,
+    stack_bb: float = 100.0,
+    hero_cards: tuple[str, str] = ("As", "Ks"),
+    player_count: int = 6,
+    action_history: list[tuple[int, ActionType, float]] | None = None,
+) -> ObservedTableState:
+    """创建用于测试的 ObservedTableState。
+
+    Args:
+        hero_seat: hero 座位索引
+        btn_seat: 庄家座位索引
+        stack_bb: hero 筹码（BB 单位）
+        hero_cards: hero 底牌
+        player_count: 玩家数量
+        action_history: 动作历史列表 [(seat, action_type, amount), ...]
+
+    Returns:
+        ObservedTableState 实例
+    """
+    state = create_observed_state(
+        player_count=player_count,
+        small_blind=0.5,
+        big_blind=1.0,
+    )
+    state.btn_seat = btn_seat
+    state.hero_seat = hero_seat
+    state.hero_cards = hero_cards
+
+    # 设置玩家筹码
+    state.players = [
+        ObservedPlayer(
+            seat_index=i,
+            player_id=f"P{i}",
+            stack=stack_bb,
+            bet=0.0,
+            position="",
+            is_folded=False,
+            is_thinking=False,
+            is_button=i == btn_seat,
+            vpip=0,
+        )
+        for i in range(player_count)
+    ]
+
+    # 记录动作历史
+    if action_history:
+        for seat, action_type, amount in action_history:
+            state.record_action(seat, action_type, amount)
+
+    return state
+
+
 def test_preflop_strategy_uses_query_node_and_recommends_by_hero_hand() -> None:
+    """测试策略查询并根据 hero 手牌推荐动作。"""
     strategy = PreflopStrategy(name="Test", source_dir="/tmp")
 
     fold_action = StrategyAction(
@@ -50,15 +119,21 @@ def test_preflop_strategy_uses_query_node_and_recommends_by_hero_hand() -> None:
     strategy.add_node(100, node)
 
     handler = create_preflop_strategy(strategy=strategy)
+
+    # 创建观察者状态（无 history，hero 在 SB 位置 seat=1，btn_seat=0）
+    observed_state = _create_observed_state_for_test(
+        hero_seat=1,  # SB
+        btn_seat=0,
+        stack_bb=100.0,
+        hero_cards=("As", "Ks"),
+    )
+
     result = asyncio.run(
         handler(
             "s1",
             {
-                "street": "preflop",
                 "state_version": 1,
-                "stack_bb": 100,
-                "history": "",
-                "hero_cards": ["As", "Ks"],
+                "observed_state": observed_state,
             },
         )
     )
@@ -68,6 +143,7 @@ def test_preflop_strategy_uses_query_node_and_recommends_by_hero_hand() -> None:
 
 
 def test_preflop_strategy_adjusts_iso_raise_size_by_num_limpers() -> None:
+    """测试 ISO 加注尺度根据 limper 数量调整。"""
     strategy = PreflopStrategy(name="Test", source_dir="/tmp")
 
     raise_action = StrategyAction(
@@ -91,24 +167,37 @@ def test_preflop_strategy_adjusts_iso_raise_size_by_num_limpers() -> None:
     strategy.add_node(100, node_no_limper)
 
     handler = create_preflop_strategy(strategy=strategy)
+
+    # 创建观察者状态（有 1 个 limper，即 history = "C"）
+    # btn_seat=5，hero_seat=4 (MP)
+    # UTG (seat 2) 做了 CALL
+    observed_state = _create_observed_state_for_test(
+        hero_seat=4,  # MP
+        btn_seat=5,
+        stack_bb=100.0,
+        hero_cards=("As", "Ks"),
+        action_history=[
+            (2, ActionType.CALL, 1.0),  # UTG call (limp)
+        ],
+    )
+
     result = asyncio.run(
         handler(
             "s1",
             {
-                "street": "preflop",
                 "state_version": 1,
-                "stack_bb": 100,
-                "history": "C",
-                "hero_cards": ["As", "Ks"],
+                "observed_state": observed_state,
             },
         )
     )
 
     assert result["recommended_action"] == "R3"
+    # 有 1 个 limper 应该 +1bb = 4.0
     assert result["recommended_amount"] == 4.0
 
 
 def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
+    """测试 SB open 根据 BB 统计调整频率。"""
     from bayes_poker.player_metrics.enums import TableType
     from bayes_poker.player_metrics.models import PlayerStats
     from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
@@ -200,25 +289,94 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
     strategy.add_node(100, node_bb)
 
     handler = create_preflop_strategy(strategy=strategy, stats_repo=StubRepo())
+
+    # 创建观察者状态（SB 位置，无 history）
+    # btn_seat=0，hero_seat=1 (SB)
+    observed_state = _create_observed_state_for_test(
+        hero_seat=1,  # SB
+        btn_seat=0,
+        stack_bb=100.0,
+        hero_cards=("As", "Ks"),
+    )
+
+    # 更新玩家列表添加 BB 信息
+    observed_state.players = [
+        ObservedPlayer(
+            seat_index=0,
+            player_id="BTN",
+            stack=100.0,
+            bet=0.0,
+            position="",
+            is_folded=False,
+            is_thinking=False,
+            is_button=True,
+            vpip=0,
+        ),
+        ObservedPlayer(
+            seat_index=1,
+            player_id="Hero",
+            stack=100.0,
+            bet=0.0,
+            position="",
+            is_folded=False,
+            is_thinking=True,
+            is_button=False,
+            vpip=0,
+        ),
+        ObservedPlayer(
+            seat_index=2,
+            player_id="BB",
+            stack=100.0,
+            bet=0.0,
+            position="",
+            is_folded=False,
+            is_thinking=False,
+            is_button=False,
+            vpip=0,
+        ),
+        ObservedPlayer(
+            seat_index=3,
+            player_id="",
+            stack=100.0,
+            bet=0.0,
+            position="",
+            is_folded=False,
+            is_thinking=False,
+            is_button=False,
+            vpip=0,
+        ),
+        ObservedPlayer(
+            seat_index=4,
+            player_id="",
+            stack=100.0,
+            bet=0.0,
+            position="",
+            is_folded=False,
+            is_thinking=False,
+            is_button=False,
+            vpip=0,
+        ),
+        ObservedPlayer(
+            seat_index=5,
+            player_id="",
+            stack=100.0,
+            bet=0.0,
+            position="",
+            is_folded=False,
+            is_thinking=False,
+            is_button=False,
+            vpip=0,
+        ),
+    ]
+
     result = asyncio.run(
         handler(
             "s1",
             {
-                "street": "preflop",
                 "state_version": 1,
-                "stack_bb": 100,
-                "history": "",
-                "hero_cards": ["As", "Ks"],
-                "hero_position": "SB",
-                "btn_seat": 5,
-                "players": [
-                    {"seat_index": 0, "player_id": "Hero"},
-                    {"seat_index": 1, "player_id": "BB"},
-                    {"seat_index": 2, "player_id": ""},
-                    {"seat_index": 3, "player_id": ""},
-                    {"seat_index": 4, "player_id": ""},
-                    {"seat_index": 5, "player_id": ""},
-                ],
+                "observed_state": observed_state,
+                "btn_seat": 0,
+                "players": observed_state.players,
             },
         )
     )

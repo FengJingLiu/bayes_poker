@@ -1,8 +1,12 @@
+"""翻前策略 runtime 框架测试。"""
+
 import asyncio
 import json
 import tempfile
 from pathlib import Path
 
+from bayes_poker.domain.poker import ActionType
+from bayes_poker.table.observed_state import ObservedPlayer, create_observed_state
 from bayes_poker.strategy.runtime.preflop import (
     PreflopLayer,
     create_preflop_strategy_from_directory,
@@ -11,6 +15,7 @@ from bayes_poker.strategy.runtime.preflop import (
 
 
 def test_infer_preflop_layer() -> None:
+    """测试翻前分层推断。"""
     assert infer_preflop_layer("") == PreflopLayer.RFI
     assert infer_preflop_layer("C") == PreflopLayer.RFI
     assert infer_preflop_layer("F-R2") == PreflopLayer.THREE_BET
@@ -18,6 +23,7 @@ def test_infer_preflop_layer() -> None:
 
 
 def test_create_preflop_strategy_from_directory_smoke() -> None:
+    """测试从目录创建策略并执行。"""
     with tempfile.TemporaryDirectory() as tmpdir:
         strategy_dir = Path(tmpdir) / "Cash6m50zGeneral"
         strategy_dir.mkdir(parents=True)
@@ -47,19 +53,36 @@ def test_create_preflop_strategy_from_directory_smoke() -> None:
         )
 
         handler = create_preflop_strategy_from_directory(strategy_dir=strategy_dir)
+
+        # 创建 ObservedTableState
+        observed_state = create_observed_state(
+            player_count=6,
+            small_blind=0.5,
+            big_blind=1.0,
+        )
+        observed_state.btn_seat = 0
+        observed_state.hero_seat = 3  # UTG
+        observed_state.hero_cards = ("As", "Ah")
+        observed_state.players = [
+            ObservedPlayer(
+                seat_index=i,
+                player_id=f"P{i}",
+                stack=100.0,
+                bet=0.0,
+                is_folded=False,
+            )
+            for i in range(6)
+        ]
+
         result = asyncio.run(
             handler(
                 "s1",
                 {
-                    "street": "preflop",
                     "state_version": 1,
-                    "stack_bb": 100,
-                    "history": "",
-                    "hero_cards": ["As", "Ks"],
+                    "observed_state": observed_state,
                 },
             )
         )
 
         assert result["state_version"] == 1
         assert "matched" in str(result.get("notes", ""))
-

@@ -9,6 +9,7 @@ import pytest
 import numpy as np
 from pathlib import Path
 
+from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.ocr.schema import (
     Point,
     RelativePoint,
@@ -28,12 +29,11 @@ from bayes_poker.table.layout.gg_6max import (
     BASE_WIDTH,
     BASE_HEIGHT,
 )
-from bayes_poker.table.state_bridge import (
-    ActionType,
+from bayes_poker.table.observed_state import (
+    ObservedPlayer,
+    ObservedTableState,
     PlayerAction,
-    PokerKitStateBridge,
-    Street,
-    create_state_bridge,
+    create_observed_state,
 )
 
 
@@ -181,73 +181,202 @@ class TestScaledLayout:
         assert area1.y1 == area2.y1 * 2
 
 
-class TestPokerKitStateBridge:
-    def test_create_state_bridge(self) -> None:
-        bridge = create_state_bridge(
+class TestObservedTableState:
+    """ObservedTableState 测试。"""
+
+    def test_create_observed_state(self) -> None:
+        """测试创建观察者状态。"""
+        state = create_observed_state(
             player_count=6,
             small_blind=0.5,
             big_blind=1.0,
         )
-        assert bridge.player_count == 6
-        assert bridge.small_blind == 0.5
-        assert bridge.big_blind == 1.0
+        assert state.player_count == 6
+        assert state.small_blind == 0.5
+        assert state.big_blind == 1.0
+        assert state.street == Street.PREFLOP
 
-    def test_create_new_hand(self) -> None:
-        bridge = create_state_bridge(
-            player_count=6,
-            small_blind=0.5,
-            big_blind=1.0,
-            starting_stacks=[100.0] * 6,
+    def test_record_action(self) -> None:
+        """测试记录动作。"""
+        state = create_observed_state()
+
+        state.record_action(0, ActionType.FOLD)
+        assert len(state.action_history) == 1
+        assert state.action_history[0].action_type == ActionType.FOLD
+        assert state.state_version == 1
+
+        state.record_action(1, ActionType.RAISE, 3.0)
+        assert len(state.action_history) == 2
+        assert state.action_history[1].amount == 3.0
+        assert state.state_version == 2
+
+    def test_enter_new_street(self) -> None:
+        """测试进入新街道。"""
+        state = create_observed_state()
+
+        state.enter_new_street(Street.FLOP, ["As", "Kh", "Qd"])
+        assert state.street == Street.FLOP
+        assert state.board_cards == ["As", "Kh", "Qd"]
+
+    def test_get_hero_position(self) -> None:
+        """测试获取 Hero 位置。"""
+        state = create_observed_state()
+        state.btn_seat = 0
+        state.hero_seat = 0
+        assert state.get_hero_position() == "BTN"
+
+        state.hero_seat = 1
+        assert state.get_hero_position() == "SB"
+
+        state.hero_seat = 2
+        assert state.get_hero_position() == "BB"
+
+    def test_get_action_history_string(self) -> None:
+        """测试获取动作历史字符串。"""
+        state = create_observed_state()
+
+        state.record_action(0, ActionType.FOLD)
+        state.record_action(1, ActionType.CALL)
+        state.record_action(2, ActionType.RAISE, 3.0)
+
+        history = state.get_action_history_string()
+        assert history == "F-C-R3"
+
+    def test_to_dict_and_from_dict(self) -> None:
+        """测试序列化和反序列化。"""
+        state = create_observed_state()
+        state.btn_seat = 2
+        state.hero_seat = 0
+        state.hero_cards = ("As", "Kd")
+        state.record_action(0, ActionType.RAISE, 3.0)
+
+        # 序列化
+        data = state.to_dict()
+        assert data["btn_seat"] == 2
+        assert data["hero_cards"] == ["As", "Kd"]
+        assert len(data["action_history"]) == 1
+
+        # 反序列化
+        restored = ObservedTableState.from_dict(data)
+        assert restored.btn_seat == 2
+        assert restored.hero_cards == ("As", "Kd")
+        assert len(restored.action_history) == 1
+        assert restored.action_history[0].amount == 3.0
+
+    def test_to_json_and_from_json(self) -> None:
+        """测试 JSON 序列化和反序列化。"""
+        state = create_observed_state()
+        state.pot = 10.5
+        state.board_cards = ["As", "Kh", "Qd"]
+
+        json_str = state.to_json()
+        restored = ObservedTableState.from_json(json_str)
+
+        assert restored.pot == 10.5
+        assert restored.board_cards == ["As", "Kh", "Qd"]
+
+    def test_get_hero_stack_bb(self) -> None:
+        """测试获取 Hero 筹码（BB 单位）。"""
+        state = create_observed_state(big_blind=1.0)
+        state.hero_seat = 0
+        state.players = [
+            ObservedPlayer(seat_index=0, stack=100.0),
+            ObservedPlayer(seat_index=1, stack=50.0),
+        ]
+
+        assert state.get_hero_stack_bb() == 100.0
+
+
+class TestObservedPlayer:
+    """ObservedPlayer 测试。"""
+
+    def test_to_dict_from_dict(self) -> None:
+        """测试 ObservedPlayer 序列化往返。"""
+        player = ObservedPlayer(
+            seat_index=0,
+            player_id="player1",
+            stack=100.0,
+            bet=5.0,
+            position="BTN",
+            is_folded=False,
+            is_thinking=True,
+            is_button=True,
+            vpip=25,
         )
-        bridge.create_new_hand()
 
-        assert bridge.current_street == Street.PREFLOP
-        assert not bridge.is_hand_complete
-        assert bridge.actor_index is not None
+        data = player.to_dict()
+        assert data["seat_index"] == 0
+        assert data["player_id"] == "player1"
+        assert data["stack"] == 100.0
+        assert data["position"] == "BTN"
 
-    def test_apply_fold_action(self) -> None:
-        bridge = create_state_bridge(
-            player_count=6,
-            small_blind=0.5,
-            big_blind=1.0,
-            starting_stacks=[100.0] * 6,
-        )
-        bridge.create_new_hand()
+        restored = ObservedPlayer.from_dict(data)
+        assert restored.seat_index == 0
+        assert restored.player_id == "player1"
+        assert restored.stack == 100.0
+        assert restored.position == "BTN"
+        assert restored.is_button is True
 
-        action = PlayerAction(
-            player_index=0,
-            action_type=ActionType.FOLD,
-        )
-        result = bridge.apply_action(action)
-
-        assert result is True
-        assert len(bridge.get_action_history()) == 1
-
-    def test_apply_raise_action(self) -> None:
-        bridge = create_state_bridge(
-            player_count=6,
-            small_blind=0.5,
-            big_blind=1.0,
-            starting_stacks=[100.0] * 6,
-        )
-        bridge.create_new_hand()
+    def test_player_action_history(self) -> None:
+        """测试玩家级别行动历史记录。"""
+        player = ObservedPlayer(seat_index=0, player_id="hero")
 
         action = PlayerAction(
             player_index=0,
             action_type=ActionType.RAISE,
             amount=3.0,
+            street=Street.PREFLOP,
         )
-        result = bridge.apply_action(action)
+        player.record_action(action)
 
-        assert result is True
+        assert len(player.action_history) == 1
+        assert player.action_history[0].action_type == ActionType.RAISE
+        assert player.action_history[0].amount == 3.0
 
-    def test_reset(self) -> None:
-        bridge = create_state_bridge()
-        bridge.create_new_hand()
-        bridge.reset()
+    def test_get_stack_bb(self) -> None:
+        """测试获取 BB 单位筹码量。"""
+        player = ObservedPlayer(seat_index=0, stack=100.0)
 
-        assert bridge.current_street == Street.PREFLOP
-        assert len(bridge.get_action_history()) == 0
+        assert player.get_stack_bb(1.0) == 100.0
+        assert player.get_stack_bb(2.0) == 50.0
+        assert player.get_stack_bb(0.0) == 100.0  # 边界情况
+
+    def test_action_history_serialization(self) -> None:
+        """测试行动历史的序列化/反序列化。"""
+        player = ObservedPlayer(seat_index=0, player_id="test")
+        action = PlayerAction(
+            player_index=0,
+            action_type=ActionType.CALL,
+            amount=1.0,
+            street=Street.PREFLOP,
+        )
+        player.record_action(action)
+
+        data = player.to_dict()
+        restored = ObservedPlayer.from_dict(data)
+
+        assert len(restored.action_history) == 1
+        assert restored.action_history[0].action_type == ActionType.CALL
+
+    def test_record_action_propagates_to_player(self) -> None:
+        """测试 ObservedTableState.record_action 同时记录到玩家历史。"""
+        state = create_observed_state()
+        state.players = [
+            ObservedPlayer(seat_index=0, player_id="p0"),
+            ObservedPlayer(seat_index=1, player_id="p1"),
+        ]
+
+        state.record_action(0, ActionType.RAISE, 3.0)
+        state.record_action(1, ActionType.CALL)
+
+        # 全局历史
+        assert len(state.action_history) == 2
+
+        # 玩家级别历史
+        assert len(state.players[0].action_history) == 1
+        assert state.players[0].action_history[0].action_type == ActionType.RAISE
+        assert len(state.players[1].action_history) == 1
+        assert state.players[1].action_history[0].action_type == ActionType.CALL
 
 
 class TestIntegration:

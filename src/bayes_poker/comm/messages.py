@@ -11,6 +11,7 @@ from typing import Any
 from bayes_poker.comm.payload_base import PayloadBase
 from bayes_poker.domain.poker import ActionType, Street
 
+
 @dataclass
 class PlayerState(PayloadBase):
     """玩家状态。"""
@@ -111,21 +112,20 @@ class ActionEventPayload(PayloadBase):
 
 @dataclass
 class StrategyRequestPayload(PayloadBase):
-    """策略请求（基于 PHH 格式）。
+    """策略请求（基于 ObservedTableState）。
 
-    使用 pokerkit 的 PHH (Poker Hand History) 格式传输游戏状态，
-    服务端使用 phh_to_state() 恢复为 pokerkit State 对象。
+    使用 ObservedTableState 的序列化格式传输游戏状态。
 
     Attributes:
         session_id: 会话 ID
-        phh_data: PHH 格式字符串（包含完整游戏状态）
+        table_state: ObservedTableState.to_dict() 序列化结果
         hero_seat: Hero 座位索引
         hero_cards: Hero 手牌（如 ["Ah", "Kd"]）
         state_version: 状态版本号
     """
 
     session_id: str
-    phh_data: str
+    table_state: dict[str, Any] = field(default_factory=dict)
     hero_seat: int = 0
     hero_cards: list[str] = field(default_factory=list)
     state_version: int = 0
