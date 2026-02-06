@@ -10,12 +10,9 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
-
-if TYPE_CHECKING:
-    from bayes_poker.table.detector import ParsedPlayerState
 
 
 @dataclass
@@ -66,13 +63,13 @@ class PlayerAction:
 
 
 @dataclass
-class ObservedPlayer:
-    """观察者视角的玩家状态。
+class Player:
+    """玩家状态。
 
-    保存当前玩家的行动历史、筹码量、位置信息等。
+    统一的玩家状态类，用于牌桌解析和服务端状态同步。
 
     Attributes:
-        seat_index: 座位索引。
+        seat_index: 座位索引（0 = Hero，顺时针递增）。
         player_id: 玩家 ID。
         stack: 当前筹码量。
         bet: 当前下注金额。
@@ -82,7 +79,6 @@ class ObservedPlayer:
         is_button: 是否是庄家。
         vpip: VPIP 统计值。
         action_history: 该玩家的行动历史。
-        stats: 玩家统计数据引用（可选）。
     """
 
     seat_index: int
@@ -95,7 +91,6 @@ class ObservedPlayer:
     is_button: bool = False
     vpip: int = 0
     action_history: list[PlayerAction] = field(default_factory=list)
-    stats: Any = None  # PlayerStats | None，使用 Any 避免循环导入
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典。
@@ -114,18 +109,17 @@ class ObservedPlayer:
             "is_button": self.is_button,
             "vpip": self.vpip,
             "action_history": [a.to_dict() for a in self.action_history],
-            # stats 不序列化，运行时按需加载
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ObservedPlayer":
+    def from_dict(cls, data: dict[str, Any]) -> "Player":
         """从字典反序列化。
 
         Args:
             data: 包含玩家状态信息的字典。
 
         Returns:
-            ObservedPlayer 实例。
+            Player 实例。
         """
         action_history = [
             PlayerAction.from_dict(a) for a in data.get("action_history", [])
@@ -243,7 +237,7 @@ class ObservedTableState:
     board_cards: list[str] = field(default_factory=list)
 
     # 玩家状态
-    players: list[ObservedPlayer] = field(default_factory=list)
+    players: list[Player] = field(default_factory=list)
 
     # 动作历史（当前手牌）
     action_history: list[PlayerAction] = field(default_factory=list)
@@ -311,7 +305,7 @@ class ObservedTableState:
             hero_seat=data.get("hero_seat", 0),
             hero_cards=hero_cards,
             board_cards=data.get("board_cards", []),
-            players=[ObservedPlayer.from_dict(p) for p in data.get("players", [])],
+            players=[Player.from_dict(p) for p in data.get("players", [])],
             action_history=action_history,
             state_version=data.get("state_version", 0),
             timestamp=data.get("timestamp", 0.0),
@@ -377,7 +371,7 @@ class ObservedTableState:
     def start_new_hand(
         self,
         btn_seat: int,
-        players: list["ParsedPlayerState"],
+        players: list["Player"],
         small_blind: float = 0.5,
         big_blind: float = 1.0,
     ) -> None:
@@ -399,13 +393,13 @@ class ObservedTableState:
         self.small_blind = small_blind
         self.big_blind = big_blind
 
-        # 将 ParsedPlayerState 转换为 ObservedPlayer
+        # 将 Player 列表存储到 players
         self.players = [
-            ObservedPlayer(
+            Player(
                 seat_index=p.seat_index,
                 player_id=p.player_id,
-                stack=p.chip_stack,
-                bet=p.bet_size,
+                stack=p.stack,
+                bet=p.bet,
                 position=_get_position_name(p.seat_index, btn_seat, len(players)),
                 is_folded=p.is_folded,
                 is_thinking=p.is_thinking,
@@ -419,7 +413,7 @@ class ObservedTableState:
         self.state_version = 0
         self.timestamp = time.time()
 
-    def update_players(self, players: list["ParsedPlayerState"]) -> None:
+    def update_players(self, players: list["Player"]) -> None:
         """更新玩家状态。
 
         Args:
@@ -431,11 +425,11 @@ class ObservedTableState:
         }
 
         self.players = [
-            ObservedPlayer(
+            Player(
                 seat_index=p.seat_index,
                 player_id=p.player_id,
-                stack=p.chip_stack,
-                bet=p.bet_size,
+                stack=p.stack,
+                bet=p.bet,
                 position=_get_position_name(p.seat_index, self.btn_seat, len(players)),
                 is_folded=p.is_folded,
                 is_thinking=p.is_thinking,

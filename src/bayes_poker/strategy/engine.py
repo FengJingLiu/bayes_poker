@@ -10,10 +10,13 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from bayes_poker.domain.poker import Street
+
+if TYPE_CHECKING:
+    from bayes_poker.strategy.opponent_range.predictor import OpponentRangePredictor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,10 +55,13 @@ class StrategyDispatcher:
         - preflopStrategy: `street == "preflop"`
         - postflopStrategy: 其它街道（flop/turn/river/postflop 等）
 
+    支持集成对手范围预测器，在处理行动时自动更新对手范围。
+
     用法示例：
         dispatcher = StrategyDispatcher()
         dispatcher.register_preflop(preflop_strategy)
         dispatcher.register_postflop(postflop_strategy)
+        dispatcher.register_range_predictor(range_predictor)
         server.set_strategy_handler(dispatcher.as_handler())
 
     最小接入示例：
@@ -66,6 +72,7 @@ class StrategyDispatcher:
         create_postflop_strategy,
         create_preflop_strategy_from_directory,
     )
+    from bayes_poker.strategy.opponent_range import create_opponent_range_predictor
 
     dispatcher = StrategyDispatcher()
     dispatcher.register_preflop(
@@ -74,12 +81,14 @@ class StrategyDispatcher:
         )
     )
     dispatcher.register_postflop(create_postflop_strategy())
+    dispatcher.register_range_predictor(create_opponent_range_predictor())
 
     server = create_server(strategy_handler=dispatcher.as_handler())
     """
 
     preflop_strategy: StrategyHandler | None = None
     postflop_strategy: StrategyHandler | None = None
+    range_predictor: OpponentRangePredictor | None = None
 
     def register_preflop(self, handler: StrategyHandler) -> None:
         """注册翻前策略处理器。
@@ -96,6 +105,14 @@ class StrategyDispatcher:
             handler: 翻后策略处理器。
         """
         self.postflop_strategy = handler
+
+    def register_range_predictor(self, predictor: OpponentRangePredictor) -> None:
+        """注册对手范围预测器。
+
+        Args:
+            predictor: 对手范围预测器实例。
+        """
+        self.range_predictor = predictor
 
     def as_handler(self) -> StrategyHandler:
         """导出为 server 需要的 `StrategyHandler`。
@@ -164,6 +181,10 @@ class StrategyDispatcher:
             observed_state.get_hero_position(),
         )
 
+        # 更新对手范围（如果注册了预测器）
+        if self.range_predictor:
+            self._update_opponent_ranges(observed_state)
+
         if street == Street.PREFLOP:
             if not self.preflop_strategy:
                 return _base_response(state_version, "preflopStrategy 未注册")
@@ -175,3 +196,48 @@ class StrategyDispatcher:
                 f"postflopStrategy 未注册 (street={street.value})",
             )
         return await self.postflop_strategy(session_id, enriched_payload)
+
+    def _update_opponent_ranges(self, observed_state: ObservedTableState) -> None:
+        """更新所有对手的手牌范围。
+
+        根据每个对手最近的行动更新其范围预测。
+
+        Args:
+            observed_state: 当前牌桌状态。
+        """
+        from bayes_poker.table.observed_state import ObservedTableState
+
+        if not self.range_predictor:
+            return
+
+        hero_seat = observed_state.hero_seat
+
+        for player in observed_state.players:
+            # 跳过 hero
+            if player.seat_index == hero_seat:
+                continue
+
+            # 跳过已弃牌的玩家
+            if player.is_folded:
+                continue
+
+            # 获取该玩家最近的行动
+            if not player.action_history:
+                continue
+
+            # 处理最后一个行动
+            last_action = player.action_history[-1]
+            self.range_predictor.update_range_on_action(
+                player, last_action, observed_state
+            )
+
+            # 从预测器获取范围信息用于日志
+            preflop_range = self.range_predictor.get_preflop_range(player.seat_index)
+            postflop_range = self.range_predictor.get_postflop_range(player.seat_index)
+
+            LOGGER.debug(
+                "已更新对手 %s 范围: preflop_freq=%.2f%%, postflop_freq=%.2f%%",
+                player.player_id,
+                preflop_range.total_frequency() * 100 if preflop_range else 0.0,
+                postflop_range.total_frequency() * 100 if postflop_range else 0.0,
+            )

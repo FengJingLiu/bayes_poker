@@ -5,7 +5,7 @@ from typing import Any
 
 from bayes_poker.domain.poker import ActionType
 from bayes_poker.table.observed_state import (
-    ObservedPlayer,
+    Player,
     ObservedTableState,
     create_observed_state,
 )
@@ -61,7 +61,7 @@ def _create_observed_state_for_test(
 
     # 设置玩家筹码
     state.players = [
-        ObservedPlayer(
+        Player(
             seat_index=i,
             player_id=f"P{i}",
             stack=stack_bb,
@@ -301,7 +301,7 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
 
     # 更新玩家列表添加 BB 信息
     observed_state.players = [
-        ObservedPlayer(
+        Player(
             seat_index=0,
             player_id="BTN",
             stack=100.0,
@@ -312,7 +312,7 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
             is_button=True,
             vpip=0,
         ),
-        ObservedPlayer(
+        Player(
             seat_index=1,
             player_id="Hero",
             stack=100.0,
@@ -323,7 +323,7 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
             is_button=False,
             vpip=0,
         ),
-        ObservedPlayer(
+        Player(
             seat_index=2,
             player_id="BB",
             stack=100.0,
@@ -334,7 +334,7 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
             is_button=False,
             vpip=0,
         ),
-        ObservedPlayer(
+        Player(
             seat_index=3,
             player_id="",
             stack=100.0,
@@ -345,7 +345,7 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
             is_button=False,
             vpip=0,
         ),
-        ObservedPlayer(
+        Player(
             seat_index=4,
             player_id="",
             stack=100.0,
@@ -356,7 +356,7 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
             is_button=False,
             vpip=0,
         ),
-        ObservedPlayer(
+        Player(
             seat_index=5,
             player_id="",
             stack=100.0,

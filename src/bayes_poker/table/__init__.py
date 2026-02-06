@@ -6,7 +6,6 @@
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.table.detector import (
     ParsedCard,
-    ParsedPlayerState,
     TableDetector,
     TablePhase,
 )
@@ -24,8 +23,8 @@ from bayes_poker.table.manager import (
     create_manager,
 )
 from bayes_poker.table.observed_state import (
-    ObservedPlayer,
     ObservedTableState,
+    Player,
     PlayerAction,
     create_observed_state,
 )
@@ -39,12 +38,11 @@ __all__ = [
     "ActionType",
     "GGPoker6MaxLayout",
     "MultiTableManager",
-    "ObservedPlayer",
     "ObservedTableState",
     "ParsedCard",
-    "ParsedPlayerState",
     "ParserInfo",
     "ParserState",
+    "Player",
     "PlayerAction",
     "Position",
     "ScaledLayout",

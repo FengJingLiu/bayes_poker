@@ -10,12 +10,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
-from bayes_poker.comm.client import WebSocketClient, ClientConfig, create_client
+from bayes_poker.comm.client import WebSocketClient, create_client
 from bayes_poker.comm.protocol import MessageEnvelope, MessageType, generate_session_id
 from bayes_poker.comm.messages import (
     TableSnapshotPayload,
-    TableStateUpdatePayload,
-    StrategyRequestPayload,
     StrategyResponsePayload,
 )
 
@@ -35,16 +33,16 @@ class AgentConfig:
     server_url: str = "ws://localhost:8765/ws"
     api_key: str = ""
     sync_interval: float = 0.5
-    auto_request_strategy: bool = True
 
 
 class TableClientAgent:
     """牌桌客户端代理。
 
     负责：
-    - 将 TableParser 的状态同步到服务器
-    - 在 Hero 行动时自动请求策略建议
+    - 将 TableParser 的状态全量同步到服务器
     - 接收并分发策略响应
+
+    策略请求由服务器端自动判断触发，客户端不再主动请求。
     """
 
     def __init__(
@@ -52,6 +50,12 @@ class TableClientAgent:
         config: AgentConfig,
         strategy_callback: StrategyCallback | None = None,
     ) -> None:
+        """初始化客户端代理。
+
+        Args:
+            config: 代理配置。
+            strategy_callback: 策略响应回调函数。
+        """
         self._config = config
         self._strategy_callback = strategy_callback
 
@@ -61,7 +65,6 @@ class TableClientAgent:
         )
 
         self._sessions: dict[int, str] = {}
-        self._last_states: dict[str, dict[str, Any]] = {}
         self._last_strategy_version: dict[str, int] = {}
 
         self._running = False
@@ -86,7 +89,11 @@ class TableClientAgent:
         self._client.on(MessageType.SERVER_NOTICE, self._on_notice)
 
     async def _on_strategy_response(self, msg: MessageEnvelope) -> None:
-        """处理策略响应。"""
+        """处理策略响应。
+
+        Args:
+            msg: 消息信封。
+        """
         session_id = msg.session_id
         state_version = msg.payload.get("state_version", 0)
 
@@ -94,6 +101,8 @@ class TableClientAgent:
         if state_version < current_version:
             LOGGER.debug("忽略过期策略响应: %d < %d", state_version, current_version)
             return
+
+        self._last_strategy_version[session_id or ""] = state_version
 
         if self._strategy_callback:
             response = StrategyResponsePayload(
@@ -113,11 +122,19 @@ class TableClientAgent:
             self._strategy_callback(response)
 
     async def _on_error(self, msg: MessageEnvelope) -> None:
-        """处理错误。"""
+        """处理错误。
+
+        Args:
+            msg: 消息信封。
+        """
         LOGGER.error("服务器错误: %s", msg.payload)
 
     async def _on_notice(self, msg: MessageEnvelope) -> None:
-        """处理通知。"""
+        """处理通知。
+
+        Args:
+            msg: 消息信封。
+        """
         LOGGER.info("服务器通知: %s", msg.payload.get("message"))
 
     async def start(self) -> None:
@@ -149,12 +166,12 @@ class TableClientAgent:
         """注册牌桌并订阅。
 
         Args:
-            window_index: 窗口索引
-            table_type: 牌桌类型
-            blinds: 盲注
+            window_index: 窗口索引。
+            table_type: 牌桌类型。
+            blinds: 盲注。
 
         Returns:
-            session_id
+            会话 ID。
         """
         session_id = generate_session_id()
         self._sessions[window_index] = session_id
@@ -165,200 +182,61 @@ class TableClientAgent:
         return session_id
 
     async def unregister_table(self, window_index: int) -> None:
-        """取消注册牌桌。"""
+        """取消注册牌桌。
+
+        Args:
+            window_index: 窗口索引。
+        """
         session_id = self._sessions.pop(window_index, None)
         if session_id:
-            self._last_states.pop(session_id, None)
             self._last_strategy_version.pop(session_id, None)
 
     async def sync_table_state(self, window_index: int, context: TableContext) -> None:
-        """同步牌桌状态。
+        """同步牌桌状态（全量发送）。
+
+        每次解析到新动作时调用，发送完整的 ObservedTableState 到服务器。
+        服务器负责判断是否需要触发策略计算。
 
         Args:
-            window_index: 窗口索引
-            context: 牌桌上下文
+            window_index: 窗口索引。
+            context: 牌桌上下文。
         """
         session_id = self._sessions.get(window_index)
         if not session_id or not self._client.is_connected:
             return
 
-        state = self._context_to_state(context)
-        last_state = self._last_states.get(session_id)
+        if not context.observed_state:
+            LOGGER.debug("无观察者状态，跳过同步")
+            return
 
-        if last_state is None:
-            await self._send_snapshot(session_id, state)
-        elif self._has_changes(last_state, state):
-            await self._send_update(session_id, state, last_state)
+        await self._send_snapshot(session_id, context)
 
-        self._last_states[session_id] = state
+    async def _send_snapshot(self, session_id: str, context: TableContext) -> None:
+        """发送全量快照。
 
-        if (
-            self._config.auto_request_strategy
-            and self._is_hero_turn(context)
-            and self._should_request_strategy(session_id, state)
-        ):
-            await self._request_strategy(session_id, state, context)
+        Args:
+            session_id: 会话 ID。
+            context: 牌桌上下文。
+        """
+        if not context.observed_state:
+            return
 
-    def _context_to_state(self, context: TableContext) -> dict[str, Any]:
-        """将 TableContext 转换为状态字典。"""
-        # 直接使用 ObservedTableState 的序列化
-        if context.observed_state:
-            state_dict = context.observed_state.to_dict()
-            state_dict["session_id"] = self._sessions.get(context.table_index, "")
-            return state_dict
+        state = context.observed_state
 
-        # Fallback：兼容旧逻辑
-        players = []
-        for p in context.player_states:
-            players.append(
-                {
-                    "seat_index": p.seat_index,
-                    "player_id": p.player_id,
-                    "stack": p.chip_stack,
-                    "bet": p.bet_size,
-                    "is_folded": p.is_folded,
-                    "is_button": p.is_button,
-                    "is_thinking": p.is_thinking,
-                    "vpip": p.vpip,
-                }
-            )
-
-        hero_cards = []
-        if context.hero_cards:
-            hero_cards = [c.to_pokerkit_str() for c in context.hero_cards]
-
-        board = [c.to_pokerkit_str() for c in context.board_cards]
-
-        return {
-            "session_id": self._sessions.get(context.table_index, ""),
-            "street": context.phase.name.lower(),
-            "pot": 0.0,
-            "board": board,
-            "hero_cards": hero_cards,
-            "players": players,
-            "btn_seat": context.btn_seat,
-            "actor_seat": context.thinking_seat,
-            "state_version": 0,
-        }
-
-    def _has_changes(
-        self, old_state: dict[str, Any], new_state: dict[str, Any]
-    ) -> bool:
-        """检查状态是否有变化。"""
-        keys_to_check = [
-            "street",
-            "pot",
-            "board_cards",
-            "hero_cards",
-            "btn_seat",
-            "actor_seat",
-            "state_version",
-        ]
-
-        for key in keys_to_check:
-            if old_state.get(key) != new_state.get(key):
-                return True
-
-        old_players = old_state.get("players", [])
-        new_players = new_state.get("players", [])
-
-        if len(old_players) != len(new_players):
-            return True
-
-        for old_p, new_p in zip(old_players, new_players, strict=False):
-            if old_p.get("bet") != new_p.get("bet"):
-                return True
-            if old_p.get("stack") != new_p.get("stack"):
-                return True
-            if old_p.get("is_folded") != new_p.get("is_folded"):
-                return True
-
-        return False
-
-    def _is_hero_turn(self, context: TableContext) -> bool:
-        """检查是否轮到 Hero。"""
-        return context.thinking_seat == 0
-
-    def _should_request_strategy(self, session_id: str, state: dict[str, Any]) -> bool:
-        """检查是否应该请求策略。"""
-        current_version = state.get("state_version", 0)
-        last_version = self._last_strategy_version.get(session_id, -1)
-
-        return current_version > last_version
-
-    async def _send_snapshot(self, session_id: str, state: dict[str, Any]) -> None:
-        """发送全量快照。"""
         payload = TableSnapshotPayload(
             session_id=session_id,
-            street=state.get("street", "preflop"),
-            pot=state.get("pot", 0.0),
-            board=state.get("board_cards", state.get("board", [])),
-            hero_cards=state.get("hero_cards") if state.get("hero_cards") else [],
-            players=state.get("players", []),
-            btn_seat=state.get("btn_seat", 0),
-            actor_seat=state.get("actor_seat"),
-            state_version=state.get("state_version", 0),
+            hand_id=state.hand_id,
+            street=state.street.value,
+            pot=state.pot,
+            board=state.board_cards,
+            hero_cards=list(state.hero_cards) if state.hero_cards else [],
+            players=[p.to_dict() for p in state.players],
+            btn_seat=state.btn_seat,
+            actor_seat=state.actor_seat,
+            state_version=state.state_version,
         )
 
         await self._client.send_snapshot(session_id, payload.to_dict())
-
-    async def _send_update(
-        self,
-        session_id: str,
-        new_state: dict[str, Any],
-        old_state: dict[str, Any],
-    ) -> None:
-        """发送增量更新。"""
-        changes = {}
-
-        for key in [
-            "street",
-            "pot",
-            "board_cards",
-            "hero_cards",
-            "btn_seat",
-            "actor_seat",
-        ]:
-            if old_state.get(key) != new_state.get(key):
-                changes[key] = new_state.get(key)
-
-        if old_state.get("players") != new_state.get("players"):
-            changes["players"] = new_state.get("players")
-
-        payload = TableStateUpdatePayload(
-            session_id=session_id,
-            changes=changes,
-            state_version=new_state.get("state_version", 0),
-        )
-
-        await self._client.send_state_update(session_id, payload.to_dict())
-
-    async def _request_strategy(
-        self, session_id: str, state: dict[str, Any], context: "TableContext"
-    ) -> None:
-        """请求策略建议（直接使用 ObservedTableState）。"""
-        state_version = state.get("state_version", 0)
-        self._last_strategy_version[session_id] = state_version
-
-        # 获取 Hero 手牌
-        hero_cards: list[str] = []
-        if context.hero_cards:
-            hero_cards = [c.to_pokerkit_str() for c in context.hero_cards]
-
-        # 直接发送 ObservedTableState 数据
-        if not context.observed_state:
-            LOGGER.warning("无观察者状态，跳过策略请求")
-            return
-
-        payload = StrategyRequestPayload(
-            session_id=session_id,
-            table_state=context.observed_state.to_dict(),
-            hero_seat=0,
-            hero_cards=hero_cards,
-            state_version=state_version,
-        )
-
-        await self._client.request_strategy(session_id, payload.to_dict())
 
 
 def create_agent(
@@ -366,7 +244,16 @@ def create_agent(
     api_key: str = "",
     strategy_callback: StrategyCallback | None = None,
 ) -> TableClientAgent:
-    """创建客户端代理。"""
+    """创建客户端代理。
+
+    Args:
+        server_url: 服务器 URL。
+        api_key: API 密钥。
+        strategy_callback: 策略响应回调函数。
+
+    Returns:
+        客户端代理实例。
+    """
     config = AgentConfig(
         server_url=server_url,
         api_key=api_key,

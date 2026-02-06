@@ -14,7 +14,6 @@ from bayes_poker.comm.protocol import (
 )
 from bayes_poker.comm.messages import (
     ActionEventPayload,
-    ActionType,
     AckPayload,
     AuthPayload,
     AuthResponsePayload,
@@ -25,10 +24,8 @@ from bayes_poker.comm.messages import (
     ServerNoticePayload,
     StrategyRequestPayload,
     StrategyResponsePayload,
-    Street,
     SubscribePayload,
     TableSnapshotPayload,
-    TableStateUpdatePayload,
 )
 from bayes_poker.comm.client import (
     ClientConfig,
@@ -62,8 +59,6 @@ __all__ = [
     "generate_client_id",
     "generate_request_id",
     "generate_session_id",
-    "ActionType",
-    "Street",
     "PlayerState",
     "HelloPayload",
     "AuthPayload",
@@ -71,7 +66,6 @@ __all__ = [
     "SubscribePayload",
     "ResumePayload",
     "TableSnapshotPayload",
-    "TableStateUpdatePayload",
     "ActionEventPayload",
     "StrategyRequestPayload",
     "StrategyResponsePayload",

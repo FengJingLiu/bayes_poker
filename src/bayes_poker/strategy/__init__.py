@@ -27,6 +27,10 @@ from bayes_poker.strategy.runtime import (
     infer_preflop_layer,
     load_preflop_strategy_from_directory,
 )
+from bayes_poker.strategy.opponent_range import (
+    OpponentRangePredictor,
+    create_opponent_range_predictor,
+)
 
 __all__ = [
     # server/runtime
@@ -52,4 +56,7 @@ __all__ = [
     "parse_strategy_file",
     "parse_strategy_node",
     "split_history_tokens",
+    # opponent_range 子模块导出
+    "OpponentRangePredictor",
+    "create_opponent_range_predictor",
 ]

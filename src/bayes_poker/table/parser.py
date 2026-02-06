@@ -20,7 +20,6 @@ from bayes_poker.ocr.schema import Area
 from bayes_poker.screen.capture import ScreenCapture, get_screen_capture
 from bayes_poker.table.detector import (
     ParsedCard,
-    ParsedPlayerState,
     TableDetector,
     TablePhase,
 )
@@ -28,7 +27,6 @@ from bayes_poker.table.layout.base import ScaledLayout
 from bayes_poker.table.layout.gg_6max import get_gg_6max_layout
 from bayes_poker.table.observed_state import (
     ObservedTableState,
-    PlayerAction,
     create_observed_state,
 )
 
@@ -49,7 +47,19 @@ class ParserState(Enum):
 
 @dataclass
 class TableContext:
-    """牌桌上下文。"""
+    """牌桌上下文。
+
+    Attributes:
+        table_index: 牌桌索引。
+        capture_area: 牌桌截图区域。
+        width: 截图宽度。
+        height: 截图高度。
+        phase: 当前阶段。
+        btn_seat: 庄家座位。
+        thinking_seat: 当前思考玩家座位。
+        last_action_seat: 最后行动玩家座位。
+        observed_state: 观察者状态（包含完整牌局信息）。
+    """
 
     table_index: int
     capture_area: Area
@@ -60,14 +70,9 @@ class TableContext:
     phase: TablePhase = TablePhase.PREFLOP
     btn_seat: int = -1
     thinking_seat: int = -1
-
-    hero_cards: tuple[ParsedCard, ParsedCard] | None = None
-    board_cards: list[ParsedCard] = field(default_factory=list)
-
-    player_states: list[ParsedPlayerState] = field(default_factory=list)
     last_action_seat: int = -1
 
-    # 使用轻量级观察者状态替代 pokerkit State
+    # 观察者状态（核心状态存储）
     observed_state: ObservedTableState | None = None
 
 
@@ -118,6 +123,9 @@ class TableParser(multiprocessing.Process):
         self._prev_btn_seat: int = -1
         self._prev_player_bets: list[float] = []
         self._prev_player_folded: list[bool] = []
+
+        # 解析器内部临时变量（不对外暴露）
+        self._hero_cards: tuple[ParsedCard, ParsedCard] | None = None
 
     def run(self) -> None:
         """进程主循环。"""
@@ -217,20 +225,18 @@ class TableParser(multiprocessing.Process):
         if self._state == ParserState.PARSING:
             self._detect_phase_changes(img, phase)
 
-            if phase == TablePhase.PREFLOP and self._context.hero_cards is None:
-                self._context.hero_cards = self._detector.parse_hero_cards(img)
-                if self._context.hero_cards and self._context.observed_state:
-                    cards_str = tuple(
-                        c.to_pokerkit_str() for c in self._context.hero_cards
-                    )
+            if phase == TablePhase.PREFLOP and self._hero_cards is None:
+                self._hero_cards = self._detector.parse_hero_cards(img)
+                if self._hero_cards and self._context.observed_state:
+                    cards_str = tuple(c.to_pokerkit_str() for c in self._hero_cards)
                     self._context.observed_state.set_hero_cards(cards_str)
                     LOGGER.info("Hero 底牌: %s", cards_str)
 
-            self._context.player_states = self._detector.parse_all_player_states(img)
+            player_states = self._detector.parse_all_player_states(img)
 
             # 更新观察者状态中的玩家信息
             if self._context.observed_state:
-                self._context.observed_state.update_players(self._context.player_states)
+                self._context.observed_state.update_players(player_states)
                 self._context.observed_state.actor_seat = thinking_seat
 
                 # 更新底池
@@ -284,9 +290,7 @@ class TableParser(multiprocessing.Process):
 
         self._context.phase = phase
         self._context.btn_seat = btn_seat
-        self._context.hero_cards = None
-        self._context.board_cards = []
-        self._context.player_states = player_states
+        self._hero_cards = None
         self._context.last_action_seat = -1
 
         self._prev_player_bets = [0.0] * 6
@@ -305,8 +309,6 @@ class TableParser(multiprocessing.Process):
 
         new_cards = self._detector.parse_board(img, new_phase)
         new_cards_str = [c.to_pokerkit_str() for c in new_cards]
-
-        self._context.board_cards = new_cards
 
         # 更新观察者状态
         if self._context.observed_state:
@@ -329,16 +331,21 @@ class TableParser(multiprocessing.Process):
         if self._detector is None or self._context is None:
             return
 
-        if not self._prev_player_folded:
-            self._prev_player_folded = [False] * len(self._context.player_states)
+        if not self._context.observed_state:
+            return
 
-        current_bets = [p.bet_size for p in self._context.player_states]
-        current_folded = [p.is_folded for p in self._context.player_states]
+        players = self._context.observed_state.players
+
+        if not self._prev_player_folded:
+            self._prev_player_folded = [False] * len(players)
+
+        current_bets = [p.bet_size for p in players]
+        current_folded = [p.is_folded for p in players]
 
         for i, (prev_bet, curr_bet) in enumerate(
             zip(self._prev_player_bets, current_bets, strict=False)
         ):
-            player_state = self._context.player_states[i]
+            player_state = players[i]
 
             if player_state.is_folded and not self._was_folded(i):
                 self._record_action(i, ActionType.FOLD)

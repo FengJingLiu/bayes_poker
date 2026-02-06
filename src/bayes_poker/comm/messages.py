@@ -91,15 +91,6 @@ class TableSnapshotPayload(PayloadBase):
 
 
 @dataclass
-class TableStateUpdatePayload(PayloadBase):
-    """牌桌增量更新。"""
-
-    session_id: str
-    changes: dict[str, Any] = field(default_factory=dict)
-    state_version: int = 0
-
-
-@dataclass
 class ActionEventPayload(PayloadBase):
     """玩家动作事件。"""
 

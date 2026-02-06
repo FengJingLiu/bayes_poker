@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from bayes_poker.domain.poker import ActionType
-from bayes_poker.table.observed_state import ObservedPlayer, create_observed_state
+from bayes_poker.table.observed_state import Player, create_observed_state
 from bayes_poker.strategy.runtime.preflop import (
     PreflopLayer,
     create_preflop_strategy_from_directory,
@@ -64,7 +64,7 @@ def test_create_preflop_strategy_from_directory_smoke() -> None:
         observed_state.hero_seat = 3  # UTG
         observed_state.hero_cards = ("As", "Ah")
         observed_state.players = [
-            ObservedPlayer(
+            Player(
                 seat_index=i,
                 player_id=f"P{i}",
                 stack=100.0,

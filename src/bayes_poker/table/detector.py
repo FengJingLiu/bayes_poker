@@ -16,6 +16,9 @@ from bayes_poker.ocr.interface import OCREngine
 from bayes_poker.ocr.schema import Area, Color, Point, CARD_SUIT_COLORS
 from bayes_poker.table.layout.base import ScaledLayout
 
+if TYPE_CHECKING:
+    from bayes_poker.table.observed_state import Player
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -40,20 +43,6 @@ class ParsedCard:
 
     def to_pokerkit_str(self) -> str:
         return f"{self.rank}{self.suit}"
-
-
-@dataclass
-class ParsedPlayerState:
-    """解析出的玩家状态。"""
-
-    seat_index: int
-    player_id: str = ""
-    chip_stack: float = 0.0
-    bet_size: float = 0.0
-    vpip: int = 0
-    is_folded: bool = False
-    is_thinking: bool = False
-    is_button: bool = False
 
 
 class TableDetector:
@@ -283,19 +272,21 @@ class TableDetector:
         fold_btn, call_btn, _ = self.detect_hero_decision_buttons(img)
         return fold_btn and call_btn
 
-    def parse_all_player_states(self, img: np.ndarray) -> list[ParsedPlayerState]:
+    def parse_all_player_states(self, img: np.ndarray) -> list["Player"]:
         """解析所有玩家状态。"""
+        from bayes_poker.table.observed_state import Player
+
         player_count = self._layout.layout.player_count
         btn_seat = self.detect_button_seat(img)
         thinking_seat = self.detect_thinking_seat(img)
 
         states = []
         for i in range(player_count):
-            state = ParsedPlayerState(
+            state = Player(
                 seat_index=i,
                 player_id=self.parse_player_id(img, i),
-                chip_stack=self.parse_player_chip_stack(img, i),
-                bet_size=self.parse_player_bet_size(img, i),
+                stack=self.parse_player_chip_stack(img, i),
+                bet=self.parse_player_bet_size(img, i),
                 vpip=self.parse_player_vpip(img, i),
                 is_folded=self.detect_player_folded(img, i),
                 is_thinking=(i == thinking_seat),

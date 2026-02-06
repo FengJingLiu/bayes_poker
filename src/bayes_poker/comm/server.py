@@ -20,7 +20,6 @@ from bayes_poker.comm.protocol import (
     generate_request_id,
 )
 from bayes_poker.comm.messages import (
-    AckPayload,
     AuthResponsePayload,
     ErrorPayload,
 )
@@ -29,9 +28,10 @@ from bayes_poker.comm.session import (
     SessionManager,
     TableSession,
 )
+from bayes_poker.table.observed_state import ObservedTableState
 
 if TYPE_CHECKING:
-    pass
+    from bayes_poker.strategy.opponent_range.predictor import OpponentRangePredictor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,10 +70,19 @@ class WebSocketServer:
         self,
         config: ServerConfig,
         strategy_handler: StrategyHandler | None = None,
+        range_predictor: "OpponentRangePredictor | None" = None,
     ) -> None:
+        """初始化 WebSocket 服务器。
+
+        Args:
+            config: 服务器配置。
+            strategy_handler: 策略处理器。
+            range_predictor: 对手范围预测器（可选）。
+        """
         self._config = config
         self._session_manager = SessionManager()
         self._strategy_handler = strategy_handler
+        self._range_predictor = range_predictor
 
         self._running = False
         self._server = None
@@ -86,8 +95,20 @@ class WebSocketServer:
         return self._session_manager
 
     def set_strategy_handler(self, handler: StrategyHandler) -> None:
-        """设置策略处理器。"""
+        """设置策略处理器。
+
+        Args:
+            handler: 策略处理器。
+        """
         self._strategy_handler = handler
+
+    def set_range_predictor(self, predictor: "OpponentRangePredictor") -> None:
+        """设置对手范围预测器。
+
+        Args:
+            predictor: 对手范围预测器。
+        """
+        self._range_predictor = predictor
 
     async def start(self) -> None:
         """启动服务器。"""
@@ -117,7 +138,9 @@ class WebSocketServer:
         )
 
         scheme = "wss" if ssl_context else "ws"
-        LOGGER.info("服务器启动: %s://%s:%d", scheme, self._config.host, self._config.port)
+        LOGGER.info(
+            "服务器启动: %s://%s:%d", scheme, self._config.host, self._config.port
+        )
 
         cleanup_task = asyncio.create_task(self._cleanup_loop())
 
@@ -249,7 +272,6 @@ class WebSocketServer:
             MessageType.UNSUBSCRIBE: self._handle_unsubscribe,
             MessageType.RESUME: self._handle_resume,
             MessageType.TABLE_SNAPSHOT: self._handle_table_snapshot,
-            MessageType.TABLE_STATE_UPDATE: self._handle_state_update,
             MessageType.ACTION_EVENT: self._handle_action_event,
             MessageType.STRATEGY_REQUEST: self._handle_strategy_request,
             MessageType.CANCEL_REQUEST: self._handle_cancel_request,
@@ -344,7 +366,19 @@ class WebSocketServer:
     async def _handle_table_snapshot(
         self, client_session: ClientSession, msg: MessageEnvelope
     ) -> None:
-        """处理牌桌快照。"""
+        """处理牌桌快照。
+
+        收到全量状态后：
+        - 保存快照
+        - 反序列化为 ObservedTableState
+        - 判断是否 Hero 回合
+        - Hero 回合：触发策略生成
+        - 非 Hero 回合：更新对手范围
+
+        Args:
+            client_session: 客户端会话。
+            msg: 消息信封。
+        """
         session_id = msg.session_id
         if not session_id:
             return
@@ -354,19 +388,102 @@ class WebSocketServer:
             table.set_snapshot(msg.payload)
             table.add_to_replay_buffer(msg.seq or 0, msg)
 
-    async def _handle_state_update(
-        self, client_session: ClientSession, msg: MessageEnvelope
-    ) -> None:
-        """处理状态更新。"""
-        session_id = msg.session_id
-        if not session_id:
+        # 反序列化状态
+        try:
+            observed_state = ObservedTableState.from_dict(msg.payload)
+        except Exception as e:
+            LOGGER.warning("状态反序列化失败: %s", e)
             return
 
-        table = self._session_manager.get_table_session(session_id)
-        if table:
-            table.state_version += 1
-            table.update_activity()
-            table.add_to_replay_buffer(msg.seq or 0, msg)
+        hero_seat = observed_state.hero_seat
+        actor_seat = observed_state.actor_seat
+
+        # 判断是否是 Hero 回合
+        is_hero_turn = actor_seat is not None and actor_seat == hero_seat
+
+        if is_hero_turn:
+            # Hero 回合：触发策略生成
+            if self._strategy_handler:
+                await self._trigger_strategy(client_session, session_id, observed_state)
+        else:
+            # 非 Hero 回合：更新对手范围
+            self._update_opponent_ranges(observed_state)
+
+    def _update_opponent_ranges(self, observed_state: ObservedTableState) -> None:
+        """更新对手范围。
+
+        Args:
+            observed_state: 观察者状态。
+        """
+        if not self._range_predictor:
+            return
+
+        hero_seat = observed_state.hero_seat
+
+        for player in observed_state.players:
+            # 跳过 hero
+            if player.seat_index == hero_seat:
+                continue
+
+            # 跳过已弃牌的玩家
+            if player.is_folded:
+                continue
+
+            # 获取该玩家最近的行动
+            if not player.action_history:
+                continue
+
+            # 处理最后一个行动
+            last_action = player.action_history[-1]
+            self._range_predictor.update_range_on_action(
+                player, last_action, observed_state
+            )
+
+    async def _trigger_strategy(
+        self,
+        client_session: ClientSession,
+        session_id: str,
+        observed_state: ObservedTableState,
+    ) -> None:
+        """触发策略计算。
+
+        Args:
+            client_session: 客户端会话。
+            session_id: 会话 ID。
+            observed_state: 观察者状态。
+        """
+        if not self._strategy_handler:
+            return
+
+        # 先更新对手范围
+        self._update_opponent_ranges(observed_state)
+
+        payload = {
+            "table_state": observed_state.to_dict(),
+            "state_version": observed_state.state_version,
+            "hero_seat": observed_state.hero_seat,
+            "hero_cards": list(observed_state.hero_cards)
+            if observed_state.hero_cards
+            else [],
+        }
+
+        try:
+            start_time = time.time()
+            result = await self._strategy_handler(session_id, payload)
+            compute_time = int((time.time() - start_time) * 1000)
+
+            result["compute_time_ms"] = compute_time
+            result["session_id"] = session_id
+
+            response = MessageEnvelope(
+                type=MessageType.STRATEGY_RESPONSE,
+                session_id=session_id,
+                payload=result,
+            )
+            await self._send_to_client(client_session, response)
+
+        except Exception as e:
+            LOGGER.exception("策略计算失败: %s", e)
 
     async def _handle_action_event(
         self, client_session: ClientSession, msg: MessageEnvelope
@@ -533,5 +650,7 @@ async def run_server(
     strategy_handler: StrategyHandler | None = None,
 ) -> None:
     """运行服务器（便捷函数）。"""
-    server = create_server(host, port, api_keys, ssl_certfile, ssl_keyfile, strategy_handler)
+    server = create_server(
+        host, port, api_keys, ssl_certfile, ssl_keyfile, strategy_handler
+    )
     await server.start()

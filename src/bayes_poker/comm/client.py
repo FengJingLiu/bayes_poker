@@ -287,15 +287,6 @@ class WebSocketClient:
             LOGGER.error("订阅超时")
             return False
 
-    async def send_state_update(self, session_id: str, payload: dict[str, Any]) -> None:
-        """发送牌桌状态更新。"""
-        msg = MessageEnvelope(
-            type=MessageType.TABLE_STATE_UPDATE,
-            session_id=session_id,
-            payload=payload,
-        )
-        await self.send(msg)
-
     async def send_snapshot(self, session_id: str, payload: dict[str, Any]) -> None:
         """发送牌桌全量快照。"""
         msg = MessageEnvelope(

@@ -30,7 +30,7 @@ from bayes_poker.table.layout.gg_6max import (
     BASE_HEIGHT,
 )
 from bayes_poker.table.observed_state import (
-    ObservedPlayer,
+    Player,
     ObservedTableState,
     PlayerAction,
     create_observed_state,
@@ -280,19 +280,19 @@ class TestObservedTableState:
         state = create_observed_state(big_blind=1.0)
         state.hero_seat = 0
         state.players = [
-            ObservedPlayer(seat_index=0, stack=100.0),
-            ObservedPlayer(seat_index=1, stack=50.0),
+            Player(seat_index=0, stack=100.0),
+            Player(seat_index=1, stack=50.0),
         ]
 
         assert state.get_hero_stack_bb() == 100.0
 
 
-class TestObservedPlayer:
-    """ObservedPlayer 测试。"""
+class TestPlayer:
+    """Player 测试。"""
 
     def test_to_dict_from_dict(self) -> None:
-        """测试 ObservedPlayer 序列化往返。"""
-        player = ObservedPlayer(
+        """测试 Player 序列化往返。"""
+        player = Player(
             seat_index=0,
             player_id="player1",
             stack=100.0,
@@ -310,7 +310,7 @@ class TestObservedPlayer:
         assert data["stack"] == 100.0
         assert data["position"] == "BTN"
 
-        restored = ObservedPlayer.from_dict(data)
+        restored = Player.from_dict(data)
         assert restored.seat_index == 0
         assert restored.player_id == "player1"
         assert restored.stack == 100.0
@@ -319,7 +319,7 @@ class TestObservedPlayer:
 
     def test_player_action_history(self) -> None:
         """测试玩家级别行动历史记录。"""
-        player = ObservedPlayer(seat_index=0, player_id="hero")
+        player = Player(seat_index=0, player_id="hero")
 
         action = PlayerAction(
             player_index=0,
@@ -335,7 +335,7 @@ class TestObservedPlayer:
 
     def test_get_stack_bb(self) -> None:
         """测试获取 BB 单位筹码量。"""
-        player = ObservedPlayer(seat_index=0, stack=100.0)
+        player = Player(seat_index=0, stack=100.0)
 
         assert player.get_stack_bb(1.0) == 100.0
         assert player.get_stack_bb(2.0) == 50.0
@@ -343,7 +343,7 @@ class TestObservedPlayer:
 
     def test_action_history_serialization(self) -> None:
         """测试行动历史的序列化/反序列化。"""
-        player = ObservedPlayer(seat_index=0, player_id="test")
+        player = Player(seat_index=0, player_id="test")
         action = PlayerAction(
             player_index=0,
             action_type=ActionType.CALL,
@@ -353,7 +353,7 @@ class TestObservedPlayer:
         player.record_action(action)
 
         data = player.to_dict()
-        restored = ObservedPlayer.from_dict(data)
+        restored = Player.from_dict(data)
 
         assert len(restored.action_history) == 1
         assert restored.action_history[0].action_type == ActionType.CALL
@@ -362,8 +362,8 @@ class TestObservedPlayer:
         """测试 ObservedTableState.record_action 同时记录到玩家历史。"""
         state = create_observed_state()
         state.players = [
-            ObservedPlayer(seat_index=0, player_id="p0"),
-            ObservedPlayer(seat_index=1, player_id="p1"),
+            Player(seat_index=0, player_id="p0"),
+            Player(seat_index=1, player_id="p1"),
         ]
 
         state.record_action(0, ActionType.RAISE, 3.0)
