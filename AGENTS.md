@@ -17,6 +17,13 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
+1. 用中文回答输出
+2. pokerkit 的文档在 https://pokerkit.readthedocs.io/
+3. 每个类、方法、函数都要添加 google 风格中文注释，标点符号用英文标点
+4. implement 和 task 都用中文输出
+5. python 使用 Typing
+6. 新增功能要测试覆盖到
+
 # Agent Guide（供自动化编码代理使用）
 
 > 约定：在本仓库内一律使用**简体中文**沟通/输出（包括 PR/commit message 建议、注释、日志文案）。

@@ -9,9 +9,12 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from bayes_poker.comm.protocol import MessageEnvelope
+
+if TYPE_CHECKING:
+    from bayes_poker.strategy.opponent_range.predictor import OpponentRangePredictor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +33,19 @@ class TableSession:
     """牌桌会话。
 
     存储单个牌桌的状态和消息缓存。
+
+    Attributes:
+        session_id: 会话 ID。
+        client_id: 客户端 ID。
+        table_type: 牌桌类型。
+        small_blind: 小盲注。
+        big_blind: 大盲注。
+        replay_buffer_size: 重放缓存大小。
+        state_version: 状态版本。
+        last_snapshot: 最近快照。
+        last_activity: 最后活动时间。
+        range_predictor: 对手范围预测器（按牌桌隔离）。
+        current_hand_id: 当前手牌 ID（用于检测新手牌）。
     """
 
     session_id: str
@@ -43,12 +59,17 @@ class TableSession:
     last_snapshot: dict[str, Any] | None = None
     last_activity: float = field(default_factory=time.time)
 
+    # 对手范围预测器（按牌桌隔离）
+    range_predictor: "OpponentRangePredictor | None" = None
+    current_hand_id: str = ""
+
     _replay_buffer: deque[tuple[int, float, MessageEnvelope]] = field(
         init=False, repr=False
     )
     _client_last_ack: int = 0
 
     def __post_init__(self) -> None:
+        """初始化重放缓存。"""
         self._replay_buffer = deque(maxlen=self.replay_buffer_size)
 
     def update_activity(self) -> None:

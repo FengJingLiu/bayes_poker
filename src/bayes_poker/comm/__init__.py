@@ -12,6 +12,7 @@ from bayes_poker.comm.protocol import (
     generate_request_id,
     generate_session_id,
 )
+from bayes_poker.comm.messages import (
     AckPayload,
     AuthPayload,
     AuthResponsePayload,
