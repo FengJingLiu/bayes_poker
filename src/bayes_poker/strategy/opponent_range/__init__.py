@@ -11,8 +11,22 @@ from bayes_poker.strategy.opponent_range.predictor import (
     OpponentRangePredictor,
     create_opponent_range_predictor,
 )
+from bayes_poker.strategy.opponent_range.frequency_fill import build_limp_calling_range
+from bayes_poker.strategy.opponent_range.preflop_context import (
+    OpponentPreflopContext,
+    build_opponent_preflop_context,
+)
+from bayes_poker.strategy.opponent_range.stats_source import (
+    get_aggregated_player_name,
+    get_aggregated_player_stats,
+)
 
 __all__ = [
     "OpponentRangePredictor",
     "create_opponent_range_predictor",
+    "OpponentPreflopContext",
+    "build_limp_calling_range",
+    "build_opponent_preflop_context",
+    "get_aggregated_player_name",
+    "get_aggregated_player_stats",
 ]

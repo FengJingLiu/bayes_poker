@@ -444,10 +444,11 @@ class WebSocketServer:
         hero_seat = observed_state.hero_seat
         hand_id = observed_state.hand_id or "__unknown_hand__"
 
-        # 检测新手牌，重置范围
+        # 检测新手牌，重置范围和处理偏移
         if table.current_hand_id != hand_id:
             predictor.reset_all_ranges()
             table.current_hand_id = hand_id
+            self._processed_action_offsets[session_id] = 0
 
         player_by_seat = {
             player.seat_index: player for player in observed_state.players
@@ -461,7 +462,7 @@ class WebSocketServer:
         if not pending_actions:
             return
 
-        for action in pending_actions:
+        for relative_idx, action in enumerate(pending_actions):
             if action.player_index == hero_seat:
                 continue
 
@@ -469,10 +470,13 @@ class WebSocketServer:
             if player is None:
                 continue
 
+            absolute_idx = processed_offset + relative_idx
+            action_prefix = observed_state.action_history[:absolute_idx]
             predictor.update_range_on_action(
                 player,
                 action,
                 observed_state,
+                action_prefix=action_prefix,
             )
 
         self._processed_action_offsets[session_id] = history_len

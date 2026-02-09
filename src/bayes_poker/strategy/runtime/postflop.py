@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from bayes_poker.strategy.engine import StrategyHandler, _base_response
+from bayes_poker.strategy.runtime.base import StrategyHandler, _base_response
 
 
 def create_postflop_strategy() -> StrategyHandler:
@@ -17,7 +17,8 @@ def create_postflop_strategy() -> StrategyHandler:
         _ = session_id
         state_version = int(payload.get("state_version", 0) or 0)
         street = str(payload.get("street", "")).lower()
-        return _base_response(state_version, f"postflopStrategy 未实现 (street={street})")
+        return _base_response(
+            state_version, f"postflopStrategy 未实现 (street={street})"
+        )
 
     return _handler
-

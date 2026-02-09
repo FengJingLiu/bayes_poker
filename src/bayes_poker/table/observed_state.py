@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.table.layout.base import Position as TablePosition, get_position_by_seat
 
 
 @dataclass
@@ -73,7 +74,7 @@ class Player:
         player_id: 玩家 ID。
         stack: 当前筹码量。
         bet: 当前下注金额。
-        position: 位置名称（BTN/SB/BB/UTG/MP/CO）。
+        position: 位置枚举或位置字符串（BTN/SB/BB/UTG/MP/CO）。
         is_folded: 是否已弃牌。
         is_thinking: 是否正在思考。
         is_button: 是否是庄家。
@@ -85,7 +86,7 @@ class Player:
     player_id: str = ""
     stack: float = 0.0
     bet: float = 0.0
-    position: str = ""
+    position: str | TablePosition = ""
     is_folded: bool = False
     is_thinking: bool = False
     is_button: bool = False
@@ -103,7 +104,9 @@ class Player:
             "player_id": self.player_id,
             "stack": self.stack,
             "bet": self.bet,
-            "position": self.position,
+            "position": self.position.value
+            if isinstance(self.position, TablePosition)
+            else self.position,
             "is_folded": self.is_folded,
             "is_thinking": self.is_thinking,
             "is_button": self.is_button,
@@ -124,12 +127,20 @@ class Player:
         action_history = [
             PlayerAction.from_dict(a) for a in data.get("action_history", [])
         ]
+        position_raw = data.get("position", "")
+        position: str | TablePosition = position_raw
+        if isinstance(position_raw, str):
+            try:
+                position = TablePosition(position_raw)
+            except ValueError:
+                position = position_raw
+
         return cls(
             seat_index=data.get("seat_index", 0),
             player_id=data.get("player_id", ""),
             stack=data.get("stack", 0.0),
             bet=data.get("bet", 0.0),
-            position=data.get("position", ""),
+            position=position,
             is_folded=data.get("is_folded", False),
             is_thinking=data.get("is_thinking", False),
             is_button=data.get("is_button", False),
@@ -159,10 +170,6 @@ class Player:
         self.action_history.append(action)
 
 
-# 6max 位置名称映射（相对于 BTN）
-_POSITION_NAMES_6MAX = ["BTN", "SB", "BB", "UTG", "MP", "CO"]
-
-
 def _get_position_name(hero_seat: int, btn_seat: int, player_count: int = 6) -> str:
     """根据 hero 座位和 BTN 座位计算位置名称。
 
@@ -174,20 +181,41 @@ def _get_position_name(hero_seat: int, btn_seat: int, player_count: int = 6) -> 
     Returns:
         位置名称字符串（如 'BTN', 'SB', 'BB', 'UTG', 'MP', 'CO'）。
     """
-    if btn_seat < 0 or player_count <= 0:
+    position = _get_position_enum(hero_seat, btn_seat, player_count)
+    if position is None:
         return f"P{hero_seat}"
+    return position.value
 
-    # 计算相对于 BTN 的位置偏移
-    offset = (hero_seat - btn_seat) % player_count
 
-    if player_count == 6:
-        return _POSITION_NAMES_6MAX[offset]
-    elif player_count == 2:
-        # Heads-up: 0=BTN/SB, 1=BB
-        return "SB" if offset == 0 else "BB"
-    else:
-        # 其他玩家数量
-        return f"P{offset}"
+def _get_position_enum(
+    hero_seat: int,
+    btn_seat: int,
+    player_count: int = 6,
+) -> TablePosition | None:
+    """根据座位信息计算位置枚举。
+
+    Args:
+        hero_seat: Hero 座位索引。
+        btn_seat: 庄家座位索引。
+        player_count: 玩家总数。
+
+    Returns:
+        位置枚举, 无法计算时返回 `None`。
+    """
+    if btn_seat < 0 or player_count <= 0:
+        return None
+
+    if player_count == 2:
+        offset = (hero_seat - btn_seat) % player_count
+        return TablePosition.SB if offset == 0 else TablePosition.BB
+
+    if player_count not in (6, 9):
+        return None
+
+    try:
+        return get_position_by_seat(hero_seat, btn_seat, player_count)
+    except Exception:
+        return None
 
 
 @dataclass
@@ -475,6 +503,14 @@ class ObservedTableState:
             位置名称字符串（如 'BTN', 'SB', 'BB', 'UTG', 'MP', 'CO'）。
         """
         return _get_position_name(self.hero_seat, self.btn_seat, self.player_count)
+
+    def get_hero_position_enum(self) -> TablePosition | None:
+        """获取 Hero 位置枚举。
+
+        Returns:
+            Hero 的位置枚举, 无法计算时返回 `None`。
+        """
+        return _get_position_enum(self.hero_seat, self.btn_seat, self.player_count)
 
     def get_action_history_string(self) -> str:
         """获取动作历史字符串（用于策略查询）。

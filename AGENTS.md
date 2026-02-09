@@ -186,6 +186,11 @@ src/bayes_poker/
 - 对日志行为的断言可使用 `caplog`。
 - “大样本/依赖外部数据”测试必须默认跳过，并提供环境变量开关（已存在模式可沿用）。
 
+### 对手范围测试初始化约定
+- 在 `tests/test_opponent_range.py` 中，`create_opponent_range_predictor(...)` 必须显式传入 `preflop_strategy` 与 `stats_repo`。
+- `preflop_strategy` 使用 `parse_strategy_directory(Path("/home/autumn/project/gg_handhistory/preflop_strategy/Cash6m50zSimple25Open_SimpleIP"))` 初始化。
+- `stats_repo` 使用 `PlayerStatsRepository(Path("data/database/player_stats.db"))` 初始化，并在测试内正确 `connect()` 与 `close()`。
+
 ## 开发者工具（编辑器配置）
 - VSCode：`.vscode/settings.json` 已配置 `python.analysis.extraPaths = ["./src"]` 与 pytest。
 

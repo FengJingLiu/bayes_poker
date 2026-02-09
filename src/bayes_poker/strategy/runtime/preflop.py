@@ -15,39 +15,38 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
-from bayes_poker.strategy.engine import StrategyHandler, _base_response
+from bayes_poker.strategy.runtime.base import StrategyHandler, _base_response
 from bayes_poker.strategy.preflop_parse.models import (
     PreflopStrategy,
     StrategyAction,
     StrategyNode,
 )
 from bayes_poker.strategy.preflop_parse.parser import parse_strategy_directory
+from bayes_poker.strategy.runtime.preflop_history import (
+    PreflopLayer,
+    count_limpers_in_history,
+    infer_preflop_layer,
+    is_open_no_limper,
+)
 from bayes_poker.strategy.range import (
     card_to_index52,
     combo_to_index1326,
     get_range_1326_to_169,
 )
-from bayes_poker.table.layout.base import get_position_by_seat
+from bayes_poker.table.layout.base import (
+    Position as TablePosition,
+    get_position_by_seat,
+)
 
 if TYPE_CHECKING:
     from bayes_poker.table.observed_state import ObservedTableState
 
 LOGGER = logging.getLogger(__name__)
-
-
-class PreflopLayer(str, Enum):
-    """翻前分层(用于路由与扩展点)。"""
-
-    RFI = "rfi"
-    THREE_BET = "3bet"
-    FOUR_BET = "4bet"
-    UNKNOWN = "unknown"
 
 
 @dataclass(slots=True, frozen=True)
@@ -63,52 +62,7 @@ class PreflopRuntimeConfig:
     enable_open_level_adjustment: bool = True
 
 
-def infer_preflop_layer(history: str) -> PreflopLayer:
-    """从行动前缀推断翻前分层。
-
-    约定(与后续策略细化兼容):
-        - 0 次加注:RFI(包括 limp/overlimp/iso 前)
-        - 1 次加注:3Bet(hero 面对 open/iso)
-        - 2 次加注:4Bet(hero 面对 3bet)
-
-    更复杂的 cold 4bet / squeeze / limp-raise 等细分后续在对应层内部处理。
-
-    Args:
-        history: 动作历史字符串。
-
-    Returns:
-        翻前分层枚举值。
-    """
-    if not history:
-        return PreflopLayer.RFI
-
-    tokens = [t.strip().upper() for t in history.split("-") if t.strip()]
-    raise_count = sum(1 for t in tokens if t == "RAI" or t.startswith("R"))
-
-    if raise_count <= 0:
-        return PreflopLayer.RFI
-    if raise_count == 1:
-        return PreflopLayer.THREE_BET
-    if raise_count == 2:
-        return PreflopLayer.FOUR_BET
-    return PreflopLayer.UNKNOWN
-
-
-def _count_limpers_in_history(history: str) -> int:
-    """计算历史中的 limper 数量。
-
-    Args:
-        history: 动作历史字符串。
-
-    Returns:
-        limper 数量。
-    """
-    if not history:
-        return 0
-    tokens = [t.strip().upper() for t in history.split("-") if t.strip()]
-    if any(t.startswith("R") for t in tokens):
-        return 0
-    return sum(1 for t in tokens if t == "C")
+_count_limpers_in_history = count_limpers_in_history
 
 
 def _hero_index_169(hero_cards: list[str]) -> int | None:
@@ -163,19 +117,26 @@ def _pick_action_by_hero_hand(
     return best_action
 
 
-def _is_open_no_limper(history: str) -> bool:
-    """检查是否为无 limper 的 open 场景。
+_is_open_no_limper = is_open_no_limper
+
+
+def _coerce_table_position(value: Any) -> TablePosition | None:
+    """将输入值转换为位置枚举。
 
     Args:
-        history: 动作历史字符串。
+        value: 输入位置值, 支持枚举或字符串。
 
     Returns:
-        是否为无 limper 的 open。
+        位置枚举, 失败时返回 `None`。
     """
-    if not history:
-        return True
-    tokens = [t.strip().upper() for t in history.split("-") if t.strip()]
-    return not any(t == "C" or t.startswith("R") for t in tokens)
+    if isinstance(value, TablePosition):
+        return value
+    if isinstance(value, str):
+        try:
+            return TablePosition(value.upper())
+        except ValueError:
+            return None
+    return None
 
 
 def _find_first_raise(node: StrategyNode) -> StrategyAction | None:
@@ -219,21 +180,25 @@ def _extract_bb_player_id(payload: dict[str, Any]) -> str | None:
         return None
 
     for idx, p in enumerate(players):
-        if not isinstance(p, dict):
-            continue
-        seat_index = p.get("seat_index")
-        if not isinstance(seat_index, int):
-            seat_index = idx
-        player_id = str(p.get("player_id") or "").strip()
+        if isinstance(p, dict):
+            seat_index = p.get("seat_index")
+            if not isinstance(seat_index, int):
+                seat_index = idx
+            player_id = str(p.get("player_id") or "").strip()
+        else:
+            seat_index = getattr(p, "seat_index", idx)
+            if not isinstance(seat_index, int):
+                seat_index = idx
+            player_id = str(getattr(p, "player_id", "") or "").strip()
         if not player_id:
             continue
 
         try:
-            pos = get_position_by_seat(seat_index, btn_seat, player_count).value
+            pos = get_position_by_seat(seat_index, btn_seat, player_count)
         except Exception:
             continue
 
-        if pos == "BB":
+        if pos == TablePosition.BB:
             return player_id
 
     return None
@@ -420,14 +385,14 @@ class PreflopRuntime:
                 list(observed_state.hero_cards) if observed_state.hero_cards else []
             )
             history = observed_state.get_action_history_string()
-            hero_position = observed_state.get_hero_position()
+            hero_position = observed_state.get_hero_position_enum()
             player_count = observed_state.player_count
         else:
             # Fallback: 从 engine 层已经解析好的字段提取
             stack_bb = int(payload.get("hero_stack_bb", 0) or 0)
             hero_cards = payload.get("hero_cards", [])
             history = payload.get("action_history", "")
-            hero_position = payload.get("hero_position", "")
+            hero_position = _coerce_table_position(payload.get("hero_position"))
             player_count = 6
 
         if stack_bb <= 0:
@@ -619,11 +584,11 @@ class PreflopRuntime:
         Returns:
             选择的动作，或 None。
         """
-        hero_position = str(payload.get("hero_position") or "").upper()
+        hero_position = _coerce_table_position(payload.get("hero_position"))
         if not (self.stats_repo and self.config.enable_open_level_adjustment):
             return _pick_action_by_hero_hand(node, hero_idx_169)
 
-        if hero_position not in ("SB", "BTN"):
+        if hero_position not in (TablePosition.SB, TablePosition.BTN):
             return _pick_action_by_hero_hand(node, hero_idx_169)
 
         if not _is_open_no_limper(history):
@@ -639,7 +604,7 @@ class PreflopRuntime:
 
         sep = "-" if history else ""
         bb_history = f"{history}{sep}{base_raise_action.action_code}"
-        if hero_position == "BTN":
+        if hero_position == TablePosition.BTN:
             bb_history = f"{bb_history}-F"
 
         bb_match = self.strategy.query(stack_bb, bb_history)

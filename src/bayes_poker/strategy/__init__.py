@@ -3,7 +3,7 @@
 包含扑克博弈策略相关的解析和处理逻辑。
 """
 
-from bayes_poker.strategy.engine import StrategyDispatcher, StrategyHandler
+from bayes_poker.strategy.runtime import StrategyHandler
 from bayes_poker.strategy.preflop_parse import (
     STRATEGY_VECTOR_LENGTH,
     PreflopStrategy,
@@ -35,7 +35,6 @@ from bayes_poker.strategy.opponent_range import (
 __all__ = [
     # server/runtime
     "StrategyHandler",
-    "StrategyDispatcher",
     "PreflopLayer",
     "PreflopRuntimeConfig",
     "create_preflop_strategy",

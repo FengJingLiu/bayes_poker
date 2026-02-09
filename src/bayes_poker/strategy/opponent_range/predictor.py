@@ -10,11 +10,17 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.player_metrics.enums import TableType
+from bayes_poker.strategy.opponent_range.frequency_fill import build_limp_calling_range
+from bayes_poker.strategy.opponent_range.preflop_context import (
+    build_opponent_preflop_context,
+)
+from bayes_poker.strategy.opponent_range.stats_source import get_aggregated_player_stats
 from bayes_poker.strategy.range import (
     RANGE_169_LENGTH,
     RANGE_1326_LENGTH,
@@ -22,6 +28,8 @@ from bayes_poker.strategy.range import (
     PostflopRange,
     card_to_index52,
 )
+from bayes_poker.strategy.runtime.preflop_history import PreflopScenario
+from bayes_poker.table.layout.base import Position as TablePosition
 
 if TYPE_CHECKING:
     from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
@@ -45,6 +53,25 @@ _ACTION_SCALE_FACTORS = {
     ActionType.RAISE: 0.4,
     ActionType.ALL_IN: 0.3,
 }
+
+
+def _coerce_table_position(value: object) -> TablePosition | None:
+    """将输入值转换为位置枚举。
+
+    Args:
+        value: 输入位置值, 支持枚举或字符串。
+
+    Returns:
+        位置枚举, 失败时返回 `None`。
+    """
+    if isinstance(value, TablePosition):
+        return value
+    if isinstance(value, str):
+        try:
+            return TablePosition(value.upper())
+        except ValueError:
+            return None
+    return None
 
 
 @dataclass
@@ -80,12 +107,25 @@ class OpponentRangePredictor:
         player: "Player",
         action: "PlayerAction",
         table_state: "ObservedTableState",
+        action_prefix: Sequence["PlayerAction"] | None = None,
     ) -> None:
-        """根据对手行动更新其范围。"""
+        """根据对手行动更新其范围。
+
+        Args:
+            player: 触发动作的玩家。
+            action: 当前动作。
+            table_state: 当前牌桌状态。
+            action_prefix: 当前动作前的全量动作前缀。
+        """
         if action.street == Street.PREFLOP:
             self._update_preflop_range(player, action, table_state)
         else:
-            self._update_postflop_range(player, action, table_state)
+            self._update_postflop_range(
+                player,
+                action,
+                table_state,
+                action_prefix=action_prefix,
+            )
 
     def _update_preflop_range(
         self,
@@ -124,11 +164,27 @@ class OpponentRangePredictor:
         player: "Player",
         action: "PlayerAction",
         table_state: "ObservedTableState",
+        action_prefix: Sequence["PlayerAction"] | None = None,
     ) -> None:
-        """更新翻后范围。"""
+        """更新翻后范围。
+
+        Args:
+            player: 触发动作的玩家。
+            action: 当前动作。
+            table_state: 当前牌桌状态。
+            action_prefix: 当前动作前的全量动作前缀。
+        """
         seat = player.seat_index
 
-        if seat not in self._preflop_ranges:
+        # 翻后每次行动都尝试按前缀分层重建翻前范围，避免 seat 已存在时跳过重预测。
+        prefixed_range = self._build_preflop_range_from_prefix(
+            player=player,
+            table_state=table_state,
+            action_prefix=action_prefix or (),
+        )
+        if prefixed_range is not None:
+            self._preflop_ranges[seat] = prefixed_range
+        elif seat not in self._preflop_ranges:
             self._preflop_ranges[seat] = self._get_initial_preflop_range(
                 player, table_state
             )
@@ -157,6 +213,115 @@ class OpponentRangePredictor:
             scale,
         )
 
+    def _build_preflop_range_from_prefix(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+        action_prefix: Sequence["PlayerAction"],
+    ) -> PreflopRange | None:
+        """按翻前场景分层构建翻前范围。
+
+        Args:
+            player: 触发动作玩家。
+            table_state: 当前牌桌状态。
+            action_prefix: 当前动作前缀。
+
+        Returns:
+            构建出的翻前范围, 不满足条件时返回 `None`。
+        """
+        context = build_opponent_preflop_context(
+            player=player,
+            action_prefix=action_prefix,
+            table_state=table_state,
+            table_type=self.table_type,
+        )
+        if context.scenario == PreflopScenario.RFI_FACE_LIMPER:
+            return self._build_limp_preflop_range_from_prefix(
+                player=player,
+                table_state=table_state,
+                action_prefix=action_prefix,
+            )
+        LOGGER.debug(
+            "postflop 前缀分层暂不处理: player=%s, scenario=%s, history=%s",
+            player.player_id,
+            context.scenario.value,
+            context.query_history,
+        )
+        return None
+
+    def _build_limp_preflop_range_from_prefix(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+        action_prefix: Sequence["PlayerAction"],
+    ) -> PreflopRange | None:
+        """基于动作前缀构建 limp calling range。
+
+        Args:
+            player: 触发动作玩家。
+            table_state: 当前牌桌状态。
+            action_prefix: 当前动作前缀。
+
+        Returns:
+            构建出的翻前范围, 不满足条件时返回 `None`。
+        """
+        if not self.preflop_strategy or not self.stats_repo:
+            return None
+
+        context = build_opponent_preflop_context(
+            player=player,
+            action_prefix=action_prefix,
+            table_state=table_state,
+            table_type=self.table_type,
+        )
+        if context.scenario != PreflopScenario.RFI_FACE_LIMPER:
+            return None
+        if context.params is None:
+            return None
+
+        stack_bb = int(round(player.get_stack_bb(table_state.big_blind)))
+        if stack_bb <= 0:
+            return None
+        # 筹码深度写死 100
+        match = self.preflop_strategy.query(100, context.query_history)
+        if match is None:
+            LOGGER.debug(
+                "limp calling range: 未匹配策略节点 (history=%s, stack=%s)",
+                context.query_history,
+                stack_bb,
+            )
+            return None
+
+        aggregated_stats = get_aggregated_player_stats(self.stats_repo, self.table_type)
+        if aggregated_stats is None:
+            LOGGER.debug(
+                "limp calling range: 缺少聚合玩家统计 (table_type=%s)", self.table_type
+            )
+            return None
+
+        action_stats = aggregated_stats.get_preflop_stats(context.params)
+        raise_frequency = float(action_stats.bet_raise_probability())
+        call_frequency = float(action_stats.check_call_probability())
+        calling_range = build_limp_calling_range(
+            node=match.node,
+            raise_frequency=raise_frequency,
+            call_frequency=call_frequency,
+        )
+        LOGGER.debug(
+            (
+                "limp calling range: player=%s, history=%s, "
+                "raise_freq=%.4f, call_freq=%.4f, total_freq=%.4f"
+            ),
+            player.player_id,
+            context.query_history,
+            raise_frequency,
+            call_frequency,
+            calling_range.total_frequency(),
+        )
+        return calling_range
+
     def _get_initial_preflop_range(
         self,
         player: "Player",
@@ -169,7 +334,7 @@ class OpponentRangePredictor:
                 initial_range = self._range_from_vpip(stats.vpip)
                 if initial_range is not None:
                     return initial_range
-        return self._get_position_default_range(player.position)
+        return self._get_position_default_range(_coerce_table_position(player.position))
 
     def _range_from_vpip(self, vpip: float) -> PreflopRange | None:
         """根据 VPIP 生成初始范围。"""
@@ -179,17 +344,20 @@ class OpponentRangePredictor:
         strategy = [frequency] * RANGE_169_LENGTH
         return PreflopRange(strategy=strategy)
 
-    def _get_position_default_range(self, position: str) -> PreflopRange:
+    def _get_position_default_range(
+        self,
+        position: TablePosition | None,
+    ) -> PreflopRange:
         """根据位置获取默认范围。"""
         position_vpip = {
-            "UTG": 0.15,
-            "MP": 0.18,
-            "CO": 0.25,
-            "BTN": 0.40,
-            "SB": 0.35,
-            "BB": 0.50,
+            TablePosition.UTG: 0.15,
+            TablePosition.MP: 0.18,
+            TablePosition.CO: 0.25,
+            TablePosition.BTN: 0.40,
+            TablePosition.SB: 0.35,
+            TablePosition.BB: 0.50,
         }
-        frequency = position_vpip.get(position.upper(), 0.25)
+        frequency = position_vpip.get(position, 0.25)
         strategy = [frequency] * RANGE_169_LENGTH
         return PreflopRange(strategy=strategy)
 
