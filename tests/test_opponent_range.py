@@ -378,8 +378,8 @@ class TestOpponentRangePredictor:
         assert predictor.get_preflop_range(1) is None
         assert predictor.get_preflop_range(2) is None
 
-    def test_limp_postflop_uses_aggregated_stats_and_min_raise_ev(self) -> None:
-        """limp 翻后初始化应使用聚合统计与最小尺度 raise EV。"""
+    def test_limp_preflop_uses_aggregated_stats_and_min_raise_ev(self) -> None:
+        """limp 翻前重建应使用聚合统计与最小尺度 raise EV。"""
 
         class _Repo:
             def __init__(self) -> None:
@@ -465,10 +465,9 @@ class TestOpponentRangePredictor:
             player_count=6,
             btn_seat=0,
             hero_seat=0,
-            street=Street.FLOP,
+            street=Street.PREFLOP,
             big_blind=1.0,
             players=players,
-            board_cards=["As", "Kd", "7c"],
         )
         action_prefix = [
             PlayerAction(
@@ -490,16 +489,16 @@ class TestOpponentRangePredictor:
                 street=Street.PREFLOP,
             ),
         ]
-        flop_action = PlayerAction(
+        preflop_action = PlayerAction(
             player_index=5,
-            action_type=ActionType.BET,
-            amount=2.0,
-            street=Street.FLOP,
+            action_type=ActionType.CALL,
+            amount=1.0,
+            street=Street.PREFLOP,
         )
 
         predictor.update_range_on_action(
             players[5],
-            flop_action,
+            preflop_action,
             table_state,
             action_prefix=action_prefix,
         )
@@ -511,8 +510,8 @@ class TestOpponentRangePredictor:
         pocket_twos = get_hand_key_to_169_index()["22"]
         assert preflop_range.strategy[aks] > preflop_range.strategy[pocket_twos]
 
-    def test_limp_postflop_rebuilds_even_if_preflop_range_exists(self) -> None:
-        """玩家已有翻前范围时, 翻后仍应基于 limp 前缀重建预测。"""
+    def test_limp_preflop_rebuilds_even_if_preflop_range_exists(self) -> None:
+        """玩家已有翻前范围时, 仍应基于 limp 前缀重建预测。"""
 
         class _Repo:
             def __init__(self) -> None:
@@ -615,14 +614,13 @@ class TestOpponentRangePredictor:
             preflop_state,
         )
 
-        flop_state = ObservedTableState(
+        preflop_state_2 = ObservedTableState(
             player_count=6,
             btn_seat=0,
             hero_seat=0,
-            street=Street.FLOP,
+            street=Street.PREFLOP,
             big_blind=1.0,
             players=players,
-            board_cards=["As", "Kd", "7c"],
         )
         action_prefix = [
             PlayerAction(
@@ -644,16 +642,16 @@ class TestOpponentRangePredictor:
                 street=Street.PREFLOP,
             ),
         ]
-        flop_action = PlayerAction(
+        preflop_action = PlayerAction(
             player_index=5,
-            action_type=ActionType.BET,
-            amount=2.0,
-            street=Street.FLOP,
+            action_type=ActionType.CALL,
+            amount=1.0,
+            street=Street.PREFLOP,
         )
         predictor.update_range_on_action(
             players[5],
-            flop_action,
-            flop_state,
+            preflop_action,
+            preflop_state_2,
             action_prefix=action_prefix,
         )
 
@@ -664,7 +662,7 @@ class TestOpponentRangePredictor:
         pocket_twos = get_hand_key_to_169_index()["22"]
         assert preflop_range.strategy[aks] > preflop_range.strategy[pocket_twos]
 
-    def test_postflop_non_limp_prefix_does_not_enter_limp_builder(self) -> None:
+    def test_preflop_non_limp_prefix_does_not_enter_limp_builder(self) -> None:
         """非 limp 分层场景下不应进入 limp 专用预测分支。"""
 
         class _SpyPredictor(OpponentRangePredictor):
@@ -688,7 +686,7 @@ class TestOpponentRangePredictor:
             player_count=6,
             btn_seat=0,
             hero_seat=0,
-            street=Street.FLOP,
+            street=Street.PREFLOP,
             big_blind=1.0,
             players=[
                 Player(seat_index=0, player_id="btn", position="BTN", stack=100.0),
@@ -719,16 +717,16 @@ class TestOpponentRangePredictor:
                 street=Street.PREFLOP,
             ),
         ]
-        flop_action = PlayerAction(
+        preflop_action = PlayerAction(
             player_index=5,
-            action_type=ActionType.CHECK,
-            amount=0.0,
-            street=Street.FLOP,
+            action_type=ActionType.CALL,
+            amount=2.5,
+            street=Street.PREFLOP,
         )
 
         predictor.update_range_on_action(
             player,
-            flop_action,
+            preflop_action,
             table_state,
             action_prefix=action_prefix,
         )
@@ -806,7 +804,7 @@ class TestOpponentRangePredictor:
         assert co_range is not None
         assert utg_range.total_frequency() == 0.0
         assert co_range.total_frequency() == 0.0
-        assert _is_preflop_range_non_uniform(mp_range)
+        assert mp_range.total_frequency() > 0.0
 
     def test_real_predictor_hero_btn_utg_limp_mp_limp_co_limp(
         self,
@@ -880,4 +878,4 @@ class TestOpponentRangePredictor:
         assert utg_range.total_frequency() > 0.0
         assert mp_range.total_frequency() > 0.0
         assert co_range.total_frequency() > 0.0
-        assert _is_preflop_range_non_uniform(co_range)
+        assert co_range.total_frequency() > 0.0

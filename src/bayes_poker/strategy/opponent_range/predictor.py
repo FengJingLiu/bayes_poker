@@ -118,25 +118,41 @@ class OpponentRangePredictor:
             action_prefix: 当前动作前的全量动作前缀。
         """
         if action.street == Street.PREFLOP:
-            self._update_preflop_range(player, action, table_state)
-        else:
-            self._update_postflop_range(
+            self._update_preflop_range(
                 player,
                 action,
                 table_state,
                 action_prefix=action_prefix,
             )
+        else:
+            self._update_postflop_range(player, action, table_state)
 
     def _update_preflop_range(
         self,
         player: "Player",
         action: "PlayerAction",
         table_state: "ObservedTableState",
+        action_prefix: Sequence["PlayerAction"] | None = None,
     ) -> None:
-        """更新翻前范围。"""
+        """更新翻前范围。
+
+        Args:
+            player: 触发动作的玩家。
+            action: 当前动作。
+            table_state: 当前牌桌状态。
+            action_prefix: 当前动作前的全量动作前缀。
+        """
         seat = player.seat_index
 
-        if seat not in self._preflop_ranges:
+        # 翻前每次行动都尝试按前缀分层重建翻前范围，避免 seat 已存在时跳过重预测。
+        prefixed_range = self._build_preflop_range_from_prefix(
+            player=player,
+            table_state=table_state,
+            action_prefix=action_prefix or (),
+        )
+        if prefixed_range is not None:
+            self._preflop_ranges[seat] = prefixed_range
+        elif seat not in self._preflop_ranges:
             self._preflop_ranges[seat] = self._get_initial_preflop_range(
                 player, table_state
             )
@@ -164,7 +180,6 @@ class OpponentRangePredictor:
         player: "Player",
         action: "PlayerAction",
         table_state: "ObservedTableState",
-        action_prefix: Sequence["PlayerAction"] | None = None,
     ) -> None:
         """更新翻后范围。
 
@@ -172,19 +187,10 @@ class OpponentRangePredictor:
             player: 触发动作的玩家。
             action: 当前动作。
             table_state: 当前牌桌状态。
-            action_prefix: 当前动作前的全量动作前缀。
         """
         seat = player.seat_index
 
-        # 翻后每次行动都尝试按前缀分层重建翻前范围，避免 seat 已存在时跳过重预测。
-        prefixed_range = self._build_preflop_range_from_prefix(
-            player=player,
-            table_state=table_state,
-            action_prefix=action_prefix or (),
-        )
-        if prefixed_range is not None:
-            self._preflop_ranges[seat] = prefixed_range
-        elif seat not in self._preflop_ranges:
+        if seat not in self._preflop_ranges:
             self._preflop_ranges[seat] = self._get_initial_preflop_range(
                 player, table_state
             )
@@ -243,7 +249,7 @@ class OpponentRangePredictor:
                 action_prefix=action_prefix,
             )
         LOGGER.debug(
-            "postflop 前缀分层暂不处理: player=%s, scenario=%s, history=%s",
+            "非 limp 前缀分层暂不处理: player=%s, scenario=%s, history=%s",
             player.player_id,
             context.scenario.value,
             context.query_history,
