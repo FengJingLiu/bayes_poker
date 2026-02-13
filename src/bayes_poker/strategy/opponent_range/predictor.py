@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from bayes_poker.domain.poker import ActionType, Street
@@ -53,6 +54,18 @@ _ACTION_SCALE_FACTORS = {
     ActionType.RAISE: 0.4,
     ActionType.ALL_IN: 0.3,
 }
+
+
+class FirstPreflopScenario(str, Enum):
+    """首次翻前行动场景枚举。"""
+
+    FIRST_LIMP = "first_limp"
+    FOLLOW_LIMP = "follow_limp"
+    RFI_NO_LIMPER = "rfi_no_limper"
+    RFI_HAVE_LIMPER = "rfi_have_limper"
+    THREE_BET = "three_bet"
+    FOUR_BET = "four_bet"
+    UNKNOWN = "unknown"
 
 
 def _coerce_table_position(value: object) -> TablePosition | None:
@@ -144,35 +157,36 @@ class OpponentRangePredictor:
         """
         seat = player.seat_index
 
-        # 翻前每次行动都尝试按前缀分层重建翻前范围，避免 seat 已存在时跳过重预测。
-        prefixed_range = self._build_preflop_range_from_prefix(
-            player=player,
-            table_state=table_state,
-            action_prefix=action_prefix or (),
-        )
-        if prefixed_range is not None:
-            self._preflop_ranges[seat] = prefixed_range
-        elif seat not in self._preflop_ranges:
-            self._preflop_ranges[seat] = self._get_initial_preflop_range(
-                player, table_state
-            )
-
         if action.action_type == ActionType.FOLD:
             self._preflop_ranges[seat] = PreflopRange.zeros()
             self._postflop_ranges[seat] = PostflopRange.zeros()
             return
-
-        scale = self._get_preflop_action_scale(player, action, table_state)
-        current_range = self._preflop_ranges[seat]
-        for i in range(RANGE_169_LENGTH):
-            current_range.strategy[i] *= scale
-        current_range.normalize()
-
-        LOGGER.debug(
-            "更新玩家 %s 翻前范围: action=%s, scale=%.2f",
-            player.player_id,
-            action.action_type.value,
-            scale,
+        preflop_prefix = tuple(
+            each for each in tuple(action_prefix or ()) if each.street == Street.PREFLOP
+        )
+        previous_prefix = self._strip_current_action_suffix(
+            preflop_prefix=preflop_prefix,
+            action=action,
+        )
+        current_prefix = self._build_preflop_prefix_with_current(
+            preflop_prefix=previous_prefix,
+            action=action,
+        )
+        if self._is_player_first_preflop_action(player=player, preflop_prefix=previous_prefix):
+            self._handle_preflop_first_action(
+                player=player,
+                action=action,
+                table_state=table_state,
+                preflop_prefix=previous_prefix,
+                current_prefix=current_prefix,
+            )
+            return
+        self._handle_preflop_non_first_action(
+            player=player,
+            action=action,
+            table_state=table_state,
+            preflop_prefix=previous_prefix,
+            current_prefix=current_prefix,
         )
 
     def _update_postflop_range(
@@ -188,36 +202,344 @@ class OpponentRangePredictor:
             action: 当前动作。
             table_state: 当前牌桌状态。
         """
+        LOGGER.debug(
+            "postflop 预测暂未实现: player=%s, action=%s, street=%s",
+            player.player_id,
+            action.action_type.value,
+            action.street.value,
+        )
+
+    def _build_preflop_prefix_with_current(
+        self,
+        *,
+        preflop_prefix: Sequence["PlayerAction"],
+        action: "PlayerAction",
+    ) -> tuple["PlayerAction", ...]:
+        """构建包含当前动作的翻前前缀。
+
+        Args:
+            preflop_prefix: 当前动作前的翻前前缀。
+            action: 当前动作。
+
+        Returns:
+            包含当前动作的翻前前缀。
+        """
+        raw_prefix = tuple(preflop_prefix)
+        if (
+            raw_prefix
+            and raw_prefix[-1].player_index == action.player_index
+            and raw_prefix[-1].street == action.street
+            and raw_prefix[-1].action_type == action.action_type
+            and abs(raw_prefix[-1].amount - action.amount) < 1e-9
+        ):
+            return raw_prefix
+        return (*raw_prefix, action)
+
+    def _strip_current_action_suffix(
+        self,
+        *,
+        preflop_prefix: Sequence["PlayerAction"],
+        action: "PlayerAction",
+    ) -> tuple["PlayerAction", ...]:
+        """去除前缀末尾可能重复的当前动作。"""
+        raw_prefix = tuple(preflop_prefix)
+        if (
+            raw_prefix
+            and raw_prefix[-1].player_index == action.player_index
+            and raw_prefix[-1].street == action.street
+            and raw_prefix[-1].action_type == action.action_type
+            and abs(raw_prefix[-1].amount - action.amount) < 1e-9
+        ):
+            return raw_prefix[:-1]
+        return raw_prefix
+
+    def _is_player_first_preflop_action(
+        self,
+        *,
+        player: "Player",
+        preflop_prefix: Sequence["PlayerAction"],
+    ) -> bool:
+        """判断是否为玩家首次翻前行动。"""
+        for each in preflop_prefix:
+            if each.player_index == player.seat_index:
+                return False
+        return True
+
+    def _is_raise_like_action(self, action: "PlayerAction") -> bool:
+        """判断是否为加注类动作。"""
+        return action.action_type in (
+            ActionType.RAISE,
+            ActionType.BET,
+            ActionType.ALL_IN,
+        )
+
+    def _is_call_like_action(self, action: "PlayerAction") -> bool:
+        """判断是否为跟注类动作。"""
+        return action.action_type in (ActionType.CALL, ActionType.CHECK)
+
+    def _classify_first_preflop_scenario(
+        self,
+        *,
+        preflop_prefix: Sequence["PlayerAction"],
+        action: "PlayerAction",
+    ) -> FirstPreflopScenario:
+        """分类首次翻前行动场景。"""
+        raise_count = 0
+        limp_count = 0
+        for each in preflop_prefix:
+            if self._is_raise_like_action(each):
+                raise_count += 1
+            elif self._is_call_like_action(each):
+                limp_count += 1
+        if self._is_call_like_action(action):
+            if raise_count > 0:
+                return FirstPreflopScenario.UNKNOWN
+            if limp_count <= 0:
+                return FirstPreflopScenario.FIRST_LIMP
+            return FirstPreflopScenario.FOLLOW_LIMP
+        if self._is_raise_like_action(action):
+            if raise_count >= 2:
+                return FirstPreflopScenario.FOUR_BET
+            if raise_count == 1:
+                return FirstPreflopScenario.THREE_BET
+            if limp_count > 0:
+                return FirstPreflopScenario.RFI_HAVE_LIMPER
+            return FirstPreflopScenario.RFI_NO_LIMPER
+        return FirstPreflopScenario.UNKNOWN
+
+    def _ensure_preflop_range_initialized(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+    ) -> None:
+        """确保玩家翻前范围已初始化。"""
         seat = player.seat_index
-
         if seat not in self._preflop_ranges:
-            self._preflop_ranges[seat] = self._get_initial_preflop_range(
-                player, table_state
-            )
+            self._preflop_ranges[seat] = self._get_initial_preflop_range(player, table_state)
 
-        if seat not in self._postflop_ranges:
-            self._postflop_ranges[seat] = self._preflop_ranges[seat].to_postflop()
-            self._apply_board_blockers(
-                self._postflop_ranges[seat], table_state.board_cards
-            )
-
-        if action.action_type == ActionType.FOLD:
-            self._postflop_ranges[seat] = PostflopRange.zeros()
-            return
-
-        scale = self._get_postflop_action_scale(player, action, table_state)
-        current_range = self._postflop_ranges[seat]
-        for i in range(RANGE_1326_LENGTH):
+    def _apply_preflop_action_scale(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+    ) -> None:
+        """应用翻前动作缩放。"""
+        seat = player.seat_index
+        self._ensure_preflop_range_initialized(player=player, table_state=table_state)
+        scale = self._get_preflop_action_scale(player, action, table_state)
+        current_range = self._preflop_ranges[seat]
+        for i in range(RANGE_169_LENGTH):
             current_range.strategy[i] *= scale
         current_range.normalize()
-
         LOGGER.debug(
-            "更新玩家 %s 翻后范围: street=%s, action=%s, scale=%.2f",
+            "更新玩家 %s 翻前范围: action=%s, scale=%.2f",
             player.player_id,
-            action.street.value,
             action.action_type.value,
             scale,
         )
+
+    def _handle_preflop_first_action(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        preflop_prefix: Sequence["PlayerAction"],
+        current_prefix: Sequence["PlayerAction"],
+    ) -> None:
+        """处理首次翻前行动。"""
+        scenario = self._classify_first_preflop_scenario(
+            preflop_prefix=preflop_prefix,
+            action=action,
+        )
+        if scenario == FirstPreflopScenario.FIRST_LIMP:
+            self._handle_first_limp(player=player, action=action, table_state=table_state)
+            return
+        if scenario == FirstPreflopScenario.FOLLOW_LIMP:
+            self._handle_follow_limp(
+                player=player,
+                action=action,
+                table_state=table_state,
+                current_prefix=current_prefix,
+            )
+            return
+        if scenario == FirstPreflopScenario.RFI_NO_LIMPER:
+            self._handle_rfi_no_limper(player=player, action=action, table_state=table_state)
+            return
+        if scenario == FirstPreflopScenario.RFI_HAVE_LIMPER:
+            self._handle_rfi_have_limper(
+                player=player,
+                action=action,
+                table_state=table_state,
+                current_prefix=current_prefix,
+            )
+            return
+        if scenario == FirstPreflopScenario.THREE_BET:
+            self._handle_three_bet(player=player, action=action, table_state=table_state)
+            return
+        if scenario == FirstPreflopScenario.FOUR_BET:
+            self._handle_four_bet(player=player, action=action, table_state=table_state)
+            return
+        self._apply_preflop_action_scale(
+            player=player,
+            action=action,
+            table_state=table_state,
+        )
+
+    def _handle_preflop_non_first_action(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        preflop_prefix: Sequence["PlayerAction"],
+        current_prefix: Sequence["PlayerAction"],
+    ) -> None:
+        """处理非首次翻前行动。"""
+        first_action = self._get_player_first_preflop_action(
+            player=player,
+            preflop_prefix=preflop_prefix,
+        )
+        if first_action is None:
+            self._apply_preflop_action_scale(
+                player=player,
+                action=action,
+                table_state=table_state,
+            )
+            return
+        if self._is_call_like_action(first_action):
+            self._handle_non_first_after_first_call(
+                player=player,
+                action=action,
+                table_state=table_state,
+                current_prefix=current_prefix,
+            )
+            return
+        if self._is_raise_like_action(first_action):
+            self._handle_non_first_after_first_raise(
+                player=player,
+                action=action,
+                table_state=table_state,
+                current_prefix=current_prefix,
+            )
+            return
+        self._apply_preflop_action_scale(
+            player=player,
+            action=action,
+            table_state=table_state,
+        )
+
+    def _get_player_first_preflop_action(
+        self,
+        *,
+        player: "Player",
+        preflop_prefix: Sequence["PlayerAction"],
+    ) -> "PlayerAction | None":
+        """获取玩家首次翻前动作。"""
+        for each in preflop_prefix:
+            if each.player_index == player.seat_index:
+                return each
+        return None
+
+    def _handle_first_limp(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+    ) -> None:
+        """处理 first limp 场景。"""
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _handle_follow_limp(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        current_prefix: Sequence["PlayerAction"],
+    ) -> None:
+        """处理 follow limp 场景。"""
+        prefixed_range = self._build_preflop_range_from_prefix(
+            player=player,
+            table_state=table_state,
+            action_prefix=current_prefix,
+        )
+        if prefixed_range is not None:
+            self._preflop_ranges[player.seat_index] = prefixed_range
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _handle_rfi_no_limper(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+    ) -> None:
+        """处理无 limper 的 RFI 场景。"""
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _handle_rfi_have_limper(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        current_prefix: Sequence["PlayerAction"],
+    ) -> None:
+        """处理有 limper 的 RFI 场景。"""
+        prefixed_range = self._build_preflop_range_from_prefix(
+            player=player,
+            table_state=table_state,
+            action_prefix=current_prefix,
+        )
+        if prefixed_range is not None:
+            self._preflop_ranges[player.seat_index] = prefixed_range
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _handle_three_bet(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+    ) -> None:
+        """处理 3Bet 场景。"""
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _handle_four_bet(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+    ) -> None:
+        """处理 4Bet 场景。"""
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _handle_non_first_after_first_call(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        current_prefix: Sequence["PlayerAction"],
+    ) -> None:
+        """处理首次行动为 call 的非首次翻前行动。"""
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _handle_non_first_after_first_raise(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        current_prefix: Sequence["PlayerAction"],
+    ) -> None:
+        """处理首次行动为 raise 的非首次翻前行动。"""
+        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
 
     def _build_preflop_range_from_prefix(
         self,

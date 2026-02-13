@@ -202,7 +202,7 @@ class TestOpponentRangePredictor:
         assert preflop_range.total_frequency() == 0.0
 
     def test_postflop_range_from_preflop(self) -> None:
-        """测试翻后范围从翻前范围展开。"""
+        """测试当前阶段翻后逻辑留空。"""
         predictor = create_opponent_range_predictor()
 
         player = Player(seat_index=1, player_id="opponent", position="CO")
@@ -238,15 +238,12 @@ class TestOpponentRangePredictor:
         )
         predictor.update_range_on_action(player, bet_action, flop_state)
 
-        # 验证 postflop 范围已创建
+        # 当前阶段 postflop 逻辑留空，不应生成翻后范围。
         postflop_range = predictor.get_postflop_range(player.seat_index)
-        assert postflop_range is not None
-        assert isinstance(postflop_range, PostflopRange)
-        # 范围应该小于 1（因为公共牌阻挡 + 行动收窄）
-        assert postflop_range.total_frequency() < 1.0
+        assert postflop_range is None
 
     def test_board_blockers_applied(self) -> None:
-        """测试公共牌阻挡效果。"""
+        """测试当前阶段翻后公共牌逻辑留空。"""
         predictor = create_opponent_range_predictor()
 
         player = Player(seat_index=1, player_id="opponent", position="BB")
@@ -282,11 +279,116 @@ class TestOpponentRangePredictor:
         )
         predictor.update_range_on_action(player, check_action, flop_state)
 
-        # 所有包含 A 的组合应该被排除
         postflop_range = predictor.get_postflop_range(player.seat_index)
-        assert postflop_range is not None
-        freq = postflop_range.total_frequency()
-        assert freq < 1.0
+        assert postflop_range is None
+
+    def test_preflop_first_action_dispatches_first_handler(self) -> None:
+        """首次翻前行动应进入 first-action 分发。"""
+
+        class _SpyPredictor(OpponentRangePredictor):
+            def __init__(self) -> None:
+                super().__init__()
+                self.first_calls = 0
+                self.non_first_calls = 0
+
+            def _handle_preflop_first_action(  # type: ignore[override]
+                self,
+                *,
+                player: Player,
+                action: PlayerAction,
+                table_state: ObservedTableState,
+                preflop_prefix: Sequence[PlayerAction],
+                current_prefix: Sequence[PlayerAction],
+            ) -> None:
+                self.first_calls += 1
+
+            def _handle_preflop_non_first_action(  # type: ignore[override]
+                self,
+                *,
+                player: Player,
+                action: PlayerAction,
+                table_state: ObservedTableState,
+                preflop_prefix: Sequence[PlayerAction],
+                current_prefix: Sequence[PlayerAction],
+            ) -> None:
+                self.non_first_calls += 1
+
+        predictor = _SpyPredictor()
+        player = Player(seat_index=4, player_id="mp", position="MP")
+        state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+        )
+        action = PlayerAction(
+            player_index=4,
+            action_type=ActionType.CALL,
+            amount=1.0,
+            street=Street.PREFLOP,
+        )
+
+        predictor.update_range_on_action(player, action, state, action_prefix=())
+        assert predictor.first_calls == 1
+        assert predictor.non_first_calls == 0
+
+    def test_preflop_non_first_action_dispatches_non_first_handler(self) -> None:
+        """非首次翻前行动应进入 non-first-action 分发。"""
+
+        class _SpyPredictor(OpponentRangePredictor):
+            def __init__(self) -> None:
+                super().__init__()
+                self.first_calls = 0
+                self.non_first_calls = 0
+
+            def _handle_preflop_first_action(  # type: ignore[override]
+                self,
+                *,
+                player: Player,
+                action: PlayerAction,
+                table_state: ObservedTableState,
+                preflop_prefix: Sequence[PlayerAction],
+                current_prefix: Sequence[PlayerAction],
+            ) -> None:
+                self.first_calls += 1
+
+            def _handle_preflop_non_first_action(  # type: ignore[override]
+                self,
+                *,
+                player: Player,
+                action: PlayerAction,
+                table_state: ObservedTableState,
+                preflop_prefix: Sequence[PlayerAction],
+                current_prefix: Sequence[PlayerAction],
+            ) -> None:
+                self.non_first_calls += 1
+
+        predictor = _SpyPredictor()
+        player = Player(seat_index=4, player_id="mp", position="MP")
+        state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+        )
+        action = PlayerAction(
+            player_index=4,
+            action_type=ActionType.RAISE,
+            amount=3.0,
+            street=Street.PREFLOP,
+        )
+        prefix = (
+            PlayerAction(
+                player_index=4,
+                action_type=ActionType.CALL,
+                amount=1.0,
+                street=Street.PREFLOP,
+            ),
+        )
+
+        predictor.update_range_on_action(player, action, state, action_prefix=prefix)
+        assert predictor.first_calls == 0
+        assert predictor.non_first_calls == 1
 
     def test_reset_player_ranges(self) -> None:
         """测试重置玩家范围。"""
