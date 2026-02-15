@@ -2,9 +2,12 @@
 
 根据对手的行动历史、位置信息和统计数据预测其手牌范围。
 
-预测算法概述：
-- Preflop：基于对手位置和行动类型，使用策略表或统计数据收窄范围
-- Postflop：将 preflop 范围展开为 1326 维，排除公共牌阻挡，根据行动收窄
+流程说明文档位置(更新当前文件需要同步更新说明文文档):
+- src/bayes_poker/strategy/opponent_range/predictor_flow.md
+
+预测算法概述:
+- Preflop:基于对手位置和行动类型，使用策略表或统计数据收窄范围
+- Postflop:将 preflop 范围展开为 1326 维，排除公共牌阻挡，根据行动收窄
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from bayes_poker.comm.strategy_history import build_preflop_history
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.strategy.opponent_range.frequency_fill import build_limp_calling_range
@@ -23,18 +27,25 @@ from bayes_poker.strategy.opponent_range.preflop_context import (
 )
 from bayes_poker.strategy.opponent_range.stats_source import get_aggregated_player_stats
 from bayes_poker.strategy.range import (
+    RANGE_169_ORDER,
     RANGE_169_LENGTH,
     RANGE_1326_LENGTH,
     PreflopRange,
     PostflopRange,
     card_to_index52,
+    combos_per_hand,
 )
 from bayes_poker.strategy.runtime.preflop_history import PreflopScenario
 from bayes_poker.table.layout.base import Position as TablePosition
 
 if TYPE_CHECKING:
+    from bayes_poker.player_metrics.models import PlayerStats
     from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
-    from bayes_poker.strategy.preflop_parse.models import PreflopStrategy
+    from bayes_poker.strategy.preflop_parse.models import (
+        PreflopStrategy,
+        StrategyAction,
+        StrategyNode,
+    )
     from bayes_poker.table.observed_state import (
         Player,
         ObservedTableState,
@@ -87,6 +98,18 @@ def _coerce_table_position(value: object) -> TablePosition | None:
     return None
 
 
+def _clamp_probability(value: float) -> float:
+    """限制概率到 [0.0, 1.0] 区间。
+
+    Args:
+        value: 输入概率值。
+
+    Returns:
+        限制后的概率值。
+    """
+    return max(0.0, min(1.0, float(value)))
+
+
 @dataclass
 class OpponentRangePredictor:
     """对手范围预测器。
@@ -97,8 +120,8 @@ class OpponentRangePredictor:
         preflop_strategy: 翻前策略数据。
         stats_repo: 玩家统计仓库。
         table_type: 牌桌类型。
-        _preflop_ranges: 内部翻前范围映射（seat_index → PreflopRange）。
-        _postflop_ranges: 内部翻后范围映射（seat_index → PostflopRange）。
+        _preflop_ranges: 内部翻前范围映射(seat_index → PreflopRange)。
+        _postflop_ranges: 内部翻后范围映射(seat_index → PostflopRange)。
     """
 
     preflop_strategy: "PreflopStrategy | None" = None
@@ -366,13 +389,20 @@ class OpponentRangePredictor:
             )
             return
         if scenario == FirstPreflopScenario.RFI_NO_LIMPER:
-            self._handle_rfi_no_limper(player=player, action=action, table_state=table_state)
+            self._handle_rfi_no_limper(
+                player=player,
+                action=action,
+                table_state=table_state,
+                decision_prefix=preflop_prefix,
+                current_prefix=current_prefix,
+            )
             return
         if scenario == FirstPreflopScenario.RFI_HAVE_LIMPER:
             self._handle_rfi_have_limper(
                 player=player,
                 action=action,
                 table_state=table_state,
+                decision_prefix=preflop_prefix,
                 current_prefix=current_prefix,
             )
             return
@@ -477,8 +507,19 @@ class OpponentRangePredictor:
         player: "Player",
         action: "PlayerAction",
         table_state: "ObservedTableState",
+        decision_prefix: Sequence["PlayerAction"],
+        current_prefix: Sequence["PlayerAction"],
     ) -> None:
         """处理无 limper 的 RFI 场景。"""
+        prefixed_range = self._build_rfi_preflop_range_from_prefix(
+            player=player,
+            table_state=table_state,
+            decision_prefix=decision_prefix,
+            current_prefix=current_prefix,
+        )
+        if prefixed_range is not None:
+            self._preflop_ranges[player.seat_index] = prefixed_range
+            return
         self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
 
     def _handle_rfi_have_limper(
@@ -487,16 +528,19 @@ class OpponentRangePredictor:
         player: "Player",
         action: "PlayerAction",
         table_state: "ObservedTableState",
+        decision_prefix: Sequence["PlayerAction"],
         current_prefix: Sequence["PlayerAction"],
     ) -> None:
         """处理有 limper 的 RFI 场景。"""
-        prefixed_range = self._build_preflop_range_from_prefix(
+        prefixed_range = self._build_rfi_preflop_range_from_prefix(
             player=player,
             table_state=table_state,
-            action_prefix=current_prefix,
+            decision_prefix=decision_prefix,
+            current_prefix=current_prefix,
         )
         if prefixed_range is not None:
             self._preflop_ranges[player.seat_index] = prefixed_range
+            return
         self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
 
     def _handle_three_bet(
@@ -540,6 +584,235 @@ class OpponentRangePredictor:
     ) -> None:
         """处理首次行动为 raise 的非首次翻前行动。"""
         self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
+
+    def _is_strategy_raise_action(self, action: "StrategyAction") -> bool:
+        """判断策略动作是否为加注类动作。
+
+        Args:
+            action: 策略动作。
+
+        Returns:
+            若为 raise/bet/all-in 则返回 `True`。
+        """
+        action_type = str(action.action_type).upper()
+        if action.is_all_in:
+            return True
+        return action_type in {"RAISE", "BET"} or action.action_code.upper().startswith("R")
+
+    def _build_weighted_raise_evs(self, node: "StrategyNode") -> list[float] | None:
+        """按 raise 动作频率加权聚合 169 维 EV。
+
+        Args:
+            node: 策略节点。
+
+        Returns:
+            聚合后的 EV 向量, 不存在 raise 动作时返回 `None`。
+        """
+        raise_actions = [
+            action for action in node.actions if self._is_strategy_raise_action(action)
+        ]
+        if not raise_actions:
+            return None
+
+        raw_weights = [max(0.0, float(action.total_frequency)) for action in raise_actions]
+        weight_sum = sum(raw_weights)
+        if weight_sum <= 1e-9:
+            raw_weights = [1.0] * len(raise_actions)
+            weight_sum = float(len(raise_actions))
+
+        evs_169 = [0.0] * RANGE_169_LENGTH
+        for idx_169 in range(RANGE_169_LENGTH):
+            weighted_ev = 0.0
+            for action, weight in zip(raise_actions, raw_weights):
+                weighted_ev += float(action.range.evs[idx_169]) * float(weight)
+            evs_169[idx_169] = weighted_ev / weight_sum
+        return evs_169
+
+    def _build_ev_ranked_rfi_range(
+        self,
+        *,
+        evs_169: Sequence[float],
+        target_frequency: float,
+    ) -> PreflopRange:
+        """按 EV 排序并按目标频率裁剪 RFI 范围。
+
+        Args:
+            evs_169: 169 维 EV 向量。
+            target_frequency: 目标 RFI 频率。
+
+        Returns:
+            裁剪后的翻前范围。
+        """
+        sorted_indices = sorted(
+            range(RANGE_169_LENGTH),
+            key=lambda idx_169: (float(evs_169[idx_169]), -idx_169),
+            reverse=True,
+        )
+        remaining_combos = _clamp_probability(target_frequency) * float(RANGE_1326_LENGTH)
+        strategy = [0.0] * RANGE_169_LENGTH
+
+        for idx_169 in sorted_indices:
+            if remaining_combos <= 0.0:
+                break
+            combo_count = float(combos_per_hand(RANGE_169_ORDER[idx_169]))
+            if remaining_combos >= combo_count:
+                strategy[idx_169] = 1.0
+                remaining_combos -= combo_count
+                continue
+            strategy[idx_169] = remaining_combos / combo_count
+            remaining_combos = 0.0
+
+        return PreflopRange(strategy=strategy, evs=list(evs_169))
+
+    def _get_player_or_aggregated_stats(self, player: "Player") -> "PlayerStats | None":
+        """获取玩家统计, 无命中时回退聚合统计。
+
+        Args:
+            player: 对手玩家。
+
+        Returns:
+            玩家统计或聚合统计, 不存在时返回 `None`。
+        """
+        if self.stats_repo is None:
+            return None
+
+        if player.player_id:
+            player_stats = self.stats_repo.get(player.player_id, self.table_type)
+            if player_stats is not None and player_stats.preflop_stats:
+                return player_stats
+
+        aggregated_stats = get_aggregated_player_stats(self.stats_repo, self.table_type)
+        if aggregated_stats is None or not aggregated_stats.preflop_stats:
+            return None
+        return aggregated_stats
+
+    def _get_rfi_frequency_for_prefix(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+        current_prefix: Sequence["PlayerAction"],
+    ) -> float | None:
+        """读取当前 prefix 的 RFI 频率。
+
+        Args:
+            player: 对手玩家。
+            table_state: 当前牌桌状态。
+            current_prefix: 包含当前动作的翻前前缀。
+
+        Returns:
+            RFI 频率, 不可获取时返回 `None`。
+        """
+        context = build_opponent_preflop_context(
+            player=player,
+            action_prefix=current_prefix,
+            table_state=table_state,
+            table_type=self.table_type,
+        )
+        if context.params is None:
+            return None
+
+        stats = self._get_player_or_aggregated_stats(player)
+        if stats is None:
+            return None
+
+        action_stats = stats.get_preflop_stats(context.params)
+        return _clamp_probability(float(action_stats.bet_raise_probability()))
+
+    def _query_preflop_decision_node(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+        decision_prefix: Sequence["PlayerAction"],
+    ) -> tuple["StrategyNode", str] | None:
+        """根据决策前 prefix 查询翻前策略节点。
+
+        Args:
+            player: 对手玩家。
+            table_state: 当前牌桌状态。
+            decision_prefix: 玩家动作前的翻前前缀。
+
+        Returns:
+            `(策略节点, 查询历史)` 二元组, 未命中时返回 `None`。
+        """
+        if self.preflop_strategy is None:
+            return None
+
+        stack_bb = int(round(player.get_stack_bb(table_state.big_blind)))
+        if stack_bb <= 0:
+            return None
+
+        history = build_preflop_history(
+            list(decision_prefix),
+            big_blind=table_state.big_blind,
+        )
+        # 当前实现先固定到 100bb 策略树。
+        match = self.preflop_strategy.query(100, history)
+        if match is None:
+            LOGGER.debug(
+                "rfi range: 未匹配策略节点 (history=%s, stack=%s)",
+                history,
+                stack_bb,
+            )
+            return None
+        return match.node, history
+
+    def _build_rfi_preflop_range_from_prefix(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+        decision_prefix: Sequence["PlayerAction"],
+        current_prefix: Sequence["PlayerAction"],
+    ) -> PreflopRange | None:
+        """基于 prefix 构建 RFI 范围。
+
+        Args:
+            player: 对手玩家。
+            table_state: 当前牌桌状态。
+            decision_prefix: 玩家动作前的翻前前缀。
+            current_prefix: 包含当前动作的翻前前缀。
+
+        Returns:
+            RFI 范围, 不满足条件时返回 `None`。
+        """
+        if self.preflop_strategy is None or self.stats_repo is None:
+            return None
+
+        rfi_frequency = self._get_rfi_frequency_for_prefix(
+            player=player,
+            table_state=table_state,
+            current_prefix=current_prefix,
+        )
+        if rfi_frequency is None:
+            return None
+
+        query_result = self._query_preflop_decision_node(
+            player=player,
+            table_state=table_state,
+            decision_prefix=decision_prefix,
+        )
+        if query_result is None:
+            return None
+        node, history = query_result
+
+        evs_169 = self._build_weighted_raise_evs(node)
+        if evs_169 is None:
+            return None
+
+        rfi_range = self._build_ev_ranked_rfi_range(
+            evs_169=evs_169,
+            target_frequency=rfi_frequency,
+        )
+        LOGGER.debug(
+            "rfi range: player=%s, history=%s, rfi_freq=%.4f, total_freq=%.4f",
+            player.player_id,
+            history,
+            rfi_frequency,
+            rfi_range.total_frequency(),
+        )
+        return rfi_range
 
     def _build_preflop_range_from_prefix(
         self,
