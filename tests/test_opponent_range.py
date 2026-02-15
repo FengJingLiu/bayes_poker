@@ -32,7 +32,7 @@ from bayes_poker.table.observed_state import (
 )
 
 REAL_PRELFOP_STRATEGY_DIR = Path(
-    "/home/autumn/project/gg_handhistory/preflop_strategy/Cash6m50zSimple25Open_SimpleIP"
+    "/home/autumn/gg_handhistory/preflop_strategy/Cash6m50zSimple25Open_SimpleIP"
 )
 REAL_PLAYER_STATS_DB_PATH = Path("data/database/player_stats.db")
 

@@ -450,8 +450,8 @@ class PreflopRuntime:
         """RFI 层。
 
         分层(框架):
-            1) no limper: 直接查表；SB/BTN 位置考虑 BB 3B 与防守范围(Level 偏差)
-            2) 有 limper: 查"无 limper 基准"；按 3B 范围来加注(ISO)；下注尺度微调
+            1) no limper: 直接查表;SB/BTN 位置考虑 BB 3B 与防守范围(Level 偏差)
+            2) 有 limper: 查"无 limper 基准";按 3B 范围来加注(ISO);下注尺度微调
 
         Args:
             payload: 请求 payload。
@@ -468,8 +468,8 @@ class PreflopRuntime:
             return self._decide_rfi_face_limper(
                 payload, stack_bb, hero_idx_169, history, num_limpers
             )
-
-        match = self.strategy.query(stack_bb, history)
+        # 默认使用 100 BB 策略
+        match = self.strategy.query(100, history)
         if match is None:
             return _base_response(
                 state_version,
@@ -642,10 +642,10 @@ class PreflopRuntime:
         """3Bet 层(框架)。
 
         分层(框架):
-            1) RFI 玩家非 ISO:查该玩家 RSI 范围；查该位置标准 RSI 与 3B 范围；根据比例缩放 3B 范围
-            2) RFI 玩家 ISO:查该玩家 RSI 范围；3B 顶端 1/3 范围
+            1) RFI 玩家非 ISO:查该玩家 RSI 范围;查该位置标准 RSI 与 3B 范围;根据比例缩放 3B 范围
+            2) RFI 玩家 ISO:查该玩家 RSI 范围;3B 顶端 1/3 范围
 
-        当前默认:直接查表并按英雄手牌概率选择行动；范围/下注尺度调整留作扩展点。
+        当前默认:直接查表并按英雄手牌概率选择行动;范围/下注尺度调整留作扩展点。
 
         Args:
             payload: 请求 payload。
@@ -676,7 +676,7 @@ class PreflopRuntime:
             1) cold 4bet:查最后 raiser 的 3B 范围，4B 顶端 1/2 范围
             2) RSI face 3bet:查表
 
-        当前默认:直接查表并按英雄手牌概率选择行动；范围/下注尺度调整留作扩展点。
+        当前默认:直接查表并按英雄手牌概率选择行动;范围/下注尺度调整留作扩展点。
 
         Args:
             payload: 请求 payload。

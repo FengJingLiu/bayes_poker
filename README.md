@@ -1,221 +1,217 @@
 # bayes-poker
 
-GGPoker 扑克辅助工具套件，包含手牌历史解析、实时牌桌 OCR 解析、策略计算通信等功能。
+`bayes-poker` 是一个面向 GGPoker 的扑克数据与策略工具集, 覆盖离线手牌解析、玩家统计构建、策略解析与可选的实时牌桌通信链路。
 
-## 功能特性
+## 功能概览
 
-### 手牌历史解析
-- 解析 GGPoker Rush & Cash 手牌历史文件
-- 处理 GGPoker 特有格式（EV Cashout、Run It Twice/Three、Cash Drop 等）
-- 支持单文件或批量解析
-- 支持多进程并行处理
-- 输出标准 PHHS（Poker Hand History Standard）格式
-
-### 实时牌桌解析 (NEW)
-- Windows 端 OCR 实时解析 GGPoker 牌桌
-- 自动检测游戏阶段、玩家动作、底池大小
-- 动态缩放坐标系统，支持任意窗口尺寸
-- 多窗口多进程并行解析（最多 8 桌）
-- 集成 pokerkit.State 实时维护游戏状态
-
-### Windows ↔ Linux 通信 (NEW)
-- WebSocket 双向通信（可选 TLS：WSS）
-- 自动重连与断线恢复
-- 消息确认与重放缓存
-- 策略请求/响应异步处理
+- 手牌历史解析:
+  - 解析 GGPoker Rush & Cash 文本手牌。
+  - 处理 EV Cashout、Run It Twice/Three、Cash Drop 等特殊格式。
+  - 支持批量解析、多进程、去重输出 `.phhs`。
+- 玩家统计构建（Rust 加速）:
+  - 从 `.phhs` 批量写入 SQLite。
+  - 支持去重手牌追踪与统计查询。
+- 策略能力:
+  - 解析 GTOWizard 风格翻前策略目录。
+  - 支持对手范围预测（Opponent Range）。
+- 实时扩展（可选）:
+  - OCR 牌桌解析（Windows 环境）。
+  - WebSocket 客户端/服务端通信（Windows ↔ Linux）。
 
 ## 环境要求
 
-- Python >= 3.12
-- [uv](https://github.com/astral-sh/uv) 包管理器
+- Python `>= 3.12`
+- [uv](https://github.com/astral-sh/uv)
 
-## 快速开始
+可选依赖（按功能安装）:
 
-### 安装依赖
+- 实时解析: `cnocr`, `opencv-python`, `pywin32`
+- 通信: `websockets`
+
+## 安装
 
 ```bash
 uv sync
 ```
 
-### 安装可选依赖（实时解析/通信）
+安装可选依赖示例:
 
 ```bash
-# Windows 端（牌桌解析）
+# 实时 OCR
 uv add cnocr opencv-python pywin32
 
-# 通信功能
+# WebSocket 通信
 uv add websockets
 ```
 
-### 解析手牌历史
+## 快速开始
 
-**解析单个文件：**
-
-```bash
-uv run python scripts/batch_parse_handhistory.py input.txt -o output/
-```
-
-**批量解析目录：**
+### 1) 批量解析手牌历史
 
 ```bash
-uv run python scripts/batch_parse_handhistory.py data/handhistory/ -o output/
+uv run python scripts/batch_parse_handhistory.py data/handhistory -o data/outputs -w 4
 ```
 
-**使用多进程加速：**
+### 2) 从 PHHS 构建玩家统计数据库（Rust 加速）
 
 ```bash
-uv run python scripts/batch_parse_handhistory.py data/handhistory/ -o output/ -w 4
+uv run python scripts/build_player_stats.py data/outputs -o data/database/player_stats.db
 ```
 
-### 实时牌桌解析 (Windows)
+查看数据库统计:
+
+```bash
+uv run python scripts/build_player_stats.py --stats data/database/player_stats.db
+```
+
+### 3) 使用模块入口执行批处理
+
+`bayes_poker.main` 会读取环境变量并调用 Rust 批处理接口:
+
+```bash
+export BAYES_POKER_PHHS_DIR=data/outputs
+export BAYES_POKER_DB_PATH=data/database/base.db
+export BAYES_POKER_MAX_FILES_IN_MEMORY=200
+uv run python -m bayes_poker.main
+```
+
+### 4) 查询玩家统计
+
+```python
+from bayes_poker.player_metrics.enums import TableType
+from bayes_poker.storage import PlayerStatsRepository
+
+with PlayerStatsRepository("data/database/player_stats.db") as repo:
+    stats = repo.get("player_name", TableType.SIX_MAX)
+    print(stats)
+```
+
+## 策略解析与范围预测
+
+解析翻前策略目录:
+
+```python
+from pathlib import Path
+from bayes_poker.strategy import parse_strategy_directory
+
+strategy = parse_strategy_directory(Path("/path/to/preflop_strategy/Cash6m50zSimple25Open_SimpleIP"))
+print(strategy.node_count())
+```
+
+范围预测器（最小示例）:
+
+```python
+from bayes_poker.strategy import create_opponent_range_predictor
+
+predictor = create_opponent_range_predictor()
+print(predictor)
+```
+
+## 实时牌桌解析（可选）
+
+> 该功能依赖桌面截图与 OCR, 推荐在 Windows 环境使用。
 
 ```python
 from bayes_poker.table import create_manager
 
-# 创建多牌桌管理器
-manager = create_manager(small_blind=0.5, big_blind=1.0, max_tables=8)
+manager = create_manager(small_blind=0.5, big_blind=1.0, max_tables=4)
+started = manager.start_all()
+print(f"启动解析器数量: {started}")
 
-# 启动所有解析器（自动发现 GGPoker 窗口）
-manager.start_all()
+# ... 业务循环 ...
 
-# 获取解析状态
-for parser_info in manager.parsers:
-    ctx = parser_info.parser.context
-    if ctx:
-        print(f"窗口 {ctx.window_index}: {ctx.phase.name}, 底池 {ctx.state_bridge.total_pot if ctx.state_bridge else 0}")
-
-# 停止
 manager.stop_all()
 ```
 
-#### 采集卡/无 HWND 场景（桌面模式）
+## 通信服务（可选）
 
-当解析器运行在“采集卡电脑”上，只能拿到整屏画面、无法获取目标窗口 `hwnd` 时，使用桌面模式：
-
-```python
-from bayes_poker.table import create_manager
-
-manager = create_manager(
-    small_blind=0.5,
-    big_blind=1.0,
-    max_tables=8,
-    capture_mode="desktop",
-)
-manager.start_all()
-```
-
-桌面模式会尝试自动识别牌桌区域（需要安装 `opencv-python`）。如果自动识别不稳定，可通过环境变量写死桌面位置（按桌面截图坐标）：
-
-```bash
-export BAYES_POKER_DESKTOP_TABLE_RECTS="0,0,1920,1080|1920,0,1920,1080|0,1080,1920,1080|1920,1080,1920,1080"
-```
-
-### 通信服务
-
-**启动服务器 (Linux)：**
+服务端示例:
 
 ```python
 import asyncio
 from bayes_poker.comm import run_server
 
 async def compute_strategy(session_id: str, payload: dict) -> dict:
-    # 接入你的策略引擎
-    return {"recommended_action": "raise", "recommended_amount": 3.0, "ev": 0.15}
+    return {
+        "recommended_action": "raise",
+        "recommended_amount": 3.0,
+        "ev": 0.15,
+    }
 
-asyncio.run(run_server(
-    host="0.0.0.0",
-    port=8765,
-    api_keys={"your-api-key"},
-    # 如需 WSS：传入证书与私钥路径（PEM）
-    # ssl_certfile="/path/to/fullchain.pem",
-    # ssl_keyfile="/path/to/privkey.pem",
-    strategy_handler=compute_strategy,
-))
+asyncio.run(
+    run_server(
+        host="0.0.0.0",
+        port=8765,
+        api_keys={"your-api-key"},
+        strategy_handler=compute_strategy,
+    )
+)
 ```
 
-**启动客户端 (Windows)：**
+客户端示例:
 
 ```python
 import asyncio
 from bayes_poker.comm import create_agent
 
-def on_strategy(response):
-    print(f"推荐: {response.recommended_action} {response.recommended_amount}")
+
+def on_strategy(resp) -> None:
+    print(resp.recommended_action, resp.recommended_amount)
 
 agent = create_agent(
-    # 默认 ws；如服务端启用 TLS 则用 wss
-    server_url="ws://your-server.com:8765/ws",
+    server_url="ws://127.0.0.1:8765/ws",
     api_key="your-api-key",
     strategy_callback=on_strategy,
 )
+
 asyncio.run(agent.start())
-```
-
-## 项目结构
-
-```
-bayes_poker/
-├── src/bayes_poker/
-│   ├── hand_history/       # 手牌历史解析模块
-│   ├── table/              # 实时牌桌解析模块 (NEW)
-│   │   ├── layout/         # 布局配置（动态缩放）
-│   │   ├── parser.py       # 多进程解析器
-│   │   ├── detector.py     # 状态检测器
-│   │   └── state_bridge.py # pokerkit 集成
-│   ├── screen/             # 截屏与窗口管理 (NEW)
-│   ├── ocr/                # OCR 引擎 (NEW)
-│   ├── comm/               # 通信模块 (NEW)
-│   │   ├── client.py       # WebSocket 客户端
-│   │   ├── server.py       # WebSocket 服务器
-│   │   └── agent.py        # TableParser 集成代理
-│   ├── config/             # 配置模块
-│   └── utils/              # 工具函数
-├── scripts/
-│   └── batch_parse_handhistory.py
-├── tests/
-└── data/
 ```
 
 ## 测试
 
-**运行全部测试：**
+运行全部测试:
 
 ```bash
-uv run pytest
+uv run pytest -q
 ```
 
-**运行牌桌解析测试：**
+运行单文件:
 
 ```bash
-uv run pytest tests/test_table_parser.py -v
+uv run pytest tests/test_parse_failed_hands.py
 ```
 
-**运行大样本测试（需要本地数据集）：**
+运行大样本回归（默认跳过）:
 
 ```bash
-BAYES_POKER_RUN_LARGE_HANDHISTORY_TESTS=1 uv run pytest -k large_sample
+BAYES_POKER_RUN_LARGE_HANDHISTORY_TESTS=1 uv run pytest -q -k large_sample
 ```
 
-## 配置
+## 项目结构
 
-通过环境变量配置日志级别：
-
-```bash
-export BAYES_POKER_LOG_LEVEL=DEBUG  # 可选: DEBUG/INFO/WARNING/ERROR/CRITICAL
+```text
+src/bayes_poker/
+├── hand_history/            # 手牌历史解析
+├── player_metrics/          # 玩家统计（含 Rust API 封装）
+├── strategy/                # 策略解析、运行时、范围预测
+├── storage/                 # SQLite 仓储
+├── table/                   # 实时牌桌解析
+├── screen/                  # 截屏与区域识别
+├── ocr/                     # OCR 封装
+├── comm/                    # WebSocket 通信
+├── domain/                  # 领域模型
+├── config/                  # 配置
+└── main.py                  # 批量处理入口
 ```
 
-## 依赖
+## 常用环境变量
 
-**核心依赖：**
-- [pokerkit](https://pokerkit.readthedocs.io/) - 扑克工具库
-
-**可选依赖（实时解析）：**
-- [cnocr](https://github.com/breezedeus/CnOCR) - OCR 引擎
-- [opencv-python](https://opencv.org/) - 图像处理
-- [pywin32](https://github.com/mhammond/pywin32) - Windows API
-
-**可选依赖（通信）：**
-- [websockets](https://websockets.readthedocs.io/) - WebSocket 库
+- `BAYES_POKER_LOG_LEVEL`: 日志级别（`DEBUG/INFO/WARNING/ERROR/CRITICAL`）。
+- `BAYES_POKER_PHHS_DIR`: `bayes_poker.main` 输入目录。
+- `BAYES_POKER_DB_PATH`: `bayes_poker.main` 输出数据库路径。
+- `BAYES_POKER_MAX_FILES_IN_MEMORY`: Rust 批处理单批加载文件数量。
+- `BAYES_POKER_RUN_LARGE_HANDHISTORY_TESTS`: 是否运行 `large_sample` 测试。
+- `GG_HANDHISTORY_DIR`: 大样本测试数据目录。
 
 ## 许可证
 

@@ -163,6 +163,19 @@ class PreflopRange:
                 lines.append(f"  {hand_key}: strategy={strat:.3f}, ev={ev:.3f}")
         return "\n".join(lines)
 
+    def to_gtoplus(self, min_strategy: float = 0.001) -> str:
+        """生成 GTO+ 格式的范围字符串。
+
+        展开为 1326 维后委托给 PostflopRange.to_gtoplus()。
+
+        Args:
+            min_strategy: 忽略 strategy < 此值的手牌（默认 0.001）
+
+        Returns:
+            GTO+ 格式字符串，如 "[50.0]AhKs[/50.0],[100.0]AsAd[/100.0]"
+        """
+        return self.to_postflop().to_gtoplus(min_strategy=min_strategy)
+
     @classmethod
     def zeros(cls) -> PreflopRange:
         """创建全零向量。"""
@@ -300,6 +313,36 @@ class PostflopRange:
                 lines.append(f"  {combo_str}: strategy={strat:.3f}, ev={ev:.3f}")
                 count += 1
         return "\n".join(lines)
+
+    def to_gtoplus(self, min_strategy: float = 0.001) -> str:
+        """生成 GTO+ 格式的范围字符串。
+
+        格式示例: [15.8]8s7d[/15.8],[15.8]8s7c[/15.8]
+        括号内是权重百分比（0-100）。
+        权重为 100% 时直接输出组合名称，不加权重标签。
+        权重为 0 或低于 min_strategy 的组合会被跳过。
+
+        Args:
+            min_strategy: 忽略 strategy < 此值的组合（默认 0.001）
+
+        Returns:
+            GTO+ 格式字符串，可直接粘贴到 GTO+ 软件中
+        """
+        parts: list[str] = []
+        for idx in range(RANGE_1326_LENGTH):
+            strat = self.strategy[idx]
+            if strat < min_strategy:
+                continue
+            c1, c2 = index1326_to_combo(idx)
+            r1, s1 = _INDEX_TO_RANK[c1 // 4], _INDEX_TO_SUIT[c1 % 4]
+            r2, s2 = _INDEX_TO_RANK[c2 // 4], _INDEX_TO_SUIT[c2 % 4]
+            combo_str = f"{r1}{s1}{r2}{s2}"
+            weight = round(strat * 100, 1)
+            if weight >= 100.0:
+                parts.append(combo_str)
+            else:
+                parts.append(f"[{weight}]{combo_str}[/{weight}]")
+        return ",".join(parts)
 
     @classmethod
     def zeros(cls) -> PostflopRange:
