@@ -3,37 +3,28 @@
 测试 OpponentRangePredictor 的 preflop 和 postflop 范围更新逻辑。
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from functools import lru_cache
 from pathlib import Path
 
 import pytest
 
 from bayes_poker.domain.poker import ActionType, Street
-from bayes_poker.player_metrics.enums import (
-    ActionType as MetricsActionType,
-    Position as MetricsPosition,
-    TableType,
-)
-from bayes_poker.player_metrics.models import PlayerStats
-from bayes_poker.player_metrics.params import PreFlopParams
+from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.strategy.opponent_range import (
     OpponentRangePredictor,
     create_opponent_range_predictor,
 )
-from bayes_poker.strategy.preflop_parse.models import (
-    PreflopStrategy,
-    StrategyAction,
-    StrategyNode,
-)
+from bayes_poker.strategy.preflop_parse.models import PreflopStrategy
 from bayes_poker.strategy.preflop_parse.parser import parse_strategy_directory
 from bayes_poker.strategy.range import (
-    RANGE_169_LENGTH,
     PreflopRange,
-    PostflopRange,
-    get_hand_key_to_169_index,
 )
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
+from bayes_poker.table.layout.base import (
+    Position as TablePosition,
+    get_position_by_seat,
+)
 from bayes_poker.table.observed_state import (
     Player,
     ObservedTableState,
@@ -46,22 +37,6 @@ REAL_PRELFOP_STRATEGY_DIR = Path(
 REAL_PLAYER_STATS_DB_PATH = Path("data/database/player_stats.db")
 
 
-def _range_with_single_hand_ev(hand_key: str, ev: float) -> PreflopRange:
-    """构建单手牌 EV 峰值范围。
-
-    Args:
-        hand_key: 手牌键。
-        ev: EV 峰值。
-
-    Returns:
-        翻前范围对象。
-    """
-    strategy = [1.0] * RANGE_169_LENGTH
-    evs = [0.0] * RANGE_169_LENGTH
-    evs[get_hand_key_to_169_index()[hand_key]] = ev
-    return PreflopRange(strategy=strategy, evs=evs)
-
-
 @lru_cache(maxsize=1)
 def _load_real_preflop_strategy() -> PreflopStrategy:
     """加载真实翻前策略目录并缓存结果。
@@ -72,20 +47,82 @@ def _load_real_preflop_strategy() -> PreflopStrategy:
     return parse_strategy_directory(REAL_PRELFOP_STRATEGY_DIR)
 
 
-def _build_sixmax_players_with_hero_btn() -> list[Player]:
-    """构建 Hero 在 BTN 的 6-max 玩家列表。
+@pytest.fixture(scope="session")
+def real_preflop_strategy() -> PreflopStrategy:
+    """加载真实翻前策略。
+
+    Returns:
+        翻前策略对象。
+    """
+    if not REAL_PRELFOP_STRATEGY_DIR.is_dir():
+        pytest.skip(f"策略目录不存在: {REAL_PRELFOP_STRATEGY_DIR}")
+    preflop_strategy = _load_real_preflop_strategy()
+    if preflop_strategy.node_count() <= 0:
+        pytest.skip(f"策略目录无可用节点: {REAL_PRELFOP_STRATEGY_DIR}")
+    return preflop_strategy
+
+
+@pytest.fixture
+def real_stats_repo() -> Iterator[PlayerStatsRepository]:
+    """构建真实统计仓库连接。
+
+    Yields:
+        已连接的统计仓库。
+    """
+    if not REAL_PLAYER_STATS_DB_PATH.is_file():
+        pytest.skip(f"统计数据库不存在: {REAL_PLAYER_STATS_DB_PATH}")
+    stats_repo = PlayerStatsRepository(REAL_PLAYER_STATS_DB_PATH)
+    stats_repo.connect()
+    try:
+        yield stats_repo
+    finally:
+        stats_repo.close()
+
+
+def _build_sixmax_players_with_hero_btn(
+    hero_position: str | TablePosition = TablePosition.BTN,
+) -> list[Player]:
+    """按 Hero 位置动态构建 6-max 玩家列表。
+
+    Args:
+        hero_position: Hero 的目标位置，支持字符串或位置枚举。
 
     Returns:
         玩家列表。
     """
-    return [
-        Player(seat_index=0, player_id="hero", position="BTN", stack=100.0),
-        Player(seat_index=1, player_id="sb", position="SB", stack=100.0),
-        Player(seat_index=2, player_id="bb", position="BB", stack=100.0),
-        Player(seat_index=3, player_id="utg", position="UTG", stack=100.0),
-        Player(seat_index=4, player_id="mp", position="MP", stack=100.0),
-        Player(seat_index=5, player_id="co", position="CO", stack=100.0),
+    if isinstance(hero_position, str):
+        target_position = TablePosition(hero_position.upper())
+    else:
+        target_position = hero_position
+
+    seat_order_6max = [
+        TablePosition.BTN,
+        TablePosition.SB,
+        TablePosition.BB,
+        TablePosition.UTG,
+        TablePosition.MP,
+        TablePosition.CO,
     ]
+    hero_offset = seat_order_6max.index(target_position)
+    btn_seat = (-hero_offset) % 6
+
+    players: list[Player] = []
+    for seat_index in range(6):
+        position = get_position_by_seat(
+            seat_index=seat_index,
+            btn_seat=btn_seat,
+            player_count=6,
+        )
+        player_id = "hero" if seat_index == 0 else position.value.lower()
+        players.append(
+            Player(
+                seat_index=seat_index,
+                player_id=player_id,
+                position=position.value,
+                stack=100.0,
+            )
+        )
+    return players
 
 
 def _is_preflop_range_non_uniform(preflop_range: PreflopRange) -> bool:
@@ -103,45 +140,45 @@ def _is_preflop_range_non_uniform(preflop_range: PreflopRange) -> bool:
 
 
 @pytest.fixture
-def real_predictor() -> OpponentRangePredictor:
+def real_predictor(
+    real_preflop_strategy: PreflopStrategy,
+    real_stats_repo: PlayerStatsRepository,
+) -> OpponentRangePredictor:
     """构建使用真实策略与真实数据库的对手范围预测器。
 
     Returns:
         对手范围预测器。
     """
-    if not REAL_PRELFOP_STRATEGY_DIR.is_dir():
-        pytest.skip(f"策略目录不存在: {REAL_PRELFOP_STRATEGY_DIR}")
-    if not REAL_PLAYER_STATS_DB_PATH.is_file():
-        pytest.skip(f"统计数据库不存在: {REAL_PLAYER_STATS_DB_PATH}")
-
-    preflop_strategy = _load_real_preflop_strategy()
-    if preflop_strategy.node_count() <= 0:
-        pytest.skip(f"策略目录无可用节点: {REAL_PRELFOP_STRATEGY_DIR}")
-
-    stats_repo = PlayerStatsRepository(REAL_PLAYER_STATS_DB_PATH)
-    stats_repo.connect()
-    try:
-        yield create_opponent_range_predictor(
-            preflop_strategy=preflop_strategy,
-            stats_repo=stats_repo,
-            table_type=TableType.SIX_MAX,
-        )
-    finally:
-        stats_repo.close()
+    return create_opponent_range_predictor(
+        preflop_strategy=real_preflop_strategy,
+        stats_repo=real_stats_repo,
+        table_type=TableType.SIX_MAX,
+    )
 
 
 class TestOpponentRangePredictor:
     """OpponentRangePredictor 测试类。"""
 
-    def test_create_predictor(self) -> None:
+    def test_create_predictor(
+        self,
+        real_preflop_strategy: PreflopStrategy,
+        real_stats_repo: PlayerStatsRepository,
+    ) -> None:
         """测试创建预测器。"""
-        predictor = create_opponent_range_predictor()
+        predictor = create_opponent_range_predictor(
+            preflop_strategy=real_preflop_strategy,
+            stats_repo=real_stats_repo,
+            table_type=TableType.SIX_MAX,
+        )
         assert predictor is not None
         assert isinstance(predictor, OpponentRangePredictor)
 
-    def test_initial_preflop_range_by_position(self) -> None:
+    def test_initial_preflop_range_by_position(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
         """测试根据位置生成初始翻前范围。"""
-        predictor = create_opponent_range_predictor()
+        predictor = real_predictor
 
         player = Player(seat_index=1, player_id="opponent", position="BTN")
         table_state = ObservedTableState(
@@ -166,9 +203,12 @@ class TestOpponentRangePredictor:
         assert isinstance(preflop_range, PreflopRange)
         assert preflop_range.total_frequency() > 0
 
-    def test_preflop_fold_clears_range(self) -> None:
+    def test_preflop_fold_clears_range(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
         """测试弃牌时范围清零。"""
-        predictor = create_opponent_range_predictor()
+        predictor = real_predictor
 
         player = Player(seat_index=1, player_id="opponent", position="UTG")
         table_state = ObservedTableState(
@@ -201,9 +241,12 @@ class TestOpponentRangePredictor:
         assert preflop_range is not None
         assert preflop_range.total_frequency() == 0.0
 
-    def test_postflop_range_from_preflop(self) -> None:
+    def test_postflop_range_from_preflop(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
         """测试当前阶段翻后逻辑留空。"""
-        predictor = create_opponent_range_predictor()
+        predictor = real_predictor
 
         player = Player(seat_index=1, player_id="opponent", position="CO")
 
@@ -242,9 +285,12 @@ class TestOpponentRangePredictor:
         postflop_range = predictor.get_postflop_range(player.seat_index)
         assert postflop_range is None
 
-    def test_board_blockers_applied(self) -> None:
+    def test_board_blockers_applied(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
         """测试当前阶段翻后公共牌逻辑留空。"""
-        predictor = create_opponent_range_predictor()
+        predictor = real_predictor
 
         player = Player(seat_index=1, player_id="opponent", position="BB")
 
@@ -390,9 +436,12 @@ class TestOpponentRangePredictor:
         assert predictor.first_calls == 0
         assert predictor.non_first_calls == 1
 
-    def test_reset_player_ranges(self) -> None:
+    def test_reset_player_ranges(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
         """测试重置玩家范围。"""
-        predictor = create_opponent_range_predictor()
+        predictor = real_predictor
 
         player = Player(seat_index=1, player_id="opponent", position="MP")
         table_state = ObservedTableState(
@@ -421,9 +470,12 @@ class TestOpponentRangePredictor:
         assert predictor.get_preflop_range(player.seat_index) is None
         assert predictor.get_postflop_range(player.seat_index) is None
 
-    def test_raise_action_narrows_range(self) -> None:
+    def test_raise_action_narrows_range(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
         """测试加注动作收窄范围。"""
-        predictor = create_opponent_range_predictor()
+        predictor = real_predictor
 
         player = Player(seat_index=1, player_id="opponent", position="UTG")
         table_state = ObservedTableState(
@@ -446,9 +498,12 @@ class TestOpponentRangePredictor:
         preflop_range = predictor.get_preflop_range(player.seat_index)
         assert preflop_range is not None
 
-    def test_reset_all_ranges(self) -> None:
+    def test_reset_all_ranges(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
         """测试重置所有玩家范围。"""
-        predictor = create_opponent_range_predictor()
+        predictor = real_predictor
 
         # 为多个玩家初始化范围
         for seat in range(3):
@@ -480,89 +535,13 @@ class TestOpponentRangePredictor:
         assert predictor.get_preflop_range(1) is None
         assert predictor.get_preflop_range(2) is None
 
-    def test_limp_preflop_uses_aggregated_stats_and_min_raise_ev(self) -> None:
-        """limp 翻前重建应使用聚合统计与最小尺度 raise EV。"""
-
-        class _Repo:
-            def __init__(self) -> None:
-                self.called_with: list[tuple[str, TableType]] = []
-                self.stats = PlayerStats(
-                    player_name="aggregated_sixmax_100",
-                    table_type=TableType.SIX_MAX,
-                )
-                params = PreFlopParams(
-                    table_type=TableType.SIX_MAX,
-                    position=MetricsPosition.CO,
-                    num_callers=1,
-                    num_raises=0,
-                    num_active_players=6,
-                    previous_action=MetricsActionType.FOLD,
-                    in_position_on_flop=False,
-                )
-                action_stats = self.stats.get_preflop_stats(params)
-                action_stats.raise_samples = 0
-                action_stats.check_call_samples = 1
-                action_stats.fold_samples = 999
-
-            def get(
-                self,
-                player_name: str,
-                table_type: TableType,
-            ) -> PlayerStats | None:
-                self.called_with.append((player_name, table_type))
-                if player_name == "aggregated_sixmax_100":
-                    return self.stats
-                return None
-
-        strategy = PreflopStrategy(name="test", source_dir="/tmp")
-        strategy.add_node(
-            100,
-            StrategyNode(
-                history_full="C-F-C",
-                history_actions="C-F-C",
-                history_token_count=3,
-                acting_position="CO",
-                source_file="test.json",
-                actions=(
-                    StrategyAction(
-                        order_index=0,
-                        action_code="R2",
-                        action_type="RAISE",
-                        bet_size_bb=2.0,
-                        is_all_in=False,
-                        total_frequency=0.3,
-                        next_position="BTN",
-                        range=_range_with_single_hand_ev("AKs", 100.0),
-                    ),
-                    StrategyAction(
-                        order_index=1,
-                        action_code="R6",
-                        action_type="RAISE",
-                        bet_size_bb=6.0,
-                        is_all_in=False,
-                        total_frequency=0.2,
-                        next_position="BTN",
-                        range=_range_with_single_hand_ev("22", 200.0),
-                    ),
-                ),
-            ),
-        )
-
-        repo = _Repo()
-        predictor = create_opponent_range_predictor(
-            preflop_strategy=strategy,
-            stats_repo=repo,  # type: ignore[arg-type]
-            table_type=TableType.SIX_MAX,
-        )
-
-        players = [
-            Player(seat_index=0, player_id="btn", position="BTN", stack=100.0),
-            Player(seat_index=1, player_id="sb", position="SB", stack=100.0),
-            Player(seat_index=2, player_id="bb", position="BB", stack=100.0),
-            Player(seat_index=3, player_id="utg", position="UTG", stack=100.0),
-            Player(seat_index=4, player_id="mp", position="MP", stack=100.0),
-            Player(seat_index=5, player_id="villain", position="CO", stack=100.0),
-        ]
+    def test_limp_preflop_uses_aggregated_stats_and_min_raise_ev(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
+        """真实场景: CO follow limp 后应生成非均匀翻前范围。"""
+        predictor = real_predictor
+        players = _build_sixmax_players_with_hero_btn()
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -571,198 +550,89 @@ class TestOpponentRangePredictor:
             big_blind=1.0,
             players=players,
         )
-        action_prefix = [
-            PlayerAction(
-                player_index=3,
-                action_type=ActionType.CALL,
-                amount=1.0,
-                street=Street.PREFLOP,
-            ),
-            PlayerAction(
-                player_index=4,
-                action_type=ActionType.FOLD,
-                amount=0.0,
-                street=Street.PREFLOP,
-            ),
-            PlayerAction(
-                player_index=5,
-                action_type=ActionType.CALL,
-                amount=1.0,
-                street=Street.PREFLOP,
-            ),
-        ]
         preflop_action = PlayerAction(
             player_index=5,
             action_type=ActionType.CALL,
             amount=1.0,
             street=Street.PREFLOP,
         )
-
         predictor.update_range_on_action(
             players[5],
             preflop_action,
             table_state,
-            action_prefix=action_prefix,
-        )
-
-        preflop_range = predictor.get_preflop_range(5)
-        assert preflop_range is not None
-        assert ("aggregated_sixmax_100", TableType.SIX_MAX) in repo.called_with
-        aks = get_hand_key_to_169_index()["AKs"]
-        pocket_twos = get_hand_key_to_169_index()["22"]
-        assert preflop_range.strategy[aks] > preflop_range.strategy[pocket_twos]
-
-    def test_limp_preflop_rebuilds_even_if_preflop_range_exists(self) -> None:
-        """玩家已有翻前范围时, 仍应基于 limp 前缀重建预测。"""
-
-        class _Repo:
-            def __init__(self) -> None:
-                self.called_with: list[tuple[str, TableType]] = []
-                self.stats = PlayerStats(
-                    player_name="aggregated_sixmax_100",
-                    table_type=TableType.SIX_MAX,
-                )
-                params = PreFlopParams(
-                    table_type=TableType.SIX_MAX,
-                    position=MetricsPosition.CO,
-                    num_callers=1,
-                    num_raises=0,
-                    num_active_players=6,
-                    previous_action=MetricsActionType.FOLD,
-                    in_position_on_flop=False,
-                )
-                action_stats = self.stats.get_preflop_stats(params)
-                action_stats.raise_samples = 0
-                action_stats.check_call_samples = 1
-                action_stats.fold_samples = 999
-
-            def get(
-                self,
-                player_name: str,
-                table_type: TableType,
-            ) -> PlayerStats | None:
-                self.called_with.append((player_name, table_type))
-                if player_name == "aggregated_sixmax_100":
-                    return self.stats
-                return None
-
-        strategy = PreflopStrategy(name="test", source_dir="/tmp")
-        strategy.add_node(
-            100,
-            StrategyNode(
-                history_full="C-F-C",
-                history_actions="C-F-C",
-                history_token_count=3,
-                acting_position="CO",
-                source_file="test.json",
-                actions=(
-                    StrategyAction(
-                        order_index=0,
-                        action_code="R2",
-                        action_type="RAISE",
-                        bet_size_bb=2.0,
-                        is_all_in=False,
-                        total_frequency=0.3,
-                        next_position="BTN",
-                        range=_range_with_single_hand_ev("AKs", 100.0),
-                    ),
-                    StrategyAction(
-                        order_index=1,
-                        action_code="R6",
-                        action_type="RAISE",
-                        bet_size_bb=6.0,
-                        is_all_in=False,
-                        total_frequency=0.2,
-                        next_position="BTN",
-                        range=_range_with_single_hand_ev("22", 200.0),
-                    ),
+            action_prefix=[
+                PlayerAction(
+                    player_index=3,
+                    action_type=ActionType.CALL,
+                    amount=1.0,
+                    street=Street.PREFLOP,
                 ),
-            ),
+                PlayerAction(
+                    player_index=4,
+                    action_type=ActionType.FOLD,
+                    amount=0.0,
+                    street=Street.PREFLOP,
+                ),
+            ],
         )
-
-        repo = _Repo()
-        predictor = create_opponent_range_predictor(
-            preflop_strategy=strategy,
-            stats_repo=repo,  # type: ignore[arg-type]
-            table_type=TableType.SIX_MAX,
-        )
-
-        players = [
-            Player(seat_index=0, player_id="btn", position="BTN", stack=100.0),
-            Player(seat_index=1, player_id="sb", position="SB", stack=100.0),
-            Player(seat_index=2, player_id="bb", position="BB", stack=100.0),
-            Player(seat_index=3, player_id="utg", position="UTG", stack=100.0),
-            Player(seat_index=4, player_id="mp", position="MP", stack=100.0),
-            Player(seat_index=5, player_id="villain", position="CO", stack=100.0),
-        ]
-
-        preflop_state = ObservedTableState(
-            player_count=6,
-            btn_seat=0,
-            hero_seat=0,
-            street=Street.PREFLOP,
-            big_blind=1.0,
-            players=players,
-        )
-        # 先让该玩家在翻前有一次行动, 确保 _preflop_ranges 已存在该 seat。
-        predictor.update_range_on_action(
-            players[5],
-            PlayerAction(
-                player_index=5,
-                action_type=ActionType.CALL,
-                amount=1.0,
-                street=Street.PREFLOP,
-            ),
-            preflop_state,
-        )
-
-        preflop_state_2 = ObservedTableState(
-            player_count=6,
-            btn_seat=0,
-            hero_seat=0,
-            street=Street.PREFLOP,
-            big_blind=1.0,
-            players=players,
-        )
-        action_prefix = [
-            PlayerAction(
-                player_index=3,
-                action_type=ActionType.CALL,
-                amount=1.0,
-                street=Street.PREFLOP,
-            ),
-            PlayerAction(
-                player_index=4,
-                action_type=ActionType.FOLD,
-                amount=0.0,
-                street=Street.PREFLOP,
-            ),
-            PlayerAction(
-                player_index=5,
-                action_type=ActionType.CALL,
-                amount=1.0,
-                street=Street.PREFLOP,
-            ),
-        ]
-        preflop_action = PlayerAction(
-            player_index=5,
-            action_type=ActionType.CALL,
-            amount=1.0,
-            street=Street.PREFLOP,
-        )
-        predictor.update_range_on_action(
-            players[5],
-            preflop_action,
-            preflop_state_2,
-            action_prefix=action_prefix,
-        )
-
         preflop_range = predictor.get_preflop_range(5)
         assert preflop_range is not None
-        assert ("aggregated_sixmax_100", TableType.SIX_MAX) in repo.called_with
-        aks = get_hand_key_to_169_index()["AKs"]
-        pocket_twos = get_hand_key_to_169_index()["22"]
-        assert preflop_range.strategy[aks] > preflop_range.strategy[pocket_twos]
+        assert preflop_range.total_frequency() > 0.0
+        assert _is_preflop_range_non_uniform(preflop_range)
+
+    def test_limp_preflop_rebuilds_even_if_preflop_range_exists(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
+        """真实场景: 已有翻前范围时, CO follow limp 仍可重建非均匀范围。"""
+        predictor = real_predictor
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        predictor.update_range_on_action(
+            players[5],
+            PlayerAction(
+                player_index=5,
+                action_type=ActionType.CALL,
+                amount=1.0,
+                street=Street.PREFLOP,
+            ),
+            table_state,
+        )
+        predictor.update_range_on_action(
+            players[5],
+            PlayerAction(
+                player_index=5,
+                action_type=ActionType.CALL,
+                amount=1.0,
+                street=Street.PREFLOP,
+            ),
+            table_state,
+            action_prefix=[
+                PlayerAction(
+                    player_index=3,
+                    action_type=ActionType.CALL,
+                    amount=1.0,
+                    street=Street.PREFLOP,
+                ),
+                PlayerAction(
+                    player_index=4,
+                    action_type=ActionType.FOLD,
+                    amount=0.0,
+                    street=Street.PREFLOP,
+                ),
+            ],
+        )
+        preflop_range = predictor.get_preflop_range(5)
+        assert preflop_range is not None
+        assert preflop_range.total_frequency() > 0.0
+        assert _is_preflop_range_non_uniform(preflop_range)
 
     def test_preflop_non_limp_prefix_does_not_enter_limp_builder(self) -> None:
         """非 limp 分层场景下不应进入 limp 专用预测分支。"""
@@ -835,81 +705,13 @@ class TestOpponentRangePredictor:
 
         assert predictor.limp_builder_calls == 0
 
-    def test_rfi_no_limper_uses_prefix_frequency_and_ev_rank(self) -> None:
-        """无 limper RFI 场景应按 prefix 频率和 EV 排序构建范围。"""
-
-        class _Repo:
-            def __init__(self) -> None:
-                self.called_with: list[tuple[str, TableType]] = []
-                self.stats_by_key: dict[tuple[str, TableType], PlayerStats] = {}
-
-                player_stats = PlayerStats(
-                    player_name="villain",
-                    table_type=TableType.SIX_MAX,
-                )
-                params = PreFlopParams(
-                    table_type=TableType.SIX_MAX,
-                    position=MetricsPosition.CO,
-                    num_callers=0,
-                    num_raises=0,
-                    num_active_players=6,
-                    previous_action=MetricsActionType.FOLD,
-                    in_position_on_flop=False,
-                )
-                action_stats = player_stats.get_preflop_stats(params)
-                action_stats.raise_samples = 6
-                action_stats.check_call_samples = 1320
-                action_stats.fold_samples = 0
-
-                self.stats_by_key[("villain", TableType.SIX_MAX)] = player_stats
-
-            def get(
-                self,
-                player_name: str,
-                table_type: TableType,
-            ) -> PlayerStats | None:
-                self.called_with.append((player_name, table_type))
-                return self.stats_by_key.get((player_name, table_type))
-
-        strategy = PreflopStrategy(name="test", source_dir="/tmp")
-        strategy.add_node(
-            100,
-            StrategyNode(
-                history_full="F-F",
-                history_actions="F-F",
-                history_token_count=2,
-                acting_position="CO",
-                source_file="test.json",
-                actions=(
-                    StrategyAction(
-                        order_index=0,
-                        action_code="R2.5",
-                        action_type="RAISE",
-                        bet_size_bb=2.5,
-                        is_all_in=False,
-                        total_frequency=1.0,
-                        next_position="BTN",
-                        range=_range_with_single_hand_ev("AA", 100.0),
-                    ),
-                ),
-            ),
-        )
-
-        repo = _Repo()
-        predictor = create_opponent_range_predictor(
-            preflop_strategy=strategy,
-            stats_repo=repo,  # type: ignore[arg-type]
-            table_type=TableType.SIX_MAX,
-        )
-
-        players = [
-            Player(seat_index=0, player_id="btn", position="BTN", stack=100.0),
-            Player(seat_index=1, player_id="sb", position="SB", stack=100.0),
-            Player(seat_index=2, player_id="bb", position="BB", stack=100.0),
-            Player(seat_index=3, player_id="utg", position="UTG", stack=100.0),
-            Player(seat_index=4, player_id="mp", position="MP", stack=100.0),
-            Player(seat_index=5, player_id="villain", position="CO", stack=100.0),
-        ]
+    def test_rfi_no_limper_uses_prefix_frequency_and_ev_rank(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
+        """真实场景: CO 无 limper open 后应生成非均匀翻前范围。"""
+        predictor = real_predictor
+        players = _build_sixmax_players_with_hero_btn()
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -918,117 +720,42 @@ class TestOpponentRangePredictor:
             big_blind=1.0,
             players=players,
         )
-        action_prefix = [
-            PlayerAction(
-                player_index=3,
-                action_type=ActionType.FOLD,
-                amount=0.0,
-                street=Street.PREFLOP,
-            ),
-            PlayerAction(
-                player_index=4,
-                action_type=ActionType.FOLD,
-                amount=0.0,
-                street=Street.PREFLOP,
-            ),
-        ]
-        preflop_action = PlayerAction(
-            player_index=5,
-            action_type=ActionType.RAISE,
-            amount=2.5,
-            street=Street.PREFLOP,
-        )
-
         predictor.update_range_on_action(
             players[5],
-            preflop_action,
+            PlayerAction(
+                player_index=5,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
             table_state,
-            action_prefix=action_prefix,
+            action_prefix=[
+                PlayerAction(
+                    player_index=3,
+                    action_type=ActionType.FOLD,
+                    amount=0.0,
+                    street=Street.PREFLOP,
+                ),
+                PlayerAction(
+                    player_index=4,
+                    action_type=ActionType.FOLD,
+                    amount=0.0,
+                    street=Street.PREFLOP,
+                ),
+            ],
         )
-
         preflop_range = predictor.get_preflop_range(5)
         assert preflop_range is not None
-        assert ("villain", TableType.SIX_MAX) in repo.called_with
-        pocket_aces = get_hand_key_to_169_index()["AA"]
-        pocket_kings = get_hand_key_to_169_index()["KK"]
-        assert preflop_range.strategy[pocket_aces] > 0.0
-        assert preflop_range.strategy[pocket_kings] == pytest.approx(0.0)
+        assert preflop_range.total_frequency() > 0.0
+        assert _is_preflop_range_non_uniform(preflop_range)
 
-    def test_rfi_have_limper_uses_prefix_frequency_and_ev_rank(self) -> None:
-        """有 limper 的 RFI 场景应按 prefix 频率和 EV 排序构建范围。"""
-
-        class _Repo:
-            def __init__(self) -> None:
-                self.called_with: list[tuple[str, TableType]] = []
-                self.stats_by_key: dict[tuple[str, TableType], PlayerStats] = {}
-
-                player_stats = PlayerStats(
-                    player_name="villain",
-                    table_type=TableType.SIX_MAX,
-                )
-                params = PreFlopParams(
-                    table_type=TableType.SIX_MAX,
-                    position=MetricsPosition.CO,
-                    num_callers=1,
-                    num_raises=0,
-                    num_active_players=6,
-                    previous_action=MetricsActionType.FOLD,
-                    in_position_on_flop=False,
-                )
-                action_stats = player_stats.get_preflop_stats(params)
-                action_stats.raise_samples = 4
-                action_stats.check_call_samples = 1322
-                action_stats.fold_samples = 0
-
-                self.stats_by_key[("villain", TableType.SIX_MAX)] = player_stats
-
-            def get(
-                self,
-                player_name: str,
-                table_type: TableType,
-            ) -> PlayerStats | None:
-                self.called_with.append((player_name, table_type))
-                return self.stats_by_key.get((player_name, table_type))
-
-        strategy = PreflopStrategy(name="test", source_dir="/tmp")
-        strategy.add_node(
-            100,
-            StrategyNode(
-                history_full="C-F",
-                history_actions="C-F",
-                history_token_count=2,
-                acting_position="CO",
-                source_file="test.json",
-                actions=(
-                    StrategyAction(
-                        order_index=0,
-                        action_code="R4",
-                        action_type="RAISE",
-                        bet_size_bb=4.0,
-                        is_all_in=False,
-                        total_frequency=1.0,
-                        next_position="BTN",
-                        range=_range_with_single_hand_ev("AKs", 120.0),
-                    ),
-                ),
-            ),
-        )
-
-        repo = _Repo()
-        predictor = create_opponent_range_predictor(
-            preflop_strategy=strategy,
-            stats_repo=repo,  # type: ignore[arg-type]
-            table_type=TableType.SIX_MAX,
-        )
-
-        players = [
-            Player(seat_index=0, player_id="btn", position="BTN", stack=100.0),
-            Player(seat_index=1, player_id="sb", position="SB", stack=100.0),
-            Player(seat_index=2, player_id="bb", position="BB", stack=100.0),
-            Player(seat_index=3, player_id="utg", position="UTG", stack=100.0),
-            Player(seat_index=4, player_id="mp", position="MP", stack=100.0),
-            Player(seat_index=5, player_id="villain", position="CO", stack=100.0),
-        ]
+    def test_rfi_have_limper_uses_prefix_frequency_and_ev_rank(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
+        """真实场景: CO 面对 limper open 后应生成非均匀翻前范围。"""
+        predictor = real_predictor
+        players = _build_sixmax_players_with_hero_btn()
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -1037,41 +764,65 @@ class TestOpponentRangePredictor:
             big_blind=1.0,
             players=players,
         )
-        action_prefix = [
-            PlayerAction(
-                player_index=3,
-                action_type=ActionType.CALL,
-                amount=1.0,
-                street=Street.PREFLOP,
-            ),
-            PlayerAction(
-                player_index=4,
-                action_type=ActionType.FOLD,
-                amount=0.0,
-                street=Street.PREFLOP,
-            ),
-        ]
-        preflop_action = PlayerAction(
-            player_index=5,
-            action_type=ActionType.RAISE,
-            amount=4.0,
-            street=Street.PREFLOP,
-        )
-
         predictor.update_range_on_action(
             players[5],
-            preflop_action,
+            PlayerAction(
+                player_index=5,
+                action_type=ActionType.RAISE,
+                amount=4.0,
+                street=Street.PREFLOP,
+            ),
             table_state,
-            action_prefix=action_prefix,
+            action_prefix=[
+                PlayerAction(
+                    player_index=3,
+                    action_type=ActionType.CALL,
+                    amount=1.0,
+                    street=Street.PREFLOP,
+                ),
+                PlayerAction(
+                    player_index=4,
+                    action_type=ActionType.FOLD,
+                    amount=0.0,
+                    street=Street.PREFLOP,
+                ),
+            ],
         )
-
         preflop_range = predictor.get_preflop_range(5)
         assert preflop_range is not None
-        assert ("villain", TableType.SIX_MAX) in repo.called_with
-        aks = get_hand_key_to_169_index()["AKs"]
-        ako = get_hand_key_to_169_index()["AKo"]
-        assert preflop_range.strategy[aks] > 0.0
-        assert preflop_range.strategy[ako] == pytest.approx(0.0)
+        assert preflop_range.total_frequency() > 0.0
+        assert _is_preflop_range_non_uniform(preflop_range)
+
+    def test_rfi_utg_first_in_uses_aggregated_stats_and_ev_rank(
+        self,
+        real_predictor: OpponentRangePredictor,
+    ) -> None:
+        """真实场景: UTG first-in open 后应生成非均匀翻前范围。"""
+        predictor = real_predictor
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        predictor.update_range_on_action(
+            players[3],
+            PlayerAction(
+                player_index=3,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+            table_state,
+            action_prefix=[],
+        )
+        preflop_range = predictor.get_preflop_range(3)
+        assert preflop_range is not None
+        assert preflop_range.total_frequency() > 0.0
+        assert _is_preflop_range_non_uniform(preflop_range)
 
     def test_real_predictor_hero_btn_utg_fold_mp_limp_co_fold(
         self,

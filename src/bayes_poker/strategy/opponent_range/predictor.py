@@ -704,21 +704,24 @@ class OpponentRangePredictor:
         return PreflopRange(strategy=strategy, evs=list(evs_169))
 
     def _get_player_or_aggregated_stats(self, player: "Player") -> "PlayerStats | None":
-        """获取玩家统计, 无命中时回退聚合统计。
+        """获取 RFI 使用的统计数据。
 
         Args:
             player: 对手玩家。
 
         Returns:
-            玩家统计或聚合统计, 不存在时返回 `None`。
+            聚合玩家统计, 不存在时返回 `None`。
         """
         if self.stats_repo is None:
             return None
 
-        if player.player_id:
-            player_stats = self.stats_repo.get(player.player_id, self.table_type)
-            if player_stats is not None and player_stats.preflop_stats:
-                return player_stats
+        # 当前只使用聚合玩家统计，避免样本过少导致玩家级节点统计噪声过大。
+        _ = player
+        # TODO: 后续在样本充分时支持玩家级统计。
+        # if player.player_id:
+        #     player_stats = self.stats_repo.get(player.player_id, self.table_type)
+        #     if player_stats is not None and player_stats.preflop_stats:
+        #         return player_stats
 
         aggregated_stats = get_aggregated_player_stats(self.stats_repo, self.table_type)
         if aggregated_stats is None or not aggregated_stats.preflop_stats:
