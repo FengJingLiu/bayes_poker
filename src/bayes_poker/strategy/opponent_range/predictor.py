@@ -510,17 +510,22 @@ class OpponentRangePredictor:
         decision_prefix: Sequence["PlayerAction"],
         current_prefix: Sequence["PlayerAction"],
     ) -> None:
-        """处理无 limper 的 RFI 场景。"""
-        prefixed_range = self._build_rfi_preflop_range_from_prefix(
+        """处理无 limper 的 RFI 场景。
+
+        Args:
+            player: 触发动作的玩家。
+            action: 当前动作。
+            table_state: 当前牌桌状态。
+            decision_prefix: 玩家行动前的翻前前缀。
+            current_prefix: 包含当前动作的翻前前缀。
+        """
+        self._handle_rfi_first_action(
             player=player,
+            action=action,
             table_state=table_state,
             decision_prefix=decision_prefix,
             current_prefix=current_prefix,
         )
-        if prefixed_range is not None:
-            self._preflop_ranges[player.seat_index] = prefixed_range
-            return
-        self._apply_preflop_action_scale(player=player, action=action, table_state=table_state)
 
     def _handle_rfi_have_limper(
         self,
@@ -531,7 +536,41 @@ class OpponentRangePredictor:
         decision_prefix: Sequence["PlayerAction"],
         current_prefix: Sequence["PlayerAction"],
     ) -> None:
-        """处理有 limper 的 RFI 场景。"""
+        """处理有 limper 的 RFI 场景。
+
+        Args:
+            player: 触发动作的玩家。
+            action: 当前动作。
+            table_state: 当前牌桌状态。
+            decision_prefix: 玩家行动前的翻前前缀。
+            current_prefix: 包含当前动作的翻前前缀。
+        """
+        self._handle_rfi_first_action(
+            player=player,
+            action=action,
+            table_state=table_state,
+            decision_prefix=decision_prefix,
+            current_prefix=current_prefix,
+        )
+
+    def _handle_rfi_first_action(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        decision_prefix: Sequence["PlayerAction"],
+        current_prefix: Sequence["PlayerAction"],
+    ) -> None:
+        """处理首次翻前 RFI 场景的公共逻辑。
+
+        Args:
+            player: 触发动作的玩家。
+            action: 当前动作。
+            table_state: 当前牌桌状态。
+            decision_prefix: 玩家行动前的翻前前缀。
+            current_prefix: 包含当前动作的翻前前缀。
+        """
         prefixed_range = self._build_rfi_preflop_range_from_prefix(
             player=player,
             table_state=table_state,
