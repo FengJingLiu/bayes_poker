@@ -5,11 +5,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from bayes_poker.storage.preflop_strategy_repository import (
+    PreflopStrategyRepository,
+    SolverActionRecord,
+)
 from bayes_poker.strategy.preflop_engine.mapper import (
     MappedSolverContext,
     SyntheticTemplateKind,
 )
-from bayes_poker.strategy.preflop_parse.models import PreflopStrategy, StrategyAction
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,8 +20,8 @@ class SolverPriorAction:
     """聚合后的单个动作先验.
 
     Attributes:
-        action_name: 动作名称.
-        blended_frequency: 候选节点加权后的动作频率.
+        action_name: 动作名称。
+        blended_frequency: 候选节点加权后的动作频率。
     """
 
     action_name: str
@@ -30,11 +33,11 @@ class SolverPriorPolicy:
     """聚合后的 solver 先验策略.
 
     Attributes:
-        action_names: 聚合后的动作名称序列.
-        actions: 每个动作的聚合结果.
-        price_adjustment_applied: mapper 产出的价格修正标记.
-        price_adjustment_factor: mapper 产出的价格修正因子.
-        synthetic_template_kind: 使用的结构化 synthetic template 类型.
+        action_names: 聚合后的动作名称序列。
+        actions: 每个动作的聚合结果。
+        price_adjustment_applied: mapper 产出的价格修正标记。
+        price_adjustment_factor: mapper 产出的价格修正因子。
+        synthetic_template_kind: 使用的结构化 synthetic template 类型。
     """
 
     action_names: tuple[str, ...]
@@ -50,41 +53,44 @@ class SolverPriorBuilder:
     def __init__(
         self,
         *,
-        strategy: PreflopStrategy,
+        repository: PreflopStrategyRepository,
+        source_id: int,
         stack_bb: int,
         distance_tau: float = 1.0,
     ) -> None:
         """初始化先验构建器.
 
         Args:
-            strategy: 可查询的翻前策略.
-            stack_bb: 使用的筹码深度.
-            distance_tau: 距离衰减温度参数.
+            repository: sqlite 策略仓库。
+            source_id: 当前策略源主键。
+            stack_bb: 当前筹码深度。
+            distance_tau: 距离衰减温度参数。
 
         Raises:
-            ValueError: 当温度参数不为正时抛出.
+            ValueError: 当温度参数不为正时抛出。
         """
 
         if distance_tau <= 0:
             raise ValueError("distance_tau 必须大于 0.")
 
-        self._strategy = strategy
+        self._repository = repository
+        self._source_id = source_id
         self._stack_bb = stack_bb
         self._distance_tau = distance_tau
 
     def build_policy(self, context: MappedSolverContext) -> SolverPriorPolicy:
         """根据映射结果合成先验策略.
 
-        当前最小实现使用 `candidate_distances` 做指数衰减权重.
+        当前最小实现使用 `candidate_distances` 做指数衰减权重。
 
         Args:
-            context: 节点映射结果.
+            context: 节点映射结果。
 
         Returns:
-            聚合后的先验策略.
+            聚合后的先验策略。
 
         Raises:
-            ValueError: 当上下文中的候选节点都不可用, 或距离信息不完整时抛出.
+            ValueError: 当上下文中的候选节点都不可用, 或距离信息不完整时抛出。
         """
 
         if context.synthetic_template_kind is not None:
@@ -94,22 +100,25 @@ class SolverPriorBuilder:
                 price_adjustment_factor=context.price_adjustment_factor,
             )
 
-        if len(context.candidate_histories) != len(context.candidate_distances):
-            raise ValueError("候选历史与距离数量不一致.")
+        if len(context.candidate_node_ids) != len(context.candidate_distances):
+            raise ValueError("候选节点与距离数量不一致.")
 
+        actions_by_node_id = self._repository.get_actions_for_nodes(
+            context.candidate_node_ids,
+        )
         action_weights: dict[str, float] = {}
 
-        for history, distance in zip(
-            context.candidate_histories,
+        for node_id, distance in zip(
+            context.candidate_node_ids,
             context.candidate_distances,
             strict=True,
         ):
-            node = self._strategy.get_node(self._stack_bb, history)
-            if node is None:
+            actions = actions_by_node_id.get(node_id, ())
+            if not actions:
                 continue
 
             candidate_weight = math.exp(-distance / self._distance_tau)
-            for action in node.actions:
+            for action in actions:
                 action_weights[action.action_code] = action_weights.get(
                     action.action_code,
                     0.0,
@@ -135,14 +144,14 @@ class SolverPriorBuilder:
         )
 
 
-def _action_frequency(action: StrategyAction) -> float:
+def _action_frequency(action: SolverActionRecord) -> float:
     """读取动作频率.
 
     Args:
-        action: 单个策略动作.
+        action: 单个策略动作。
 
     Returns:
-        当前动作的总体频率.
+        当前动作的总体频率。
     """
 
     return action.total_frequency
@@ -152,10 +161,10 @@ def _action_sort_key(action_name: str) -> tuple[int, float, str]:
     """返回动作排序键.
 
     Args:
-        action_name: 动作名称.
+        action_name: 动作名称。
 
     Returns:
-        用于稳定排序的键.
+        用于稳定排序的键。
     """
 
     normalized_name = action_name.upper()
@@ -182,15 +191,15 @@ def _build_synthetic_template(
     """构造 synthetic template 对应的最小先验策略.
 
     Args:
-        template_kind: 结构化模板类型.
-        price_adjustment_applied: mapper 产出的价格修正标记.
-        price_adjustment_factor: mapper 产出的价格修正因子.
+        template_kind: 结构化模板类型。
+        price_adjustment_applied: mapper 产出的价格修正标记。
+        price_adjustment_factor: mapper 产出的价格修正因子。
 
     Returns:
-        synthetic template 对应的先验策略.
+        synthetic template 对应的先验策略。
 
     Raises:
-        ValueError: 当模板类型未知时抛出.
+        ValueError: 当模板类型未知时抛出。
     """
 
     if template_kind is not SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3:
