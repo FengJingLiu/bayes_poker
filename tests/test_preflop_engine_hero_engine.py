@@ -7,10 +7,13 @@ from types import ModuleType
 
 import pytest
 
-from bayes_poker.strategy.preflop_engine import ActionFamily, PreflopDecisionState
 from bayes_poker.strategy.preflop_engine.policy_calibrator import (
     ActionPolicy,
     ActionPolicyAction,
+)
+from bayes_poker.strategy.preflop_engine.state import (
+    ActionFamily,
+    PreflopDecisionState,
 )
 from bayes_poker.strategy.preflop_engine.tendency import PlayerTendencyProfile
 from bayes_poker.strategy.range import PreflopRange, RANGE_169_LENGTH

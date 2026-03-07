@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from bayes_poker.domain.poker import ActionType
-from bayes_poker.strategy.preflop_engine import (
+from bayes_poker.strategy.preflop_engine.state import (
     ActionFamily,
     ObservedAction,
     build_preflop_decision_state,

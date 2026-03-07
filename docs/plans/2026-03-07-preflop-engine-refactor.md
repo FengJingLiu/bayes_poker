@@ -10,7 +10,7 @@
 
 ## 执行结果（2026-03-07）
 
-- `Task 1` 到 `Task 10` 已在分支 `feat/preflop-engine-refactor` 执行完成, 并按 task 粒度经过 spec review 与 code quality review。
+- `Task 1` 到 `Task 9` 已在分支 `feat/preflop-engine-refactor` 执行完成, 并按 task 粒度经过 spec review 与 code quality review; `Task 10` 负责导出面收口与文档对齐, 最终状态以本节验证结果和提交记录为准。
 - 当前实际落地范围:
   - `preflop_engine` 共享目录及其单元测试已落地。
   - `runtime` 共享 adapter 仅接管 `CALL_VS_OPEN` 相关主链, 其余仍回退 legacy。
