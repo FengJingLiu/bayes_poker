@@ -111,6 +111,50 @@ def test_hero_engine_widens_btn_steal_against_under_defending_blinds() -> None:
     assert sum(result.action_distribution.values()) == pytest.approx(1.0)
 
 
+def test_hero_engine_does_not_widen_btn_steal_against_aggressive_blinds() -> None:
+    """测试低跟注但高激进盲位不会被误判为防守不足."""
+
+    hero_engine_module = _load_hero_engine_module()
+    hero_engine = hero_engine_module.PreflopHeroEngine(
+        base_policy=_build_policy(
+            {
+                "FOLD": 0.52,
+                "OPEN": 0.48,
+            }
+        )
+    )
+
+    result = hero_engine.decide(
+        hero_state=PreflopDecisionState(
+            action_family=ActionFamily.OPEN,
+            actor_position=TablePosition.BTN,
+            aggressor_position=None,
+            call_count=0,
+            limp_count=0,
+            raise_size_bb=None,
+        ),
+        opponents={
+            TablePosition.SB: hero_engine_module.HeroOpponentContext(
+                tendency_profile=PlayerTendencyProfile(
+                    open_freq=0.32,
+                    call_freq=0.05,
+                    confidence=1.0,
+                )
+            ),
+            TablePosition.BB: hero_engine_module.HeroOpponentContext(
+                tendency_profile=PlayerTendencyProfile(
+                    open_freq=0.28,
+                    call_freq=0.08,
+                    confidence=1.0,
+                )
+            ),
+        },
+    )
+
+    assert result.recommended_action == "FOLD"
+    assert "防守偏弱" not in result.explanation.summary
+
+
 def test_hero_engine_explains_iso_adjustment_against_limp_fold_player() -> None:
     """测试 Hero 引擎会解释针对 limp-fold 对手的 ISO 调整."""
 
@@ -137,6 +181,80 @@ def test_hero_engine_explains_iso_adjustment_against_limp_fold_player() -> None:
         opponents={
             TablePosition.UTG: hero_engine_module.HeroOpponentContext(
                 limp_fold_frequency=0.78,
+                is_limper=True,
+            )
+        },
+    )
+
+    assert result.recommended_action == "ISO_RAISE"
+    assert "limp-fold" in result.explanation.summary
+
+
+def test_hero_engine_ignores_high_limp_fold_player_when_not_limper() -> None:
+    """测试非 limper 的高 limp-fold 频率不会触发 ISO 调整."""
+
+    hero_engine_module = _load_hero_engine_module()
+    hero_engine = hero_engine_module.PreflopHeroEngine(
+        base_policy=_build_policy(
+            {
+                "FOLD": 0.40,
+                "CALL": 0.35,
+                "ISO_RAISE": 0.25,
+            }
+        )
+    )
+
+    result = hero_engine.decide(
+        hero_state=PreflopDecisionState(
+            action_family=ActionFamily.LIMP,
+            actor_position=TablePosition.CO,
+            aggressor_position=None,
+            call_count=0,
+            limp_count=1,
+            raise_size_bb=None,
+        ),
+        opponents={
+            TablePosition.UTG: hero_engine_module.HeroOpponentContext(
+                limp_fold_frequency=0.90,
+                is_limper=False,
+            ),
+            TablePosition.MP: hero_engine_module.HeroOpponentContext(
+                limp_fold_frequency=0.20,
+                is_limper=True,
+            ),
+        },
+    )
+
+    assert result.recommended_action == "FOLD"
+    assert "limp-fold" not in result.explanation.summary
+
+
+def test_hero_engine_raises_from_check_branch_against_limp_fold_limper() -> None:
+    """测试 BB 的 CHECK/ISO_RAISE 分支也会因 limp-fold 倾向而提频."""
+
+    hero_engine_module = _load_hero_engine_module()
+    hero_engine = hero_engine_module.PreflopHeroEngine(
+        base_policy=_build_policy(
+            {
+                "CHECK": 0.60,
+                "ISO_RAISE": 0.40,
+            }
+        )
+    )
+
+    result = hero_engine.decide(
+        hero_state=PreflopDecisionState(
+            action_family=ActionFamily.LIMP,
+            actor_position=TablePosition.BB,
+            aggressor_position=None,
+            call_count=0,
+            limp_count=1,
+            raise_size_bb=None,
+        ),
+        opponents={
+            TablePosition.BTN: hero_engine_module.HeroOpponentContext(
+                limp_fold_frequency=0.75,
+                is_limper=True,
             )
         },
     )

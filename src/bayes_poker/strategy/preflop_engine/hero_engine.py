@@ -16,7 +16,7 @@ from bayes_poker.strategy.preflop_engine.tendency import PlayerTendencyProfile
 from bayes_poker.table.layout.base import Position as TablePosition
 
 _EPSILON = 1e-9
-_BTN_STEAL_CALL_THRESHOLD = 0.20
+_BTN_STEAL_DEFEND_THRESHOLD = 0.25
 _LIMP_FOLD_THRESHOLD = 0.60
 
 
@@ -28,11 +28,13 @@ class HeroOpponentContext:
         tendency_profile: 对手画像, 用于读取 open/call 倾向.
         range_belief: 可选后验范围, 当前最小实现保留给后续任务扩展.
         limp_fold_frequency: 对手 limp 后面对隔离加注的弃牌频率.
+        is_limper: 当前对手是否是本次 limp 场景中的 limper.
     """
 
     tendency_profile: PlayerTendencyProfile | None = None
     range_belief: RangeBelief | None = None
     limp_fold_frequency: float | None = None
+    is_limper: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,8 +185,14 @@ class PreflopHeroEngine:
             if profile is None:
                 continue
 
-            if profile.call_freq < _BTN_STEAL_CALL_THRESHOLD:
-                boost += (_BTN_STEAL_CALL_THRESHOLD - profile.call_freq) * max(
+            total_defense_frequency = min(
+                profile.open_freq + profile.call_freq,
+                1.0,
+            )
+            if total_defense_frequency < _BTN_STEAL_DEFEND_THRESHOLD:
+                boost += (
+                    _BTN_STEAL_DEFEND_THRESHOLD - total_defense_frequency
+                ) * max(
                     profile.confidence,
                     0.5,
                 )
@@ -228,7 +236,7 @@ class PreflopHeroEngine:
             (
                 context.limp_fold_frequency
                 for context in opponents.values()
-                if context.limp_fold_frequency is not None
+                if context.is_limper and context.limp_fold_frequency is not None
             ),
             default=None,
         )
@@ -238,7 +246,7 @@ class PreflopHeroEngine:
         shifted = self._shift_mass(
             distribution=distribution,
             target_action=aggressive_action,
-            source_actions=("FOLD", "CALL"),
+            source_actions=("FOLD", "CALL", "CHECK"),
             amount=min(best_limp_fold - 0.40, 0.30),
         )
         if shifted <= _EPSILON:
