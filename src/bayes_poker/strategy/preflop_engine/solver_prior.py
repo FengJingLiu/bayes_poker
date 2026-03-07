@@ -5,7 +5,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from bayes_poker.strategy.preflop_engine.mapper import MappedSolverContext
+from bayes_poker.strategy.preflop_engine.mapper import (
+    MappedSolverContext,
+    SyntheticTemplateKind,
+)
 from bayes_poker.strategy.preflop_parse.models import PreflopStrategy, StrategyAction
 
 
@@ -29,10 +32,16 @@ class SolverPriorPolicy:
     Attributes:
         action_names: 聚合后的动作名称序列.
         actions: 每个动作的聚合结果.
+        price_adjustment_applied: mapper 产出的价格修正标记.
+        price_adjustment_factor: mapper 产出的价格修正因子.
+        synthetic_template_kind: 使用的结构化 synthetic template 类型.
     """
 
     action_names: tuple[str, ...]
     actions: tuple[SolverPriorAction, ...]
+    price_adjustment_applied: bool = False
+    price_adjustment_factor: float = 1.0
+    synthetic_template_kind: SyntheticTemplateKind | None = None
 
 
 class SolverPriorBuilder:
@@ -78,8 +87,12 @@ class SolverPriorBuilder:
             ValueError: 当上下文中的候选节点都不可用, 或距离信息不完整时抛出.
         """
 
-        if context.synthetic_template_name is not None:
-            return _build_synthetic_template(context.synthetic_template_name)
+        if context.synthetic_template_kind is not None:
+            return _build_synthetic_template(
+                template_kind=context.synthetic_template_kind,
+                price_adjustment_applied=context.price_adjustment_applied,
+                price_adjustment_factor=context.price_adjustment_factor,
+            )
 
         if len(context.candidate_histories) != len(context.candidate_distances):
             raise ValueError("候选历史与距离数量不一致.")
@@ -109,18 +122,16 @@ class SolverPriorBuilder:
         actions = tuple(
             SolverPriorAction(
                 action_name=action_name,
-                blended_frequency=_apply_price_adjustment(
-                    action_name=action_name,
-                    blended_frequency=action_weights[action_name],
-                    price_adjustment_applied=context.price_adjustment_applied,
-                    price_adjustment_factor=context.price_adjustment_factor,
-                ),
+                blended_frequency=action_weights[action_name],
             )
             for action_name in action_names
         )
         return SolverPriorPolicy(
             action_names=action_names,
             actions=actions,
+            price_adjustment_applied=context.price_adjustment_applied,
+            price_adjustment_factor=context.price_adjustment_factor,
+            synthetic_template_kind=None,
         )
 
 
@@ -162,61 +173,28 @@ def _action_sort_key(action_name: str) -> tuple[int, float, str]:
     return (3, 0.0, action_name)
 
 
-def _apply_price_adjustment(
+def _build_synthetic_template(
     *,
-    action_name: str,
-    blended_frequency: float,
+    template_kind: SyntheticTemplateKind,
     price_adjustment_applied: bool,
     price_adjustment_factor: float,
-) -> float:
-    """将最小价格修正应用到动作频率.
-
-    Args:
-        action_name: 动作名称.
-        blended_frequency: 原始聚合频率.
-        price_adjustment_applied: 是否触发价格修正.
-        price_adjustment_factor: 价格修正因子.
-
-    Returns:
-        应用价格修正后的动作频率.
-    """
-
-    if not price_adjustment_applied:
-        return blended_frequency
-    if not _is_aggressive_action_name(action_name):
-        return blended_frequency
-    return blended_frequency * price_adjustment_factor
-
-
-def _is_aggressive_action_name(action_name: str) -> bool:
-    """判断动作名是否为激进行动.
-
-    Args:
-        action_name: 动作名称.
-
-    Returns:
-        如果动作属于 raise / jam 类则返回 True.
-    """
-
-    normalized_name = action_name.upper()
-    return normalized_name == "RAI" or normalized_name.startswith("R")
-
-
-def _build_synthetic_template(template_name: str) -> SolverPriorPolicy:
+) -> SolverPriorPolicy:
     """构造 synthetic template 对应的最小先验策略.
 
     Args:
-        template_name: 模板名称.
+        template_kind: 结构化模板类型.
+        price_adjustment_applied: mapper 产出的价格修正标记.
+        price_adjustment_factor: mapper 产出的价格修正因子.
 
     Returns:
         synthetic template 对应的先验策略.
 
     Raises:
-        ValueError: 当模板名称未知时抛出.
+        ValueError: 当模板类型未知时抛出.
     """
 
-    if template_name != "limp_family_level_3":
-        raise ValueError(f"未知的 synthetic template: {template_name}")
+    if template_kind is not SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3:
+        raise ValueError(f"未知的 synthetic template: {template_kind}")
 
     actions = (
         SolverPriorAction(action_name="F", blended_frequency=0.25),
@@ -226,6 +204,9 @@ def _build_synthetic_template(template_name: str) -> SolverPriorPolicy:
     return SolverPriorPolicy(
         action_names=tuple(action.action_name for action in actions),
         actions=actions,
+        price_adjustment_applied=price_adjustment_applied,
+        price_adjustment_factor=price_adjustment_factor,
+        synthetic_template_kind=template_kind,
     )
 
 

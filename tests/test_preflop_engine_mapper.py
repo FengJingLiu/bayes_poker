@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import bayes_poker.strategy.preflop_engine.mapper as mapper_module
 from bayes_poker.strategy.preflop_engine.mapper import (
     MappedSolverContext,
     PreflopNodeMapper,
@@ -211,6 +212,48 @@ def _build_open_only_strategy() -> PreflopStrategy:
     return strategy
 
 
+def _build_limp_strategy() -> PreflopStrategy:
+    """构造包含 limp family 候选的测试策略.
+
+    Returns:
+        至少包含一个可映射 limp 节点的测试策略.
+    """
+
+    strategy = PreflopStrategy(name="LimpStrategy", source_dir="/tmp")
+    strategy.add_node(
+        100,
+        _make_node(
+            history_full="F-C",
+            history_actions="F-C",
+            acting_position=TablePosition.CO,
+            actions=(
+                _make_action(
+                    order_index=0,
+                    action_code="F",
+                    action_type="FOLD",
+                    bet_size_bb=None,
+                    total_frequency=0.20,
+                ),
+                _make_action(
+                    order_index=1,
+                    action_code="C",
+                    action_type="CALL",
+                    bet_size_bb=None,
+                    total_frequency=0.50,
+                ),
+                _make_action(
+                    order_index=2,
+                    action_code="R4",
+                    action_type="RAISE",
+                    bet_size_bb=4.0,
+                    total_frequency=0.30,
+                ),
+            ),
+        ),
+    )
+    return strategy
+
+
 def _build_state(*, raise_size_bb: float = 2.0) -> PreflopDecisionState:
     """构造 cold call vs open 的测试状态.
 
@@ -246,6 +289,16 @@ def _build_limp_state() -> PreflopDecisionState:
         limp_count=1,
         raise_size_bb=None,
     )
+
+
+def _limp_template_kind() -> object:
+    """读取 limp family 对应的结构化模板枚举值.
+
+    Returns:
+        `SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3` 对应的枚举值.
+    """
+
+    return mapper_module.SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3
 
 
 def _get_blended_frequency(policy: object, action_name: str) -> float:
@@ -322,8 +375,23 @@ def test_mapper_falls_back_to_synthetic_template_for_limp_family() -> None:
     context = mapper.map_state(_build_limp_state())
 
     assert context.matched_level == 3
-    assert context.synthetic_template_name == "limp_family_level_3"
+    assert (
+        context.synthetic_template_kind
+        is _limp_template_kind()
+    )
     assert context.candidate_histories == ()
+
+
+def test_mapper_prefers_real_limp_candidate_before_synthetic_fallback() -> None:
+    """测试存在 limp 同族节点时应命中真实节点而非 synthetic."""
+
+    mapper = PreflopNodeMapper(strategy=_build_limp_strategy(), stack_bb=100)
+
+    context = mapper.map_state(_build_limp_state())
+
+    assert context.matched_level == 2
+    assert context.matched_history == "F-C"
+    assert context.synthetic_template_kind is None
 
 
 def test_solver_prior_blends_multiple_candidates_by_distance() -> None:
@@ -339,7 +407,7 @@ def test_solver_prior_blends_multiple_candidates_by_distance() -> None:
         candidate_distances=(5.0, 0.0),
         price_adjustment_applied=False,
         price_adjustment_factor=1.0,
-        synthetic_template_name=None,
+        synthetic_template_kind=None,
     )
     policy = solver_prior.build_policy(context)
 
@@ -347,8 +415,8 @@ def test_solver_prior_blends_multiple_candidates_by_distance() -> None:
     assert _get_blended_frequency(policy, "C") > _get_blended_frequency(policy, "F")
 
 
-def test_solver_prior_applies_price_adjustment_factor_to_raise_actions() -> None:
-    """测试 solver 先验会消费价格修正因子并收紧激进行动频率."""
+def test_solver_prior_preserves_frequencies_and_exposes_price_signal() -> None:
+    """测试 solver 先验透传价格修正 signal, 但不直接改动作频率."""
 
     strategy = _build_strategy()
     solver_prior = SolverPriorBuilder(strategy=strategy, stack_bb=100)
@@ -360,7 +428,7 @@ def test_solver_prior_applies_price_adjustment_factor_to_raise_actions() -> None
         candidate_distances=(0.0,),
         price_adjustment_applied=False,
         price_adjustment_factor=1.0,
-        synthetic_template_name=None,
+        synthetic_template_kind=None,
     )
     adjusted_context = MappedSolverContext(
         matched_level=2,
@@ -370,15 +438,16 @@ def test_solver_prior_applies_price_adjustment_factor_to_raise_actions() -> None
         candidate_distances=(0.0,),
         price_adjustment_applied=True,
         price_adjustment_factor=0.75,
-        synthetic_template_name=None,
+        synthetic_template_kind=None,
     )
 
     base_policy = solver_prior.build_policy(base_context)
     adjusted_policy = solver_prior.build_policy(adjusted_context)
 
-    assert _get_blended_frequency(adjusted_policy, "R9.5") < _get_blended_frequency(
-        base_policy,
-        "R9.5",
+    assert adjusted_policy.price_adjustment_applied is True
+    assert adjusted_policy.price_adjustment_factor == pytest.approx(0.75)
+    assert _get_blended_frequency(adjusted_policy, "R9.5") == pytest.approx(
+        _get_blended_frequency(base_policy, "R9.5"),
     )
     assert _get_blended_frequency(adjusted_policy, "F") == pytest.approx(
         _get_blended_frequency(base_policy, "F"),
@@ -386,7 +455,7 @@ def test_solver_prior_applies_price_adjustment_factor_to_raise_actions() -> None
 
 
 def test_solver_prior_uses_synthetic_template_policy() -> None:
-    """测试存在 synthetic template 时直接返回模板先验策略."""
+    """测试存在结构化 synthetic template 时直接返回模板先验策略."""
 
     solver_prior = SolverPriorBuilder(
         strategy=_build_open_only_strategy(),
@@ -400,10 +469,11 @@ def test_solver_prior_uses_synthetic_template_policy() -> None:
         candidate_distances=(),
         price_adjustment_applied=False,
         price_adjustment_factor=1.0,
-        synthetic_template_name="limp_family_level_3",
+        synthetic_template_kind=_limp_template_kind(),
     )
 
     policy = solver_prior.build_policy(context)
 
     assert policy.action_names == ("F", "C", "R4")
+    assert policy.synthetic_template_kind is _limp_template_kind()
     assert _get_blended_frequency(policy, "C") == pytest.approx(0.5)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 
 from bayes_poker.strategy.preflop_engine.state import (
     ActionFamily,
@@ -44,6 +45,12 @@ _POSTFLOP_POSITION_ORDER: tuple[TablePosition, ...] = (
 )
 
 
+class SyntheticTemplateKind(str, Enum):
+    """结构化 synthetic template 类型."""
+
+    LIMP_FAMILY_LEVEL_3 = "limp_family_level_3"
+
+
 @dataclass(frozen=True, slots=True)
 class MappedSolverContext:
     """映射后的 solver 上下文.
@@ -56,7 +63,7 @@ class MappedSolverContext:
         candidate_distances: 与候选历史一一对应的距离分值.
         price_adjustment_applied: 是否触发最小价格修正.
         price_adjustment_factor: 作用到 solver 先验上的最小价格修正因子.
-        synthetic_template_name: synthetic template 标识; 无模板时为 None.
+        synthetic_template_kind: 结构化 synthetic template 类型; 无模板时为 None.
     """
 
     matched_level: int
@@ -66,7 +73,7 @@ class MappedSolverContext:
     candidate_distances: tuple[float, ...]
     price_adjustment_applied: bool = False
     price_adjustment_factor: float = 1.0
-    synthetic_template_name: str | None = None
+    synthetic_template_kind: SyntheticTemplateKind | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,7 +162,9 @@ class PreflopNodeMapper:
 
         if not candidates:
             if state.action_family == ActionFamily.LIMP:
-                return _build_synthetic_context(template_name="limp_family_level_3")
+                return _build_synthetic_context(
+                    template_kind=SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3,
+                )
             raise ValueError("当前 stack 下没有同动作族的 solver 节点.")
 
         candidates.sort(
@@ -183,15 +192,18 @@ class PreflopNodeMapper:
             candidate_distances=tuple(distance for distance, _ in selected),
             price_adjustment_applied=price_adjustment_applied,
             price_adjustment_factor=price_adjustment_factor,
-            synthetic_template_name=None,
+            synthetic_template_kind=None,
         )
 
 
-def _build_synthetic_context(template_name: str) -> MappedSolverContext:
+def _build_synthetic_context(
+    *,
+    template_kind: SyntheticTemplateKind,
+) -> MappedSolverContext:
     """构造 synthetic template 回退上下文.
 
     Args:
-        template_name: 模板名称.
+        template_kind: 结构化模板类型.
 
     Returns:
         指向 synthetic template 的最小映射结果.
@@ -205,7 +217,7 @@ def _build_synthetic_context(template_name: str) -> MappedSolverContext:
         candidate_distances=(),
         price_adjustment_applied=False,
         price_adjustment_factor=1.0,
-        synthetic_template_name=template_name,
+        synthetic_template_kind=template_kind,
     )
 
 
@@ -285,8 +297,9 @@ def _build_candidate_state(node: StrategyNode) -> _CandidateNodeState | None:
 
     if aggressor_position is None:
         if limp_count > 0:
-            return None
-        action_family = ActionFamily.OPEN
+            action_family = ActionFamily.LIMP
+        else:
+            action_family = ActionFamily.OPEN
         is_in_position: bool | None = None
     else:
         if limp_count > 0:
@@ -488,4 +501,5 @@ def _calculate_raise_size_distance(
 __all__ = [
     "MappedSolverContext",
     "PreflopNodeMapper",
+    "SyntheticTemplateKind",
 ]
