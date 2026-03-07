@@ -1166,6 +1166,37 @@ class TestOpponentRangePredictor:
         assert accepted is False
         assert predictor.get_preflop_range(4) is None
 
+    def test_shared_adapter_rejects_non_utg_first_in_open(self) -> None:
+        """非 UTG 首次 open 不应由 Task 9 的共享 adapter 接管。"""
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        current_action = PlayerAction(
+            player_index=4,
+            action_type=ActionType.RAISE,
+            amount=2.5,
+            street=Street.PREFLOP,
+        )
+
+        accepted = predictor._try_update_with_shared_preflop_engine(
+            player=players[4],
+            action=current_action,
+            table_state=table_state,
+            decision_prefix=[],
+            current_prefix=[current_action],
+        )
+
+        assert accepted is False
+        assert predictor.get_preflop_range(4) is None
+
     def test_shared_adapter_rejects_overcall_vs_open_plus_call(self) -> None:
         """open 后已有 cold call 时, overcall 不应由共享 adapter 接管。"""
 

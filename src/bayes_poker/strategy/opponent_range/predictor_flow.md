@@ -29,7 +29,7 @@
 
 1. 调用 `_try_update_with_shared_preflop_engine(...)`。
 2. 仅当共享状态层能表达当前 `decision_prefix` 时继续:
-   - first-in open
+   - UTG first-in open
    - 单次 open 面前且无前置 caller 的 cold call
 3. 首次 3bet、squeeze、overcall 仍显式回退到旧逻辑。
 4. 共享链路依次经过:
@@ -160,7 +160,7 @@
 ### 9. 当前实现特征
 
 1. 翻前已形成“共享 adapter + 旧回退”双层主链路。
-2. 首次 open / cold call vs open 会优先尝试共享 preflop 内核。
+2. `UTG` 首次 open / cold call vs open 会优先尝试共享 preflop 内核。
 3. limp 与多数非首次动作仍通过旧分支或统一缩放模型收敛范围。
 4. 翻后主流程仍是占位状态。
 5. 后续可继续把更多 preflop 分支替换为

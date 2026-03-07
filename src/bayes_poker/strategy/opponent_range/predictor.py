@@ -620,7 +620,8 @@ class OpponentRangePredictor:
 
         if decision_state.action_family == ActionFamily.OPEN:
             return (
-                decision_state.aggressor_position is None
+                decision_state.actor_position == TablePosition.UTG
+                and decision_state.aggressor_position is None
                 and decision_state.call_count == 0
                 and decision_state.limp_count == 0
                 and action.action_type
