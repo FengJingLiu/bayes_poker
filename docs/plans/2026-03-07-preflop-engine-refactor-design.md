@@ -50,7 +50,7 @@
 当前代码已经把 preflop 共享内核落地为可测试模块, 但 adapter 接入范围仍按第一阶段最小边界收紧:
 
 - `src/bayes_poker/strategy/preflop_engine/` 已落地 `state`、`mapper`、`solver_prior`、`tendency`、`policy_calibrator`、`range_engine`、`hero_engine`、`explain` 八个模块。
-- `state.py` 与 `mapper.py` 当前最小模型主要覆盖 `OPEN`、`CALL_VS_OPEN`、`LIMP` 三类共享状态, 并对 limp、多次加注、open jam 等复杂前缀保持显式拒绝或模板回退。
+- `state.py` 当前最小状态构建器只直接支持 `OPEN` 与 `CALL_VS_OPEN`; `LIMP` 目前仅保留枚举与模板回退通道, 真实 limp 前缀仍会显式回退。
 - `strategy/runtime/preflop.py` 当前仅把共享 adapter 接到 `CALL_VS_OPEN` 主链, 且只在 `table_state` 信息完整时启用; postflop 或缺字段场景继续回退 legacy 逻辑。
 - `strategy/opponent_range/predictor.py` 当前仅把共享 adapter 接到两类首次翻前动作:
   - `UTG first-in open`

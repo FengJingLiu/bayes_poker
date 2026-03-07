@@ -458,7 +458,7 @@ Expected: FAIL, 因为 predictor 仍使用旧分支逻辑。
 ```python
 class OpponentRangePredictor:
     def __post_init__(self) -> None:
-        self.range_engine = PreflopRangeEngine(...)
+        self._shared_range_engine = RangeEngine(...)
 ```
 
 ```python
@@ -498,8 +498,8 @@ git commit -m "refactor: route opponent range predictor through shared engine"
 ```python
 __all__ = [
     "PreflopDecisionState",
-    "NodeMapper",
-    "PreflopRangeEngine",
+    "PreflopNodeMapper",
+    "RangeEngine",
     "PreflopHeroEngine",
 ]
 ```
