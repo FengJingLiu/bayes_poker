@@ -9,6 +9,7 @@ from bayes_poker.strategy.range import (
     PreflopRange,
     RANGE_169_LENGTH,
     RANGE_169_ORDER,
+    RANGE_1326_LENGTH,
     combos_per_hand,
 )
 
@@ -25,10 +26,12 @@ class ActionPolicyAction:
     Attributes:
         action_name: 动作名称.
         range: 当前动作对应的 169 维范围.
+        rank_scores: 用于保序排序的可选分值向量.
     """
 
     action_name: str
     range: PreflopRange
+    rank_scores: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +53,9 @@ class ActionPolicy:
         action_names = [action.action_name for action in self.actions]
         if len(set(action_names)) != len(action_names):
             raise ValueError("ActionPolicy 中的动作名称不能重复.")
+        for action in self.actions:
+            if action.rank_scores is not None and len(action.rank_scores) != RANGE_169_LENGTH:
+                raise ValueError("rank_scores 长度必须与 169 手牌空间一致.")
 
     @property
     def action_names(self) -> tuple[str, ...]:
@@ -101,16 +107,36 @@ class ActionPolicy:
             按频率降序、EV 降序、原始顺序升序排列的手牌序列.
         """
 
-        action_range = self.for_action(action_name)
+        action = self._get_action(action_name)
+        action_range = action.range
+        rank_scores = action.rank_scores or tuple(action_range.strategy)
         ranked_indices = sorted(
             range(RANGE_169_LENGTH),
             key=lambda index: (
-                -action_range.strategy[index],
+                -rank_scores[index],
                 -action_range.evs[index],
                 index,
             ),
         )
         return tuple(RANGE_169_ORDER[index] for index in ranked_indices)
+
+    def _get_action(self, action_name: str) -> ActionPolicyAction:
+        """读取指定动作的完整对象.
+
+        Args:
+            action_name: 动作名称.
+
+        Returns:
+            对应的动作对象.
+
+        Raises:
+            KeyError: 当动作不存在时抛出.
+        """
+
+        for action in self.actions:
+            if action.action_name == action_name:
+                return action
+        raise KeyError(f"未知动作: {action_name}")
 
 
 def calibrate_binary_policy(
@@ -142,6 +168,8 @@ def calibrate_binary_policy(
 
     if len(policy.actions) != 2:
         raise ValueError("二元校准要求策略恰好包含两个动作.")
+
+    _validate_policy_simplex(policy)
 
     calibrated_action_name = _infer_binary_action_name(policy, action_name)
     other_action_name = next(
@@ -203,6 +231,7 @@ def calibrate_multinomial_policy(
 
     _validate_solver_settings(tolerance=tolerance, max_iterations=max_iterations)
     _validate_target_mix(policy=policy, target_mix=target_mix)
+    _validate_policy_simplex(policy)
 
     biases = {action_name: 0.0 for action_name in policy.action_names}
     calibrated_policy = policy
@@ -324,6 +353,30 @@ def _infer_binary_action_name(
     raise ValueError("无法自动推断二元校准的目标动作名称.")
 
 
+def _validate_policy_simplex(policy: ActionPolicy) -> None:
+    """校验每手牌在动作维度上构成概率单纯形.
+
+    Args:
+        policy: 待校验的策略.
+
+    Raises:
+        ValueError: 当任一手牌的动作概率不在 `[0, 1]` 或总和不接近 1 时抛出.
+    """
+
+    for action in policy.actions:
+        for probability in action.range.strategy:
+            if not 0.0 <= probability <= 1.0:
+                raise ValueError("动作概率必须位于 [0.0, 1.0] 区间内.")
+
+    for index in range(RANGE_169_LENGTH):
+        probability_sum = sum(
+            action.range.strategy[index]
+            for action in policy.actions
+        )
+        if not math.isclose(probability_sum, 1.0, rel_tol=1e-6, abs_tol=1e-6):
+            raise ValueError("每手牌在动作维度上的概率总和必须为 1.0.")
+
+
 def _solve_logit_shift(
     *,
     base_range: PreflopRange,
@@ -374,7 +427,7 @@ def _binary_total_frequency(*, base_range: PreflopRange, shift: float) -> float:
     for hand_key, probability in zip(RANGE_169_ORDER, base_range.strategy, strict=True):
         adjusted_probability = _sigmoid(_safe_logit(probability) + shift)
         weighted_total += adjusted_probability * combos_per_hand(hand_key)
-    return weighted_total / 1326.0
+    return weighted_total / float(RANGE_1326_LENGTH)
 
 
 def _apply_softmax_bias(
@@ -442,6 +495,7 @@ def _rebuild_policy(
             ActionPolicyAction(
                 action_name=action.action_name,
                 range=action_ranges[action.action_name],
+                rank_scores=tuple(action.range.strategy),
             )
             for action in policy.actions
         )

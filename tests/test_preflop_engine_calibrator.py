@@ -187,6 +187,7 @@ def test_multinomial_calibrator_preserves_relative_hand_order() -> None:
         target_mix=target_mix,
     )
 
+    assert calibrated.rank_for("CALL") == base_policy.rank_for("CALL")
     assert calibrated.rank_for("CALL")[0] == "AJs"
     assert calibrated.total_frequency("CALL") == pytest.approx(0.11, abs=1e-3)
     assert calibrated.total_frequency("RAISE") == pytest.approx(0.05, abs=1e-3)
@@ -237,3 +238,72 @@ def test_rank_for_uses_strategy_then_ev_then_original_order() -> None:
     )
 
     assert ranked_hands == expected_order
+
+
+@pytest.mark.parametrize("target_frequency", (-0.1, 1.1))
+def test_binary_calibrator_rejects_out_of_range_target_frequency(
+    target_frequency: float,
+) -> None:
+    """测试二元校准器会拒绝越界目标频率.
+
+    Args:
+        target_frequency: 非法目标频率.
+
+    Returns:
+        None.
+    """
+
+    calibrator_module = _load_policy_calibrator_module()
+
+    with pytest.raises(ValueError, match="target_frequency"):
+        calibrator_module.calibrate_binary_policy(
+            _build_binary_policy(),
+            target_frequency=target_frequency,
+        )
+
+
+def test_multinomial_calibrator_rejects_invalid_target_mix() -> None:
+    """测试多动作校准器会拒绝非法目标混合.
+
+    Returns:
+        None.
+    """
+
+    calibrator_module = _load_policy_calibrator_module()
+    base_policy, _ = _build_multinomial_policy()
+
+    with pytest.raises(ValueError, match="target_mix"):
+        calibrator_module.calibrate_multinomial_policy(
+            base_policy,
+            target_mix={"FOLD": 0.90, "CALL": 0.10},
+        )
+
+
+def test_binary_calibrator_rejects_non_simplex_policy() -> None:
+    """测试二元校准器会拒绝非单纯形输入策略.
+
+    Returns:
+        None.
+    """
+
+    calibrator_module = _load_policy_calibrator_module()
+    action_policy_action_cls = calibrator_module.ActionPolicyAction
+    action_policy_cls = calibrator_module.ActionPolicy
+    invalid_policy = action_policy_cls(
+        actions=(
+            action_policy_action_cls(
+                action_name="FOLD",
+                range=_build_range(default_frequency=0.70),
+            ),
+            action_policy_action_cls(
+                action_name="OPEN",
+                range=_build_range(default_frequency=0.20),
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="概率总和"):
+        calibrator_module.calibrate_binary_policy(
+            invalid_policy,
+            target_frequency=0.10,
+        )
