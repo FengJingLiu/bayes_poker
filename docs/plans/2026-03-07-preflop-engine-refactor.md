@@ -8,6 +8,21 @@
 
 **Tech Stack:** Python 3.12, pytest, uv, 现有 `PreflopStrategy` / `PreflopRange` / `PlayerStatsRepository` / `ObservedTableState` 模型。
 
+## 执行结果（2026-03-07）
+
+- `Task 1` 到 `Task 10` 已在分支 `feat/preflop-engine-refactor` 执行完成, 并按 task 粒度经过 spec review 与 code quality review。
+- 当前实际落地范围:
+  - `preflop_engine` 共享目录及其单元测试已落地。
+  - `runtime` 共享 adapter 仅接管 `CALL_VS_OPEN` 相关主链, 其余仍回退 legacy。
+  - `opponent_range` 共享 adapter 仅接管 `UTG first-in open` 与非盲位 `cold call vs open`, 其余前缀保持旧逻辑或 fallback。
+- Task 9 关键提交:
+  - `3853b94` `refactor: route opponent preflop ranges through shared adapter`
+  - `1badcd5` `fix: narrow opponent range shared adapter scope`
+  - `6b360a2` `fix: tighten opponent range shared adapter guards`
+- 既有基线问题:
+  - `tests/test_strategy_request_payload.py` 的导入失败为本轮开始前已存在的问题, 未纳入本计划实现范围。
+- 最终验证命令与结果见本文件 `Task 10` 的执行记录。
+
 ---
 
 ### Task 1: 建立共享状态模型
@@ -493,16 +508,19 @@ __all__ = [
 
 Run: `timeout 60s uv run pytest tests/test_preflop_engine_state.py tests/test_preflop_engine_mapper.py tests/test_preflop_engine_tendency.py tests/test_preflop_engine_calibrator.py tests/test_preflop_engine_range_engine.py tests/test_preflop_engine_hero_engine.py -q`
 Expected: PASS。
+Result: PASS, `48 passed`。
 
 **Step 3: Run integration suite**
 
 Run: `timeout 60s uv run pytest tests/test_preflop_runtime_strategy.py tests/test_preflop_runtime_framework.py tests/test_opponent_range.py tests/test_opponent_range_preflop_context.py -q`
 Expected: PASS。
+Result: PASS, `23 passed, 15 skipped`。
 
 **Step 4: Run compile check**
 
 Run: `timeout 60s uv run python -m compileall src`
 Expected: PASS, 无语法错误。
+Result: PASS。
 
 **Step 5: Commit**
 

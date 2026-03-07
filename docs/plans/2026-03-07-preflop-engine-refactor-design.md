@@ -45,6 +45,20 @@
 - 自动训练距离权重或 exploit 参数。
 - UI 级回放展示。
 
+## 当前落地范围（2026-03-07）
+
+当前代码已经把 preflop 共享内核落地为可测试模块, 但 adapter 接入范围仍按第一阶段最小边界收紧:
+
+- `src/bayes_poker/strategy/preflop_engine/` 已落地 `state`、`mapper`、`solver_prior`、`tendency`、`policy_calibrator`、`range_engine`、`hero_engine`、`explain` 八个模块。
+- `state.py` 与 `mapper.py` 当前最小模型主要覆盖 `OPEN`、`CALL_VS_OPEN`、`LIMP` 三类共享状态, 并对 limp、多次加注、open jam 等复杂前缀保持显式拒绝或模板回退。
+- `strategy/runtime/preflop.py` 当前仅把共享 adapter 接到 `CALL_VS_OPEN` 主链, 且只在 `table_state` 信息完整时启用; postflop 或缺字段场景继续回退 legacy 逻辑。
+- `strategy/opponent_range/predictor.py` 当前仅把共享 adapter 接到两类首次翻前动作:
+  - `UTG first-in open`
+  - 非盲位在单次 open 面前且无前置 caller 的 `cold call vs open`
+- `limp`、`3bet/squeeze/overcall`、`SB/BB defend`、`open jam`、空策略树/无可用 stack 等场景, 当前都显式回退到旧的 prefix 或 scale fallback。
+- `hero_engine.py` 与 `range_engine.py` 已可独立通过单测验证, 但对外 adapter 仍按第一阶段最小接入范围启用。
+- postflop 更新仍是占位状态, 不属于本轮实现范围。
+
 ## 总体方案
 
 采用统一的 preflop 推理内核, 让 Hero 决策与对手范围共享同一组状态抽象、映射器、玩家画像和策略校准器。
