@@ -15,6 +15,7 @@ class ActionFamily(str, Enum):
 
     OPEN = "open"
     CALL_VS_OPEN = "call_vs_open"
+    LIMP = "limp"
 
 
 @dataclass(frozen=True, slots=True)

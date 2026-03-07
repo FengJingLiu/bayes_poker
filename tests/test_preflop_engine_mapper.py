@@ -231,6 +231,23 @@ def _build_state(*, raise_size_bb: float = 2.0) -> PreflopDecisionState:
     )
 
 
+def _build_limp_state() -> PreflopDecisionState:
+    """构造 limp family 的测试状态.
+
+    Returns:
+        供 mapper synthetic fallback 使用的共享决策状态.
+    """
+
+    return PreflopDecisionState(
+        action_family=ActionFamily.LIMP,
+        actor_position=TablePosition.CO,
+        aggressor_position=None,
+        call_count=0,
+        limp_count=1,
+        raise_size_bb=None,
+    )
+
+
 def _get_blended_frequency(policy: object, action_name: str) -> float:
     """读取指定动作的聚合频率.
 
@@ -276,6 +293,18 @@ def test_mapper_prefers_closer_raise_size_within_same_family() -> None:
     assert context.candidate_distances[0] < context.candidate_distances[1]
 
 
+def test_mapper_applies_price_adjustment_for_larger_open_size() -> None:
+    """测试更大的真实 open 尺度会触发最小价格修正标记."""
+
+    mapper = PreflopNodeMapper(strategy=_build_strategy(), stack_bb=100)
+
+    context = mapper.map_state(_build_state(raise_size_bb=3.0))
+
+    assert context.matched_history == "R2.5-C"
+    assert context.price_adjustment_applied is True
+    assert context.price_adjustment_factor < 1.0
+
+
 def test_mapper_raises_when_no_same_family_candidate_exists() -> None:
     """测试没有同动作族候选时映射器会拒绝映射."""
 
@@ -283,6 +312,18 @@ def test_mapper_raises_when_no_same_family_candidate_exists() -> None:
 
     with pytest.raises(ValueError, match="同动作族"):
         mapper.map_state(_build_state())
+
+
+def test_mapper_falls_back_to_synthetic_template_for_limp_family() -> None:
+    """测试 limp family 在无同族 solver 节点时回退到 synthetic template."""
+
+    mapper = PreflopNodeMapper(strategy=_build_open_only_strategy(), stack_bb=100)
+
+    context = mapper.map_state(_build_limp_state())
+
+    assert context.matched_level == 3
+    assert context.synthetic_template_name == "limp_family_level_3"
+    assert context.candidate_histories == ()
 
 
 def test_solver_prior_blends_multiple_candidates_by_distance() -> None:
@@ -296,8 +337,73 @@ def test_solver_prior_blends_multiple_candidates_by_distance() -> None:
         distance_score=0.0,
         candidate_histories=("R2.5-C", "R2-C"),
         candidate_distances=(5.0, 0.0),
+        price_adjustment_applied=False,
+        price_adjustment_factor=1.0,
+        synthetic_template_name=None,
     )
     policy = solver_prior.build_policy(context)
 
     assert policy.action_names == ("F", "C", "R9.5")
     assert _get_blended_frequency(policy, "C") > _get_blended_frequency(policy, "F")
+
+
+def test_solver_prior_applies_price_adjustment_factor_to_raise_actions() -> None:
+    """测试 solver 先验会消费价格修正因子并收紧激进行动频率."""
+
+    strategy = _build_strategy()
+    solver_prior = SolverPriorBuilder(strategy=strategy, stack_bb=100)
+    base_context = MappedSolverContext(
+        matched_level=2,
+        matched_history="R2.5-C",
+        distance_score=0.0,
+        candidate_histories=("R2.5-C",),
+        candidate_distances=(0.0,),
+        price_adjustment_applied=False,
+        price_adjustment_factor=1.0,
+        synthetic_template_name=None,
+    )
+    adjusted_context = MappedSolverContext(
+        matched_level=2,
+        matched_history="R2.5-C",
+        distance_score=0.0,
+        candidate_histories=("R2.5-C",),
+        candidate_distances=(0.0,),
+        price_adjustment_applied=True,
+        price_adjustment_factor=0.75,
+        synthetic_template_name=None,
+    )
+
+    base_policy = solver_prior.build_policy(base_context)
+    adjusted_policy = solver_prior.build_policy(adjusted_context)
+
+    assert _get_blended_frequency(adjusted_policy, "R9.5") < _get_blended_frequency(
+        base_policy,
+        "R9.5",
+    )
+    assert _get_blended_frequency(adjusted_policy, "F") == pytest.approx(
+        _get_blended_frequency(base_policy, "F"),
+    )
+
+
+def test_solver_prior_uses_synthetic_template_policy() -> None:
+    """测试存在 synthetic template 时直接返回模板先验策略."""
+
+    solver_prior = SolverPriorBuilder(
+        strategy=_build_open_only_strategy(),
+        stack_bb=100,
+    )
+    context = MappedSolverContext(
+        matched_level=3,
+        matched_history="",
+        distance_score=0.0,
+        candidate_histories=(),
+        candidate_distances=(),
+        price_adjustment_applied=False,
+        price_adjustment_factor=1.0,
+        synthetic_template_name="limp_family_level_3",
+    )
+
+    policy = solver_prior.build_policy(context)
+
+    assert policy.action_names == ("F", "C", "R4")
+    assert _get_blended_frequency(policy, "C") == pytest.approx(0.5)

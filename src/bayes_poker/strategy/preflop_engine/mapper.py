@@ -54,6 +54,9 @@ class MappedSolverContext:
         distance_score: 最优候选与目标状态的距离.
         candidate_histories: 按距离升序排列的候选历史.
         candidate_distances: 与候选历史一一对应的距离分值.
+        price_adjustment_applied: 是否触发最小价格修正.
+        price_adjustment_factor: 作用到 solver 先验上的最小价格修正因子.
+        synthetic_template_name: synthetic template 标识; 无模板时为 None.
     """
 
     matched_level: int
@@ -61,6 +64,9 @@ class MappedSolverContext:
     distance_score: float
     candidate_histories: tuple[str, ...]
     candidate_distances: tuple[float, ...]
+    price_adjustment_applied: bool = False
+    price_adjustment_factor: float = 1.0
+    synthetic_template_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +154,8 @@ class PreflopNodeMapper:
             candidates.append((distance, candidate_state))
 
         if not candidates:
+            if state.action_family == ActionFamily.LIMP:
+                return _build_synthetic_context(template_name="limp_family_level_3")
             raise ValueError("当前 stack 下没有同动作族的 solver 节点.")
 
         candidates.sort(
@@ -160,6 +168,10 @@ class PreflopNodeMapper:
 
         selected = candidates[: self._max_candidates]
         best_distance, best_candidate = selected[0]
+        price_adjustment_applied, price_adjustment_factor = _apply_price_adjustment(
+            actual_size_bb=state.raise_size_bb,
+            reference_size_bb=best_candidate.raise_size_bb,
+        )
 
         return MappedSolverContext(
             matched_level=2,
@@ -169,7 +181,58 @@ class PreflopNodeMapper:
                 candidate.history_full for _, candidate in selected
             ),
             candidate_distances=tuple(distance for distance, _ in selected),
+            price_adjustment_applied=price_adjustment_applied,
+            price_adjustment_factor=price_adjustment_factor,
+            synthetic_template_name=None,
         )
+
+
+def _build_synthetic_context(template_name: str) -> MappedSolverContext:
+    """构造 synthetic template 回退上下文.
+
+    Args:
+        template_name: 模板名称.
+
+    Returns:
+        指向 synthetic template 的最小映射结果.
+    """
+
+    return MappedSolverContext(
+        matched_level=3,
+        matched_history="",
+        distance_score=0.0,
+        candidate_histories=(),
+        candidate_distances=(),
+        price_adjustment_applied=False,
+        price_adjustment_factor=1.0,
+        synthetic_template_name=template_name,
+    )
+
+
+def _apply_price_adjustment(
+    *,
+    actual_size_bb: float | None,
+    reference_size_bb: float | None,
+) -> tuple[bool, float]:
+    """计算最小价格修正结果.
+
+    Args:
+        actual_size_bb: 真实状态中的加注尺度.
+        reference_size_bb: 参考 solver 节点的加注尺度.
+
+    Returns:
+        `(是否应用价格修正, 价格修正因子)`.
+    """
+
+    if actual_size_bb is None or reference_size_bb is None:
+        return (False, 1.0)
+    if actual_size_bb <= 0 or reference_size_bb <= 0:
+        return (False, 1.0)
+    if math.isclose(actual_size_bb, reference_size_bb):
+        return (False, 1.0)
+    if actual_size_bb > reference_size_bb:
+        return (True, 0.75)
+    return (True, 1.10)
 
 
 def _build_candidate_state(node: StrategyNode) -> _CandidateNodeState | None:
