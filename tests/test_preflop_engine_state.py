@@ -1,4 +1,4 @@
-"""翻前共享状态模型测试。"""
+"""翻前共享状态模型测试."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from bayes_poker.table.layout.base import Position as TablePosition
 
 
 def test_build_preflop_decision_state_for_open_plus_cold_call() -> None:
-    """测试 open 后跟 cold call 时的决策状态构建。"""
+    """测试 open 后跟 cold call 时的决策状态构建."""
     state = build_preflop_decision_state(
         actor_position=TablePosition.CO,
         actions=(

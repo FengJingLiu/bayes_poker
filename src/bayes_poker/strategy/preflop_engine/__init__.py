@@ -1,4 +1,4 @@
-"""翻前共享推理内核导出。"""
+"""翻前共享推理内核导出."""
 
 from bayes_poker.strategy.preflop_engine.state import (
     ActionFamily,
