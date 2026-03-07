@@ -75,7 +75,7 @@ def build_preflop_decision_state(
 
     当前最小实现只覆盖两类状态:
     1. 无人入池时的 first-in open.
-    2. 单次 open 后的继续决策, 并统计 cold call 数量.
+    2. 无 limp 的单次 open 后继续决策, 并统计 cold call 数量.
 
     Args:
         actor_position: 当前待行动玩家位置.
@@ -104,6 +104,8 @@ def build_preflop_decision_state(
             continue
 
         if _is_aggressive_action(action.action_type):
+            if limp_count > 0:
+                raise ValueError("当前最小实现暂不支持 limp 场景.")
             if aggressor_position is not None:
                 raise ValueError("当前最小实现暂不支持多次加注场景.")
             aggressor_position = action.position
