@@ -307,3 +307,25 @@ def test_binary_calibrator_rejects_non_simplex_policy() -> None:
             invalid_policy,
             target_frequency=0.10,
         )
+
+
+def test_multinomial_calibrator_preserves_rank_order_across_repeated_runs() -> None:
+    """测试多动作校准在重复执行后仍保留输入排序.
+
+    Returns:
+        None.
+    """
+
+    calibrator_module = _load_policy_calibrator_module()
+    base_policy, target_mix = _build_multinomial_policy()
+
+    first_pass = calibrator_module.calibrate_multinomial_policy(
+        base_policy,
+        target_mix=target_mix,
+    )
+    second_pass = calibrator_module.calibrate_multinomial_policy(
+        first_pass,
+        target_mix=target_mix,
+    )
+
+    assert second_pass.rank_for("CALL") == base_policy.rank_for("CALL")

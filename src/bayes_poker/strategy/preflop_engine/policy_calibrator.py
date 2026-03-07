@@ -98,13 +98,13 @@ class ActionPolicy:
         return self.for_action(action_name).total_frequency()
 
     def rank_for(self, action_name: str) -> tuple[str, ...]:
-        """按策略频率返回动作的手牌排序.
+        """按保序分值返回动作的手牌排序.
 
         Args:
             action_name: 动作名称.
 
         Returns:
-            按频率降序、EV 降序、原始顺序升序排列的手牌序列.
+            按保序分值降序、EV 降序、原始顺序升序排列的手牌序列.
         """
 
         action = self._get_action(action_name)
@@ -495,7 +495,7 @@ def _rebuild_policy(
             ActionPolicyAction(
                 action_name=action.action_name,
                 range=action_ranges[action.action_name],
-                rank_scores=tuple(action.range.strategy),
+                rank_scores=action.rank_scores or tuple(action.range.strategy),
             )
             for action in policy.actions
         )
