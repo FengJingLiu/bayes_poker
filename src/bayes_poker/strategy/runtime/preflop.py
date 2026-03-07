@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from bayes_poker.domain.poker import ActionType
+from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
 from bayes_poker.strategy.preflop_engine.mapper import (
@@ -159,17 +159,42 @@ def _extract_observed_state(payload: dict[str, Any]) -> ObservedTableState | Non
 
     observed_state = payload.get("observed_state")
     if isinstance(observed_state, ObservedTableState):
-        return observed_state
+        if _is_usable_observed_state(observed_state):
+            return observed_state
+        return None
 
     table_state = payload.get("table_state")
     if not isinstance(table_state, dict):
         return None
 
     try:
-        return ObservedTableState.from_dict(table_state)
+        observed_state = ObservedTableState.from_dict(table_state)
     except Exception:
         LOGGER.warning("preflopStrategy: table_state 反序列化失败")
         return None
+
+    if _is_usable_observed_state(observed_state):
+        return observed_state
+    return None
+
+
+def _is_usable_observed_state(observed_state: ObservedTableState) -> bool:
+    """判断观察者状态是否足以驱动 runtime 决策。
+
+    Args:
+        observed_state: 待校验的观察者状态。
+
+    Returns:
+        当状态具备最小可用字段时返回 `True`。
+    """
+
+    if not observed_state.players:
+        return False
+    if observed_state.get_hero_stack_bb() <= 0:
+        return False
+    if observed_state.get_hero_position_enum() is None:
+        return False
+    return True
 
 
 def _build_preflop_engine_actions(
@@ -186,6 +211,8 @@ def _build_preflop_engine_actions(
 
     actions: list[EngineObservedAction] = []
     for action in observed_state.action_history:
+        if action.street != Street.PREFLOP:
+            continue
         if action.action_type not in (
             ActionType.FOLD,
             ActionType.CHECK,
@@ -558,6 +585,8 @@ class PreflopRuntime:
         """
 
         if observed_state is None:
+            return None
+        if observed_state.street != Street.PREFLOP:
             return None
 
         actor_position = observed_state.get_hero_position_enum()

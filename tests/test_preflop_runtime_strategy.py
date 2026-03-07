@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from bayes_poker.domain.poker import ActionType
+from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.table.observed_state import (
     Player,
     ObservedTableState,
@@ -213,6 +213,135 @@ def test_preflop_strategy_uses_shared_engine_for_non_standard_open_size() -> Non
     assert explanation.get("mapped_level") == 2
     assert explanation.get("matched_history") == "R2"
     assert explanation.get("price_adjustment_applied") is True
+
+
+def test_preflop_strategy_falls_back_when_table_state_is_incomplete() -> None:
+    """测试不完整 table_state 会回退到旧 payload 字段。"""
+    strategy = PreflopStrategy(name="Test", source_dir="/tmp")
+
+    fold_action = StrategyAction(
+        order_index=0,
+        action_code="F",
+        action_type="FOLD",
+        bet_size_bb=None,
+        is_all_in=False,
+        total_frequency=0.5,
+        next_position="",
+        range=_range_with_single_hand_probability("AKs", 0.0),
+    )
+    raise_action = StrategyAction(
+        order_index=1,
+        action_code="R2",
+        action_type="RAISE",
+        bet_size_bb=2.0,
+        is_all_in=False,
+        total_frequency=0.5,
+        next_position="",
+        range=_range_with_single_hand_probability("AKs", 1.0),
+    )
+    strategy.add_node(
+        100,
+        StrategyNode(
+            history_full="",
+            history_actions="",
+            history_token_count=0,
+            acting_position="SB",
+            source_file="test.json",
+            actions=(fold_action, raise_action),
+        ),
+    )
+
+    handler = create_preflop_strategy(strategy=strategy)
+    result = asyncio.run(
+        handler(
+            "s1",
+            {
+                "state_version": 1,
+                "table_state": {
+                    "btn_seat": 0,
+                    "hero_seat": 1,
+                    "hero_cards": ["As", "Ks"],
+                    "players": [],
+                    "player_count": 6,
+                    "big_blind": 1.0,
+                    "small_blind": 0.5,
+                    "action_history": [],
+                    "street": "preflop",
+                },
+                "hero_stack_bb": 100,
+                "hero_cards": ["As", "Ks"],
+                "action_history": "",
+                "hero_position": "SB",
+            },
+        )
+    )
+
+    assert result["recommended_action"] == "R2"
+    assert result["recommended_amount"] == 2.0
+
+
+def test_preflop_strategy_skips_shared_adapter_outside_preflop() -> None:
+    """测试翻后状态不会误命中 shared preflop adapter。"""
+    strategy = PreflopStrategy(name="Test", source_dir="/tmp")
+    strategy.add_node(
+        100,
+        StrategyNode(
+            history_full="R2-C",
+            history_actions="R-C",
+            history_token_count=2,
+            acting_position="CO",
+            source_file="test.json",
+            actions=(
+                StrategyAction(
+                    order_index=0,
+                    action_code="F",
+                    action_type="FOLD",
+                    bet_size_bb=None,
+                    is_all_in=False,
+                    total_frequency=0.4,
+                    next_position="",
+                    range=_range_with_single_hand_probability("AKs", 0.0),
+                ),
+                StrategyAction(
+                    order_index=1,
+                    action_code="C",
+                    action_type="CALL",
+                    bet_size_bb=None,
+                    is_all_in=False,
+                    total_frequency=0.6,
+                    next_position="",
+                    range=_range_with_single_hand_probability("AKs", 1.0),
+                ),
+            ),
+        ),
+    )
+
+    handler = create_preflop_strategy(strategy=strategy)
+    observed_state = _create_observed_state_for_test(
+        hero_seat=5,  # CO
+        btn_seat=0,
+        stack_bb=100.0,
+        hero_cards=("As", "Ks"),
+        action_history=[
+            (3, ActionType.RAISE, 2.0),  # UTG open 2bb
+            (4, ActionType.CALL, 2.0),  # MP call
+        ],
+    )
+    observed_state.street = Street.FLOP
+    observed_state.record_action(0, ActionType.CALL, 0.0)
+
+    result = asyncio.run(
+        handler(
+            "s1",
+            {
+                "state_version": 1,
+                "observed_state": observed_state,
+            },
+        )
+    )
+
+    assert "preflopStrategy[shared]" not in result["notes"]
+    assert "未找到策略节点" in result["notes"]
 
 
 def test_preflop_strategy_adjusts_iso_raise_size_by_num_limpers() -> None:
