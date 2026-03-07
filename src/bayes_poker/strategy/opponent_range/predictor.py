@@ -551,7 +551,10 @@ class OpponentRangePredictor:
         if stack_bb <= 0:
             return False
 
-        resolved_stack_bb = self.preflop_strategy.resolve_stack_bb(stack_bb)
+        try:
+            resolved_stack_bb = self.preflop_strategy.resolve_stack_bb(stack_bb)
+        except ValueError:
+            return False
         mapper = PreflopNodeMapper(
             strategy=self.preflop_strategy,
             stack_bb=resolved_stack_bb,
@@ -607,8 +610,8 @@ class OpponentRangePredictor:
         """判断当前首次翻前动作是否在共享 adapter 覆盖范围内。
 
         当前 Task 9 仅允许两类动作成功接管:
-        1. 无人入池时的 first-in open。
-        2. 单次 open 面前且无前置 caller 的 cold call。
+        1. `UTG` 无人入池时的 first-in open。
+        2. 非盲位在单次 open 面前且无前置 caller 的 cold call。
 
         Args:
             decision_state: 共享状态构建器产出的决策状态。
@@ -624,17 +627,14 @@ class OpponentRangePredictor:
                 and decision_state.aggressor_position is None
                 and decision_state.call_count == 0
                 and decision_state.limp_count == 0
-                and action.action_type
-                in (
-                    ActionType.BET,
-                    ActionType.RAISE,
-                    ActionType.ALL_IN,
-                )
+                and action.action_type in (ActionType.BET, ActionType.RAISE)
             )
 
         if decision_state.action_family == ActionFamily.CALL_VS_OPEN:
             return (
-                decision_state.limp_count == 0
+                decision_state.actor_position
+                not in (TablePosition.SB, TablePosition.BB)
+                and decision_state.limp_count == 0
                 and decision_state.call_count == 0
                 and action.action_type == ActionType.CALL
             )

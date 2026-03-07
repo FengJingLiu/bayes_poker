@@ -1242,6 +1242,116 @@ class TestOpponentRangePredictor:
         assert accepted is False
         assert predictor.get_preflop_range(5) is None
 
+    def test_shared_adapter_rejects_big_blind_defend_vs_open(self) -> None:
+        """BB defend vs open 不应被当成 cold call 交给共享 adapter。"""
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        decision_prefix = [
+            PlayerAction(
+                player_index=5,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+            PlayerAction(
+                player_index=1,
+                action_type=ActionType.FOLD,
+                amount=0.0,
+                street=Street.PREFLOP,
+            ),
+        ]
+        current_action = PlayerAction(
+            player_index=2,
+            action_type=ActionType.CALL,
+            amount=2.5,
+            street=Street.PREFLOP,
+        )
+
+        accepted = predictor._try_update_with_shared_preflop_engine(
+            player=players[2],
+            action=current_action,
+            table_state=table_state,
+            decision_prefix=decision_prefix,
+            current_prefix=[*decision_prefix, current_action],
+        )
+
+        assert accepted is False
+        assert predictor.get_preflop_range(2) is None
+
+    def test_shared_adapter_rejects_utg_open_jam_without_rai_node(self) -> None:
+        """UTG open jam 在无 `RAI` 节点时必须回退到旧逻辑。"""
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        current_action = PlayerAction(
+            player_index=3,
+            action_type=ActionType.ALL_IN,
+            amount=100.0,
+            street=Street.PREFLOP,
+        )
+
+        accepted = predictor._try_update_with_shared_preflop_engine(
+            player=players[3],
+            action=current_action,
+            table_state=table_state,
+            decision_prefix=[],
+            current_prefix=[current_action],
+        )
+
+        assert accepted is False
+        assert predictor.get_preflop_range(3) is None
+
+    def test_shared_adapter_falls_back_when_strategy_has_no_available_stack(self) -> None:
+        """空策略树不应让首次动作更新抛错。"""
+
+        predictor = create_opponent_range_predictor(
+            preflop_strategy=PreflopStrategy(name="empty", source_dir="/tmp"),
+            stats_repo=None,
+            table_type=TableType.SIX_MAX,
+        )
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+
+        predictor.update_range_on_action(
+            players[3],
+            PlayerAction(
+                player_index=3,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+            table_state,
+            action_prefix=[],
+        )
+
+        preflop_range = predictor.get_preflop_range(3)
+        assert preflop_range is not None
+        assert preflop_range.total_frequency() > 0.0
+
     def test_real_predictor_hero_btn_utg_fold_mp_limp_co_fold(
         self,
         real_predictor: OpponentRangePredictor,

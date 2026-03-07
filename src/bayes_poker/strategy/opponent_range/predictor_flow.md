@@ -30,8 +30,8 @@
 1. 调用 `_try_update_with_shared_preflop_engine(...)`。
 2. 仅当共享状态层能表达当前 `decision_prefix` 时继续:
    - UTG first-in open
-   - 单次 open 面前且无前置 caller 的 cold call
-3. 首次 3bet、squeeze、overcall 仍显式回退到旧逻辑。
+   - 非盲位在单次 open 面前且无前置 caller 的 cold call
+3. 首次 3bet、squeeze、overcall、`SB/BB defend`、open jam 仍显式回退到旧逻辑。
 4. 共享链路依次经过:
    - `build_preflop_decision_state(...)`
    - `PreflopNodeMapper`
