@@ -21,6 +21,10 @@ from typing import TYPE_CHECKING
 from bayes_poker.comm.strategy_history import build_preflop_history
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.player_metrics.enums import TableType
+from bayes_poker.storage.preflop_strategy_repository import (
+    PreflopStrategyRepository,
+    SolverActionRecord,
+)
 from bayes_poker.strategy.preflop_engine.mapper import PreflopNodeMapper
 from bayes_poker.strategy.preflop_engine.policy_calibrator import (
     ActionPolicy,
@@ -138,6 +142,8 @@ class OpponentRangePredictor:
 
     Attributes:
         preflop_strategy: 翻前策略数据。
+        preflop_strategy_repository: 翻前策略 sqlite 仓库。
+        preflop_strategy_source_id: 仓库中的策略源主键。
         stats_repo: 玩家统计仓库。
         table_type: 牌桌类型。
         _preflop_ranges: 内部翻前范围映射(seat_index → PreflopRange)。
@@ -145,6 +151,8 @@ class OpponentRangePredictor:
     """
 
     preflop_strategy: "PreflopStrategy | None" = None
+    preflop_strategy_repository: PreflopStrategyRepository | None = None
+    preflop_strategy_source_id: int | None = None
     stats_repo: "PlayerStatsRepository | None" = None
     table_type: TableType = TableType.SIX_MAX
     _preflop_ranges: dict[int, PreflopRange] = field(default_factory=dict)
@@ -520,7 +528,12 @@ class OpponentRangePredictor:
             当共享内核成功产出后验范围时返回 `True`。
         """
 
-        if self.preflop_strategy is None or table_state.street != Street.PREFLOP:
+        if table_state.street != Street.PREFLOP:
+            return False
+        if (
+            self.preflop_strategy_repository is None
+            or self.preflop_strategy_source_id is None
+        ):
             return False
 
         actor_position = self._resolve_player_table_position(
@@ -552,11 +565,15 @@ class OpponentRangePredictor:
             return False
 
         try:
-            resolved_stack_bb = self.preflop_strategy.resolve_stack_bb(stack_bb)
+            resolved_stack_bb = self.preflop_strategy_repository.resolve_stack_bb(
+                source_id=self.preflop_strategy_source_id,
+                requested_stack_bb=stack_bb,
+            )
         except ValueError:
             return False
         mapper = PreflopNodeMapper(
-            strategy=self.preflop_strategy,
+            repository=self.preflop_strategy_repository,
+            source_id=self.preflop_strategy_source_id,
             stack_bb=resolved_stack_bb,
         )
         try:
@@ -567,22 +584,24 @@ class OpponentRangePredictor:
         if mapped_context.synthetic_template_kind is not None:
             return False
 
-        node = self.preflop_strategy.get_node(
-            resolved_stack_bb,
-            mapped_context.matched_history,
+        if mapped_context.matched_node_id is None:
+            return False
+        actions_by_node_id = self.preflop_strategy_repository.get_actions_for_nodes(
+            (mapped_context.matched_node_id,),
         )
-        if node is None:
+        mapped_actions = actions_by_node_id.get(mapped_context.matched_node_id)
+        if not mapped_actions:
             return False
 
         action_name = self._resolve_observed_action_name(
-            node=node,
+            actions=mapped_actions,
             action=action,
             table_state=table_state,
         )
         if action_name is None:
             return False
 
-        policy = self._build_shared_action_policy(node=node)
+        policy = self._build_shared_action_policy(actions=mapped_actions)
         calibrated_policy = self._build_calibrated_shared_policy(
             policy=policy,
             player=player,
@@ -716,11 +735,15 @@ class OpponentRangePredictor:
 
         return shared_prefix
 
-    def _build_shared_action_policy(self, *, node: "StrategyNode") -> ActionPolicy:
+    def _build_shared_action_policy(
+        self,
+        *,
+        actions: Sequence[SolverActionRecord],
+    ) -> ActionPolicy:
         """将策略节点转换为共享范围引擎可消费的动作策略。
 
         Args:
-            node: 命中的策略节点。
+            actions: 命中的 sqlite 动作记录。
 
         Returns:
             范围引擎可消费的动作策略。
@@ -731,11 +754,11 @@ class OpponentRangePredictor:
                 ActionPolicyAction(
                     action_name=action.action_code,
                     range=PreflopRange(
-                        strategy=list(action.range.strategy),
-                        evs=list(action.range.evs),
+                        strategy=list(action.preflop_range.strategy),
+                        evs=list(action.preflop_range.evs),
                     ),
                 )
-                for action in node.actions
+                for action in actions
             )
         )
 
@@ -993,7 +1016,7 @@ class OpponentRangePredictor:
     def _resolve_observed_action_name(
         self,
         *,
-        node: "StrategyNode",
+        actions: Sequence[SolverActionRecord],
         action: "PlayerAction",
         table_state: "ObservedTableState",
     ) -> str | None:
@@ -1009,19 +1032,19 @@ class OpponentRangePredictor:
         """
 
         if action.action_type == ActionType.FOLD:
-            for strategy_action in node.actions:
+            for strategy_action in actions:
                 if self._is_fold_action_name(strategy_action.action_code):
                     return strategy_action.action_code
             return None
 
         if action.action_type in (ActionType.CALL, ActionType.CHECK):
-            for strategy_action in node.actions:
+            for strategy_action in actions:
                 if self._is_call_action_name(strategy_action.action_code):
                     return strategy_action.action_code
             return None
 
         if action.action_type == ActionType.ALL_IN:
-            for strategy_action in node.actions:
+            for strategy_action in actions:
                 if strategy_action.action_code.upper() == "RAI":
                     return strategy_action.action_code
 
@@ -1037,7 +1060,7 @@ class OpponentRangePredictor:
         target_size_bb = action.amount / table_state.big_blind
         raise_actions = [
             strategy_action
-            for strategy_action in node.actions
+            for strategy_action in actions
             if self._is_aggressive_action_name(strategy_action.action_code)
         ]
         if not raise_actions:
@@ -1714,12 +1737,16 @@ class OpponentRangePredictor:
 
 def create_opponent_range_predictor(
     preflop_strategy: "PreflopStrategy | None" = None,
+    preflop_strategy_repository: PreflopStrategyRepository | None = None,
+    preflop_strategy_source_id: int | None = None,
     stats_repo: "PlayerStatsRepository | None" = None,
     table_type: TableType = TableType.SIX_MAX,
 ) -> OpponentRangePredictor:
     """创建对手范围预测器。"""
     return OpponentRangePredictor(
         preflop_strategy=preflop_strategy,
+        preflop_strategy_repository=preflop_strategy_repository,
+        preflop_strategy_source_id=preflop_strategy_source_id,
         stats_repo=stats_repo,
         table_type=table_type,
     )

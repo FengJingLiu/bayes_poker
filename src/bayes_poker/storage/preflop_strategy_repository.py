@@ -608,6 +608,61 @@ class PreflopStrategyRepository:
             return 0
         return int(row["count"])
 
+    def list_stack_bbs(self, *, source_id: int) -> list[int]:
+        """列出策略源下可用的筹码深度.
+
+        Args:
+            source_id: 所属策略源主键。
+
+        Returns:
+            排序后的筹码深度列表。
+        """
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT DISTINCT stack_bb
+            FROM solver_nodes
+            WHERE source_id = ?
+            ORDER BY stack_bb ASC
+            """,
+            (source_id,),
+        )
+        return [int(row["stack_bb"]) for row in cursor.fetchall()]
+
+    def resolve_stack_bb(
+        self,
+        *,
+        source_id: int,
+        requested_stack_bb: int,
+    ) -> int:
+        """解析最接近的可用筹码深度.
+
+        Args:
+            source_id: 所属策略源主键。
+            requested_stack_bb: 当前请求中的有效筹码深度。
+
+        Returns:
+            仓库内最接近的可用 `stack_bb`。
+
+        Raises:
+            ValueError: 当策略源下没有任何可用 stack 时抛出。
+        """
+
+        available_stacks = self.list_stack_bbs(source_id=source_id)
+        if not available_stacks:
+            raise ValueError("当前策略源没有可用的 stack 配置。")
+        if requested_stack_bb in available_stacks:
+            return requested_stack_bb
+
+        return min(
+            available_stacks,
+            key=lambda stack_bb: (
+                abs(stack_bb - requested_stack_bb),
+                stack_bb,
+            ),
+        )
+
 
 def _encode_action_family(action_family: ActionFamily | None) -> str | None:
     """将动作族编码为 sqlite 文本."""

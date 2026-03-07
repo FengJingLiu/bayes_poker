@@ -434,6 +434,12 @@ class WebSocketServer:
 
                 table.range_predictor = create_opponent_range_predictor(
                     preflop_strategy=self._range_predictor.preflop_strategy,
+                    preflop_strategy_repository=(
+                        self._range_predictor.preflop_strategy_repository
+                    ),
+                    preflop_strategy_source_id=(
+                        self._range_predictor.preflop_strategy_source_id
+                    ),
                     stats_repo=self._range_predictor.stats_repo,
                     table_type=self._range_predictor.table_type,
                 )

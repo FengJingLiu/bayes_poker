@@ -14,11 +14,15 @@ from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepos
 from bayes_poker.table.layout.base import Position as TablePosition
 
 
-def _make_node_record(*, history_full: str = "R2-C") -> ParsedStrategyNodeRecord:
+def _make_node_record(
+    *,
+    history_full: str = "R2-C",
+    stack_bb: int = 100,
+) -> ParsedStrategyNodeRecord:
     """构造最小可用的节点记录."""
 
     return ParsedStrategyNodeRecord(
-        stack_bb=100,
+        stack_bb=stack_bb,
         history_full=history_full,
         history_actions="R-C",
         history_token_count=2,
@@ -115,4 +119,30 @@ def test_repository_reads_candidates_and_actions_by_node_id(tmp_path: Path) -> N
     assert actions_by_node_id[node_ids["R2-C"]][1].action_code == "C"
     assert repo.count_nodes() == 1
     assert repo.count_actions() == 2
+    repo.close()
+
+
+def test_repository_resolve_stack_bb_returns_nearest_available_stack(
+    tmp_path: Path,
+) -> None:
+    """应能按仓库内容解析最接近的可用筹码深度."""
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=1,
+    )
+    repo.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            _make_node_record(history_full="R2-C"),
+            _make_node_record(history_full="R3-C", stack_bb=50),
+        ),
+    )
+
+    assert repo.list_stack_bbs(source_id=source_id) == [50, 100]
+    assert repo.resolve_stack_bb(source_id=source_id, requested_stack_bb=87) == 100
+    assert repo.resolve_stack_bb(source_id=source_id, requested_stack_bb=51) == 50
     repo.close()

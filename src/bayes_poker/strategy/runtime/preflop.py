@@ -21,6 +21,10 @@ from typing import Any
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
+from bayes_poker.storage.preflop_strategy_repository import (
+    PreflopStrategyRepository,
+    SolverActionRecord,
+)
 from bayes_poker.strategy.preflop_engine.mapper import (
     MappedSolverContext,
     PreflopNodeMapper,
@@ -119,6 +123,30 @@ def _pick_action_by_hero_hand(
     best_prob = -1.0
     for action in node.actions:
         prob = action.range.strategy[hero_idx_169]
+        if prob > best_prob:
+            best_action = action
+            best_prob = prob
+    return best_action
+
+
+def _pick_repository_action_by_hero_hand(
+    actions: tuple[SolverActionRecord, ...],
+    hero_idx_169: int,
+) -> SolverActionRecord | None:
+    """根据 hero 手牌从 sqlite 动作记录中选择最佳动作。
+
+    Args:
+        actions: sqlite 动作记录元组。
+        hero_idx_169: Hero 手牌的 169 索引。
+
+    Returns:
+        最佳动作，或 None。
+    """
+
+    best_action: SolverActionRecord | None = None
+    best_prob = -1.0
+    for action in actions:
+        prob = float(action.preflop_range.strategy[hero_idx_169])
         if prob > best_prob:
             best_action = action
             best_prob = prob
@@ -436,6 +464,8 @@ def _pick_action_by_hero_hand_with_raise_scale(
 def create_preflop_strategy(
     *,
     strategy: PreflopStrategy,
+    strategy_repository: PreflopStrategyRepository | None = None,
+    strategy_source_id: int | None = None,
     stats_repo: PlayerStatsRepository | None = None,
     config: PreflopRuntimeConfig | None = None,
 ) -> StrategyHandler:
@@ -443,6 +473,8 @@ def create_preflop_strategy(
 
     Args:
         strategy: 翻前策略对象。
+        strategy_repository: 翻前策略 sqlite 仓库。
+        strategy_source_id: 仓库中的策略源主键。
         stats_repo: 玩家统计仓库(可选)。
         config: 运行时配置(可选)。
 
@@ -451,6 +483,8 @@ def create_preflop_strategy(
     """
     runtime = PreflopRuntime(
         strategy=strategy,
+        strategy_repository=strategy_repository,
+        strategy_source_id=strategy_source_id,
         stats_repo=stats_repo,
         config=config or PreflopRuntimeConfig(),
     )
@@ -468,11 +502,15 @@ class PreflopRuntime:
 
     Attributes:
         strategy: 翻前策略对象。
+        strategy_repository: 翻前策略 sqlite 仓库。
+        strategy_source_id: 仓库中的策略源主键。
         stats_repo: 玩家统计仓库。
         config: 运行时配置。
     """
 
     strategy: PreflopStrategy
+    strategy_repository: PreflopStrategyRepository | None = None
+    strategy_source_id: int | None = None
     stats_repo: PlayerStatsRepository | None = None
     config: PreflopRuntimeConfig = PreflopRuntimeConfig()
 
@@ -607,15 +645,19 @@ class PreflopRuntime:
             return None
         if actor_position in (TablePosition.SB, TablePosition.BB):
             return None
+        if self.strategy_repository is None or self.strategy_source_id is None:
+            return None
 
         try:
-            resolved_stack_bb = self.strategy.resolve_stack_bb(
-                int(payload.get("stack_bb", 0) or 0)
+            resolved_stack_bb = self.strategy_repository.resolve_stack_bb(
+                source_id=self.strategy_source_id,
+                requested_stack_bb=int(round(observed_state.get_hero_stack_bb())),
             )
         except ValueError:
             return None
         mapper = PreflopNodeMapper(
-            strategy=self.strategy,
+            repository=self.strategy_repository,
+            source_id=self.strategy_source_id,
             stack_bb=resolved_stack_bb,
         )
 
@@ -627,14 +669,17 @@ class PreflopRuntime:
         if mapped_context.synthetic_template_kind is not None:
             return None
 
-        mapped_node = self.strategy.get_node(
-            resolved_stack_bb,
-            mapped_context.matched_history,
-        )
-        if mapped_node is None:
+        if mapped_context.matched_node_id is None:
             return None
 
-        chosen = _pick_action_by_hero_hand(mapped_node, hero_idx_169)
+        actions_by_node_id = self.strategy_repository.get_actions_for_nodes(
+            (mapped_context.matched_node_id,),
+        )
+        mapped_actions = actions_by_node_id.get(mapped_context.matched_node_id)
+        if not mapped_actions:
+            return None
+
+        chosen = _pick_repository_action_by_hero_hand(mapped_actions, hero_idx_169)
         if chosen is None:
             return None
 
@@ -642,7 +687,7 @@ class PreflopRuntime:
             payload=payload,
             hero_idx_169=hero_idx_169,
             chosen=chosen,
-            mapped_node=mapped_node,
+            mapped_actions=mapped_actions,
             mapped_context=mapped_context,
         )
 
@@ -651,8 +696,8 @@ class PreflopRuntime:
         *,
         payload: dict[str, Any],
         hero_idx_169: int,
-        chosen: StrategyAction,
-        mapped_node: StrategyNode,
+        chosen: SolverActionRecord,
+        mapped_actions: tuple[SolverActionRecord, ...],
         mapped_context: MappedSolverContext,
     ) -> dict[str, Any]:
         """构造共享 adapter 的 runtime 响应。
@@ -661,7 +706,7 @@ class PreflopRuntime:
             payload: 已补充基础字段的请求 payload。
             hero_idx_169: Hero 手牌的 169 索引。
             chosen: 最终选中的动作。
-            mapped_node: 映射命中的策略节点。
+            mapped_actions: 映射命中节点的动作记录。
             mapped_context: 共享 mapper 输出的解释信息。
 
         Returns:
@@ -680,10 +725,10 @@ class PreflopRuntime:
             {
                 "recommended_action": chosen.action_code,
                 "recommended_amount": float(chosen.bet_size_bb or 0.0),
-                "confidence": float(chosen.range.strategy[hero_idx_169]),
+                "confidence": float(chosen.preflop_range.strategy[hero_idx_169]),
                 "action_evs": {
-                    action.action_code: float(action.range.evs[hero_idx_169])
-                    for action in mapped_node.actions
+                    action.action_code: float(action.preflop_range.evs[hero_idx_169])
+                    for action in mapped_actions
                 },
                 "explanation": {
                     "mapped_level": mapped_context.matched_level,
@@ -1058,7 +1103,25 @@ def create_preflop_strategy_from_directory(
     Returns:
         策略处理器函数。
     """
-    strategy = load_preflop_strategy_from_directory(strategy_dir=strategy_dir)
+    strategy_dir_path = Path(strategy_dir)
+    strategy = load_preflop_strategy_from_directory(strategy_dir=strategy_dir_path)
+    from bayes_poker.strategy.preflop_parse import (
+        build_preflop_strategy_db,
+        open_preflop_strategy_repository,
+    )
+
+    db_path = build_preflop_strategy_db(
+        strategy_dir=strategy_dir_path,
+        db_path=strategy_dir_path / ".preflop_strategy.sqlite3",
+    )
+    repository = open_preflop_strategy_repository(db_path)
+    sources = repository.list_sources()
+    if not sources:
+        raise RuntimeError("预构建 sqlite 策略库后未找到策略源记录。")
     return create_preflop_strategy(
-        strategy=strategy, stats_repo=stats_repo, config=config
+        strategy=strategy,
+        strategy_repository=repository,
+        strategy_source_id=sources[0].source_id,
+        stats_repo=stats_repo,
+        config=config,
     )

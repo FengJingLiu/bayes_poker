@@ -1,9 +1,14 @@
 """翻前策略 runtime 测试（使用 ObservedTableState）。"""
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.strategy.preflop_parse.records import (
+    ParsedStrategyActionRecord,
+    ParsedStrategyNodeRecord,
+)
 from bayes_poker.table.observed_state import (
     Player,
     ObservedTableState,
@@ -14,12 +19,15 @@ from bayes_poker.strategy.preflop_parse.models import (
     StrategyAction,
     StrategyNode,
 )
+from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.range import (
     RANGE_169_LENGTH,
     PreflopRange,
     get_hand_key_to_169_index,
 )
+from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
 from bayes_poker.strategy.runtime.preflop import create_preflop_strategy
+from bayes_poker.table.layout.base import Position as TablePosition
 
 
 def _range_with_single_hand_probability(hand_key: str, prob: float) -> PreflopRange:
@@ -83,6 +91,80 @@ def _create_observed_state_for_test(
     return state
 
 
+def _build_runtime_repository(tmp_path: Path) -> tuple[PreflopStrategyRepository, int]:
+    """构造供 runtime shared adapter 使用的 sqlite 仓库."""
+
+    repository = PreflopStrategyRepository(tmp_path / "runtime_preflop.db")
+    repository.connect()
+    source_id = repository.upsert_source(
+        strategy_name="RuntimeTest",
+        source_dir="/tmp/runtime",
+        format_version=1,
+    )
+    node_ids = repository.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            ParsedStrategyNodeRecord(
+                stack_bb=100,
+                history_full="R2",
+                history_actions="R",
+                history_token_count=1,
+                acting_position="CO",
+                source_file="test.json",
+                action_family=ActionFamily.CALL_VS_OPEN,
+                actor_position=TablePosition.CO,
+                aggressor_position=TablePosition.UTG,
+                call_count=0,
+                limp_count=0,
+                raise_size_bb=2.0,
+                is_in_position=False,
+            ),
+        ),
+    )
+    repository.insert_actions(
+        node_id=node_ids["R2"],
+        action_records=(
+            ParsedStrategyActionRecord(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.20,
+                next_position="",
+                preflop_range=_range_with_single_hand_probability("AKs", 0.0),
+                total_ev=0.0,
+                total_combos=10.0,
+            ),
+            ParsedStrategyActionRecord(
+                order_index=1,
+                action_code="C",
+                action_type="CALL",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.30,
+                next_position="",
+                preflop_range=_range_with_single_hand_probability("AKs", 0.1),
+                total_ev=0.0,
+                total_combos=10.0,
+            ),
+            ParsedStrategyActionRecord(
+                order_index=2,
+                action_code="R9.5",
+                action_type="RAISE",
+                bet_size_bb=9.5,
+                is_all_in=False,
+                total_frequency=0.50,
+                next_position="",
+                preflop_range=_range_with_single_hand_probability("AKs", 1.0),
+                total_ev=0.0,
+                total_combos=10.0,
+            ),
+        ),
+    )
+    return repository, source_id
+
+
 def test_preflop_strategy_uses_query_node_and_recommends_by_hero_hand() -> None:
     """测试策略查询并根据 hero 手牌推荐动作。"""
     strategy = PreflopStrategy(name="Test", source_dir="/tmp")
@@ -142,7 +224,9 @@ def test_preflop_strategy_uses_query_node_and_recommends_by_hero_hand() -> None:
     assert result["recommended_amount"] == 2.0
 
 
-def test_preflop_strategy_uses_shared_engine_for_non_standard_open_size() -> None:
+def test_preflop_strategy_uses_shared_engine_for_non_standard_open_size(
+    tmp_path: Path,
+) -> None:
     """测试 runtime 会用共享映射处理非标准 open 尺度。"""
     strategy = PreflopStrategy(name="Test", source_dir="/tmp")
 
@@ -186,7 +270,12 @@ def test_preflop_strategy_uses_shared_engine_for_non_standard_open_size() -> Non
     )
     strategy.add_node(100, node)
 
-    handler = create_preflop_strategy(strategy=strategy)
+    repository, source_id = _build_runtime_repository(tmp_path)
+    handler = create_preflop_strategy(
+        strategy=strategy,
+        strategy_repository=repository,
+        strategy_source_id=source_id,
+    )
     observed_state = _create_observed_state_for_test(
         hero_seat=4,  # MP
         btn_seat=5,
@@ -213,6 +302,7 @@ def test_preflop_strategy_uses_shared_engine_for_non_standard_open_size() -> Non
     assert explanation.get("mapped_level") == 2
     assert explanation.get("matched_history") == "R2"
     assert explanation.get("price_adjustment_applied") is True
+    repository.close()
 
 
 def test_preflop_strategy_falls_back_when_table_state_is_incomplete() -> None:

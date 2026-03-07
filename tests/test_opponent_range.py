@@ -6,6 +6,7 @@
 from collections.abc import Iterator, Sequence
 from functools import lru_cache
 from pathlib import Path
+import tempfile
 
 import pytest
 
@@ -16,10 +17,15 @@ from bayes_poker.strategy.opponent_range import (
     OpponentRangePredictor,
     create_opponent_range_predictor,
 )
+from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.models import (
     PreflopStrategy,
     StrategyAction,
     StrategyNode,
+)
+from bayes_poker.strategy.preflop_parse.records import (
+    ParsedStrategyActionRecord,
+    ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.preflop_parse.parser import parse_strategy_directory
 from bayes_poker.strategy.range import (
@@ -28,6 +34,7 @@ from bayes_poker.strategy.range import (
     get_hand_key_to_169_index,
 )
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
+from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
 from bayes_poker.table.layout.base import (
     Position as TablePosition,
     get_position_by_seat,
@@ -292,8 +299,112 @@ def _build_shared_predictor_stub() -> OpponentRangePredictor:
                 return aggregated_stats
             return None
 
+    repo_dir = Path(tempfile.mkdtemp(prefix="bp_shared_predictor_"))
+    repository = PreflopStrategyRepository(repo_dir / "preflop_strategy.db")
+    repository.connect()
+    source_id = repository.upsert_source(
+        strategy_name="Stub",
+        source_dir=str(repo_dir),
+        format_version=1,
+    )
+    node_ids = repository.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            ParsedStrategyNodeRecord(
+                stack_bb=100,
+                history_full="",
+                history_actions="",
+                history_token_count=0,
+                acting_position="UTG",
+                source_file="stub.json",
+                action_family=ActionFamily.OPEN,
+                actor_position=TablePosition.UTG,
+                aggressor_position=None,
+                call_count=0,
+                limp_count=0,
+                raise_size_bb=None,
+                is_in_position=None,
+            ),
+            ParsedStrategyNodeRecord(
+                stack_bb=100,
+                history_full="R2",
+                history_actions="R",
+                history_token_count=1,
+                acting_position="MP",
+                source_file="stub.json",
+                action_family=ActionFamily.CALL_VS_OPEN,
+                actor_position=TablePosition.MP,
+                aggressor_position=TablePosition.UTG,
+                call_count=0,
+                limp_count=0,
+                raise_size_bb=2.0,
+                is_in_position=False,
+            ),
+        ),
+    )
+    repository.insert_actions(
+        node_id=node_ids[""],
+        action_records=(
+            ParsedStrategyActionRecord(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.82,
+                next_position="MP",
+                preflop_range=_complement_range(open_range),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+            ParsedStrategyActionRecord(
+                order_index=1,
+                action_code="R2",
+                action_type="RAISE",
+                bet_size_bb=2.0,
+                is_all_in=False,
+                total_frequency=0.18,
+                next_position="MP",
+                preflop_range=open_range,
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+        ),
+    )
+    repository.insert_actions(
+        node_id=node_ids["R2"],
+        action_records=(
+            ParsedStrategyActionRecord(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.70,
+                next_position="CO",
+                preflop_range=_complement_range(call_range),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+            ParsedStrategyActionRecord(
+                order_index=1,
+                action_code="C",
+                action_type="CALL",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.30,
+                next_position="CO",
+                preflop_range=call_range,
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+        ),
+    )
+
     return create_opponent_range_predictor(
         preflop_strategy=strategy,
+        preflop_strategy_repository=repository,
+        preflop_strategy_source_id=source_id,
         stats_repo=_StubRepo(),  # type: ignore[arg-type]
         table_type=TableType.SIX_MAX,
     )
