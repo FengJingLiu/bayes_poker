@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from bayes_poker.strategy.preflop_engine.state import (
@@ -52,12 +53,14 @@ class MappedSolverContext:
         matched_history: 最优候选节点历史.
         distance_score: 最优候选与目标状态的距离.
         candidate_histories: 按距离升序排列的候选历史.
+        candidate_distances: 与候选历史一一对应的距离分值.
     """
 
     matched_level: int
     matched_history: str
     distance_score: float
     candidate_histories: tuple[str, ...]
+    candidate_distances: tuple[float, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +74,7 @@ class _CandidateNodeState:
         aggressor_position: 首个激进行动位置.
         call_count: 激进行动后的跟注人数.
         limp_count: 激进行动前的 limp 人数.
+        raise_size_bb: 首个激进行动的总尺度.
         is_in_position: 相对 aggressor 是否处于位置优势.
     """
 
@@ -80,6 +84,7 @@ class _CandidateNodeState:
     aggressor_position: TablePosition | None
     call_count: int
     limp_count: int
+    raise_size_bb: float | None
     is_in_position: bool | None
 
 
@@ -137,11 +142,13 @@ class PreflopNodeMapper:
             candidate_state = _build_candidate_state(node)
             if candidate_state is None:
                 continue
+            if candidate_state.action_family != state.action_family:
+                continue
             distance = _calculate_distance(state=state, candidate=candidate_state)
             candidates.append((distance, candidate_state))
 
         if not candidates:
-            raise ValueError("当前 stack 下没有可映射的 solver 节点.")
+            raise ValueError("当前 stack 下没有同动作族的 solver 节点.")
 
         candidates.sort(
             key=lambda item: (
@@ -161,6 +168,7 @@ class PreflopNodeMapper:
             candidate_histories=tuple(
                 candidate.history_full for _, candidate in selected
             ),
+            candidate_distances=tuple(distance for distance, _ in selected),
         )
 
 
@@ -189,6 +197,7 @@ def _build_candidate_state(node: StrategyNode) -> _CandidateNodeState | None:
     aggressor_position: TablePosition | None = None
     call_count = 0
     limp_count = 0
+    raise_size_bb: float | None = None
 
     for position, token in zip(action_positions, tokens):
         normalized_token = token.upper()
@@ -206,6 +215,7 @@ def _build_candidate_state(node: StrategyNode) -> _CandidateNodeState | None:
             if aggressor_position is not None:
                 return None
             aggressor_position = position
+            raise_size_bb = _extract_raise_size(normalized_token)
             continue
 
         return None
@@ -231,6 +241,7 @@ def _build_candidate_state(node: StrategyNode) -> _CandidateNodeState | None:
         aggressor_position=aggressor_position,
         call_count=call_count,
         limp_count=limp_count,
+        raise_size_bb=raise_size_bb,
         is_in_position=is_in_position,
     )
 
@@ -304,6 +315,26 @@ def _is_aggressive_token(token: str) -> bool:
     return token == "RAI" or (token.startswith("R") and len(token) > 1)
 
 
+def _extract_raise_size(token: str) -> float | None:
+    """从加注 token 中解析尺度.
+
+    Args:
+        token: 单个历史 token.
+
+    Returns:
+        解析出的总尺度. 无法解析时返回 None.
+    """
+
+    if token == "RAI":
+        return 1000.0
+    if not token.startswith("R") or len(token) <= 1:
+        return None
+    try:
+        return float(token[1:])
+    except ValueError:
+        return None
+
+
 def _is_in_position(
     *,
     actor_position: TablePosition,
@@ -351,6 +382,10 @@ def _calculate_distance(
 
     distance += abs(state.call_count - candidate.call_count) * 20.0
     distance += abs(state.limp_count - candidate.limp_count) * 20.0
+    distance += _calculate_raise_size_distance(
+        state_raise_size_bb=state.raise_size_bb,
+        candidate_raise_size_bb=candidate.raise_size_bb,
+    )
 
     if state.aggressor_position is not None and candidate.aggressor_position is not None:
         state_in_position = _is_in_position(
@@ -361,6 +396,30 @@ def _calculate_distance(
             distance += 100.0
 
     return distance
+
+
+def _calculate_raise_size_distance(
+    *,
+    state_raise_size_bb: float | None,
+    candidate_raise_size_bb: float | None,
+) -> float:
+    """计算加注尺度距离.
+
+    Args:
+        state_raise_size_bb: 真实状态中的加注尺度.
+        candidate_raise_size_bb: 候选节点中的加注尺度.
+
+    Returns:
+        尺度距离分值, 越小越接近.
+    """
+
+    if state_raise_size_bb is None and candidate_raise_size_bb is None:
+        return 0.0
+    if state_raise_size_bb is None or candidate_raise_size_bb is None:
+        return 5.0
+    if state_raise_size_bb <= 0 or candidate_raise_size_bb <= 0:
+        return 5.0
+    return abs(math.log(state_raise_size_bb / candidate_raise_size_bb)) * 10.0
 
 
 __all__ = [

@@ -24,10 +24,12 @@ class ObservedAction:
     Attributes:
         position: 动作者位置.
         action_type: 动作类型.
+        raise_size_bb: 动作总尺度, 单位 BB. 非激进行动为 None.
     """
 
     position: TablePosition
     action_type: ActionType
+    raise_size_bb: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,7 @@ class PreflopDecisionState:
         aggressor_position: 首个激进行动玩家位置.
         call_count: 首个激进行动后的跟注人数.
         limp_count: 首个激进行动前的 limp 人数.
+        raise_size_bb: 首个激进行动的总尺度, 单位 BB.
     """
 
     action_family: ActionFamily
@@ -47,6 +50,7 @@ class PreflopDecisionState:
     aggressor_position: TablePosition | None
     call_count: int
     limp_count: int
+    raise_size_bb: float | None = None
 
 
 def _is_aggressive_action(action_type: ActionType) -> bool:
@@ -91,6 +95,7 @@ def build_preflop_decision_state(
     aggressor_position: TablePosition | None = None
     call_count = 0
     limp_count = 0
+    raise_size_bb: float | None = None
 
     for action in actions:
         if action.action_type == ActionType.CALL:
@@ -109,6 +114,7 @@ def build_preflop_decision_state(
             if aggressor_position is not None:
                 raise ValueError("当前最小实现暂不支持多次加注场景.")
             aggressor_position = action.position
+            raise_size_bb = action.raise_size_bb
             continue
 
         raise ValueError(f"不支持的动作类型: {action.action_type}")
@@ -122,6 +128,7 @@ def build_preflop_decision_state(
             aggressor_position=None,
             call_count=0,
             limp_count=0,
+            raise_size_bb=None,
         )
 
     return PreflopDecisionState(
@@ -130,6 +137,7 @@ def build_preflop_decision_state(
         aggressor_position=aggressor_position,
         call_count=call_count,
         limp_count=limp_count,
+        raise_size_bb=raise_size_bb,
     )
 
 

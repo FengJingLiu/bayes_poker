@@ -21,6 +21,7 @@ def test_build_preflop_decision_state_for_open_plus_cold_call() -> None:
             ObservedAction(
                 position=TablePosition.UTG,
                 action_type=ActionType.RAISE,
+                raise_size_bb=2.5,
             ),
             ObservedAction(
                 position=TablePosition.MP,
@@ -32,6 +33,7 @@ def test_build_preflop_decision_state_for_open_plus_cold_call() -> None:
     assert state.action_family == ActionFamily.CALL_VS_OPEN
     assert state.call_count == 1
     assert state.aggressor_position == TablePosition.UTG
+    assert state.raise_size_bb == 2.5
 
 
 def test_build_preflop_decision_state_for_first_in_open() -> None:
@@ -45,6 +47,7 @@ def test_build_preflop_decision_state_for_first_in_open() -> None:
     assert state.aggressor_position is None
     assert state.call_count == 0
     assert state.limp_count == 0
+    assert state.raise_size_bb is None
 
 
 def test_build_preflop_decision_state_rejects_limp() -> None:

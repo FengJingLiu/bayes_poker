@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from bayes_poker.strategy.preflop_engine.mapper import PreflopNodeMapper
+import pytest
+
+from bayes_poker.strategy.preflop_engine.mapper import (
+    MappedSolverContext,
+    PreflopNodeMapper,
+)
 from bayes_poker.strategy.preflop_engine.solver_prior import SolverPriorBuilder
 from bayes_poker.strategy.preflop_engine.state import (
     ActionFamily,
@@ -100,21 +105,21 @@ def _build_strategy() -> PreflopStrategy:
                     action_code="F",
                     action_type="FOLD",
                     bet_size_bb=None,
-                    total_frequency=0.30,
+                    total_frequency=0.10,
                 ),
                 _make_action(
                     order_index=1,
                     action_code="C",
                     action_type="CALL",
                     bet_size_bb=None,
-                    total_frequency=0.25,
+                    total_frequency=0.80,
                 ),
                 _make_action(
                     order_index=2,
                     action_code="R9.5",
                     action_type="RAISE",
                     bet_size_bb=9.5,
-                    total_frequency=0.45,
+                    total_frequency=0.10,
                 ),
             ),
         ),
@@ -131,14 +136,14 @@ def _build_strategy() -> PreflopStrategy:
                     action_code="F",
                     action_type="FOLD",
                     bet_size_bb=None,
-                    total_frequency=0.35,
+                    total_frequency=0.90,
                 ),
                 _make_action(
                     order_index=1,
                     action_code="R9.5",
                     action_type="RAISE",
                     bet_size_bb=9.5,
-                    total_frequency=0.65,
+                    total_frequency=0.10,
                 ),
             ),
         ),
@@ -171,8 +176,46 @@ def _build_strategy() -> PreflopStrategy:
     return strategy
 
 
-def _build_state() -> PreflopDecisionState:
+def _build_open_only_strategy() -> PreflopStrategy:
+    """构造只包含 open 候选的测试策略.
+
+    Returns:
+        不含 `CALL_VS_OPEN` 节点的测试策略.
+    """
+
+    strategy = PreflopStrategy(name="OpenOnlyStrategy", source_dir="/tmp")
+    strategy.add_node(
+        100,
+        _make_node(
+            history_full="F-F",
+            history_actions="F-F",
+            acting_position=TablePosition.CO,
+            actions=(
+                _make_action(
+                    order_index=0,
+                    action_code="F",
+                    action_type="FOLD",
+                    bet_size_bb=None,
+                    total_frequency=0.20,
+                ),
+                _make_action(
+                    order_index=1,
+                    action_code="R2.5",
+                    action_type="RAISE",
+                    bet_size_bb=2.5,
+                    total_frequency=0.80,
+                ),
+            ),
+        ),
+    )
+    return strategy
+
+
+def _build_state(*, raise_size_bb: float = 2.0) -> PreflopDecisionState:
     """构造 cold call vs open 的测试状态.
+
+    Args:
+        raise_size_bb: open 尺度.
 
     Returns:
         供映射器使用的共享决策状态.
@@ -184,7 +227,28 @@ def _build_state() -> PreflopDecisionState:
         aggressor_position=TablePosition.UTG,
         call_count=1,
         limp_count=0,
+        raise_size_bb=raise_size_bb,
     )
+
+
+def _get_blended_frequency(policy: object, action_name: str) -> float:
+    """读取指定动作的聚合频率.
+
+    Args:
+        policy: 聚合后的先验策略对象.
+        action_name: 动作名称.
+
+    Returns:
+        对应动作的聚合频率.
+
+    Raises:
+        AssertionError: 当目标动作不存在时抛出.
+    """
+
+    for action in policy.actions:
+        if action.action_name == action_name:
+            return action.blended_frequency
+    raise AssertionError(f"未找到动作: {action_name}")
 
 
 def test_mapper_prefers_same_family_and_ip_structure() -> None:
@@ -197,16 +261,43 @@ def test_mapper_prefers_same_family_and_ip_structure() -> None:
     assert context.matched_level == 2
     assert context.matched_history == "R2-C"
     assert context.candidate_histories == ("R2-C", "R2.5-C")
+    assert context.candidate_distances[0] < context.candidate_distances[1]
+
+
+def test_mapper_prefers_closer_raise_size_within_same_family() -> None:
+    """测试同动作族节点会优先匹配尺度更接近的候选."""
+
+    mapper = PreflopNodeMapper(strategy=_build_strategy(), stack_bb=100)
+
+    context = mapper.map_state(_build_state(raise_size_bb=2.45))
+
+    assert context.matched_history == "R2.5-C"
+    assert context.candidate_histories == ("R2.5-C", "R2-C")
+    assert context.candidate_distances[0] < context.candidate_distances[1]
+
+
+def test_mapper_raises_when_no_same_family_candidate_exists() -> None:
+    """测试没有同动作族候选时映射器会拒绝映射."""
+
+    mapper = PreflopNodeMapper(strategy=_build_open_only_strategy(), stack_bb=100)
+
+    with pytest.raises(ValueError, match="同动作族"):
+        mapper.map_state(_build_state())
 
 
 def test_solver_prior_blends_multiple_candidates_by_distance() -> None:
-    """测试 solver 先验读取会合并多个近邻候选的动作集合."""
+    """测试 solver 先验读取会根据真实距离加权而非候选顺序加权."""
 
     strategy = _build_strategy()
-    mapper = PreflopNodeMapper(strategy=strategy, stack_bb=100)
     solver_prior = SolverPriorBuilder(strategy=strategy, stack_bb=100)
-
-    context = mapper.map_state(_build_state())
+    context = MappedSolverContext(
+        matched_level=2,
+        matched_history="R2-C",
+        distance_score=0.0,
+        candidate_histories=("R2.5-C", "R2-C"),
+        candidate_distances=(5.0, 0.0),
+    )
     policy = solver_prior.build_policy(context)
 
     assert policy.action_names == ("F", "C", "R9.5")
+    assert _get_blended_frequency(policy, "C") > _get_blended_frequency(policy, "F")

@@ -38,21 +38,35 @@ class SolverPriorPolicy:
 class SolverPriorBuilder:
     """根据映射结果读取并合成 solver 先验."""
 
-    def __init__(self, *, strategy: PreflopStrategy, stack_bb: int) -> None:
+    def __init__(
+        self,
+        *,
+        strategy: PreflopStrategy,
+        stack_bb: int,
+        distance_tau: float = 1.0,
+    ) -> None:
         """初始化先验构建器.
 
         Args:
             strategy: 可查询的翻前策略.
             stack_bb: 使用的筹码深度.
+            distance_tau: 距离衰减温度参数.
+
+        Raises:
+            ValueError: 当温度参数不为正时抛出.
         """
+
+        if distance_tau <= 0:
+            raise ValueError("distance_tau 必须大于 0.")
 
         self._strategy = strategy
         self._stack_bb = stack_bb
+        self._distance_tau = distance_tau
 
     def build_policy(self, context: MappedSolverContext) -> SolverPriorPolicy:
         """根据映射结果合成先验策略.
 
-        当前最小实现只依赖 `candidate_histories` 的距离排序, 对后续候选使用指数衰减权重.
+        当前最小实现使用 `candidate_distances` 做指数衰减权重.
 
         Args:
             context: 节点映射结果.
@@ -61,17 +75,24 @@ class SolverPriorBuilder:
             聚合后的先验策略.
 
         Raises:
-            ValueError: 当上下文中的候选节点都不可用时抛出.
+            ValueError: 当上下文中的候选节点都不可用, 或距离信息不完整时抛出.
         """
+
+        if len(context.candidate_histories) != len(context.candidate_distances):
+            raise ValueError("候选历史与距离数量不一致.")
 
         action_weights: dict[str, float] = {}
 
-        for index, history in enumerate(context.candidate_histories):
+        for history, distance in zip(
+            context.candidate_histories,
+            context.candidate_distances,
+            strict=True,
+        ):
             node = self._strategy.get_node(self._stack_bb, history)
             if node is None:
                 continue
 
-            candidate_weight = math.exp(-float(index))
+            candidate_weight = math.exp(-distance / self._distance_tau)
             for action in node.actions:
                 action_weights[action.action_code] = action_weights.get(
                     action.action_code,
