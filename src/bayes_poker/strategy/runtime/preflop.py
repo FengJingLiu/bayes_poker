@@ -603,10 +603,17 @@ class PreflopRuntime:
 
         if decision_state.action_family != ActionFamily.CALL_VS_OPEN:
             return None
+        if decision_state.call_count != 0:
+            return None
+        if actor_position in (TablePosition.SB, TablePosition.BB):
+            return None
 
-        resolved_stack_bb = self.strategy.resolve_stack_bb(
-            int(payload.get("stack_bb", 0) or 0)
-        )
+        try:
+            resolved_stack_bb = self.strategy.resolve_stack_bb(
+                int(payload.get("stack_bb", 0) or 0)
+            )
+        except ValueError:
+            return None
         mapper = PreflopNodeMapper(
             strategy=self.strategy,
             stack_bb=resolved_stack_bb,

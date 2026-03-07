@@ -204,7 +204,7 @@ class PreflopHeroEngine:
         shifted = self._shift_mass(
             distribution=distribution,
             target_action=open_action,
-            source_actions=("FOLD", "CALL"),
+            source_actions=self._passive_action_names(distribution),
             amount=min(boost, 0.35),
         )
         if shifted <= _EPSILON:
@@ -246,7 +246,7 @@ class PreflopHeroEngine:
         shifted = self._shift_mass(
             distribution=distribution,
             target_action=aggressive_action,
-            source_actions=("FOLD", "CALL", "CHECK"),
+            source_actions=self._passive_action_names(distribution),
             amount=min(best_limp_fold - 0.40, 0.30),
         )
         if shifted <= _EPSILON:
@@ -278,11 +278,64 @@ class PreflopHeroEngine:
             首个非 `FOLD/CALL/CHECK` 的动作名, 若不存在则返回 None.
         """
 
-        passive_actions = {"FOLD", "CALL", "CHECK"}
         for action_name in self._base_policy.action_names:
-            if action_name not in passive_actions and action_name in distribution:
+            if (
+                self._is_aggressive_action_name(action_name)
+                and action_name in distribution
+            ):
                 return action_name
         return None
+
+    def _passive_action_names(
+        self,
+        distribution: Mapping[str, float],
+    ) -> tuple[str, ...]:
+        """返回当前分布中的被动动作集合.
+
+        Args:
+            distribution: 当前动作分布.
+
+        Returns:
+            当前分布中的被动动作名称元组.
+        """
+
+        return tuple(
+            action_name
+            for action_name in distribution
+            if self._is_passive_action_name(action_name)
+        )
+
+    def _is_passive_action_name(self, action_name: str) -> bool:
+        """判断动作名称是否属于被动动作.
+
+        Args:
+            action_name: 待判断的动作名称.
+
+        Returns:
+            是否为弃牌、跟注或过牌.
+        """
+
+        normalized_name = action_name.upper()
+        return normalized_name in {"F", "FOLD", "C", "CALL", "CHECK", "X"}
+
+    def _is_aggressive_action_name(self, action_name: str) -> bool:
+        """判断动作名称是否属于激进行动.
+
+        Args:
+            action_name: 待判断的动作名称.
+
+        Returns:
+            是否为加注、下注、全下或展示层激进行动.
+        """
+
+        if self._is_passive_action_name(action_name):
+            return False
+
+        normalized_name = action_name.upper()
+        return (
+            normalized_name in {"OPEN", "ISO_RAISE", "BET", "RAISE", "RAI"}
+            or normalized_name.startswith("R")
+        )
 
     def _shift_mass(
         self,
@@ -366,8 +419,12 @@ class PreflopHeroEngine:
             推荐总尺度, 单位 BB. 被动动作返回 None.
         """
 
-        if recommended_action in {"FOLD", "CALL", "CHECK"}:
+        if self._is_passive_action_name(recommended_action):
             return None
+
+        parsed_size = self._parse_raise_size_bb(recommended_action)
+        if parsed_size is not None:
+            return parsed_size
 
         if hero_state.action_family == ActionFamily.OPEN:
             return 2.5
@@ -376,6 +433,31 @@ class PreflopHeroEngine:
             return 3.0 + max(float(hero_state.limp_count), 1.0)
 
         return hero_state.raise_size_bb
+
+    def _parse_raise_size_bb(self, action_name: str) -> float | None:
+        """从动作名称中解析加注总尺度.
+
+        Args:
+            action_name: 动作名称或 solver code.
+
+        Returns:
+            解析得到的总尺度; 不可解析时返回 `None`.
+        """
+
+        normalized_name = action_name.upper()
+        if normalized_name == "RAI":
+            return None
+        if not normalized_name.startswith("R"):
+            return None
+
+        size_text = normalized_name[1:]
+        if not size_text:
+            return None
+
+        try:
+            return float(size_text)
+        except ValueError:
+            return None
 
 
 __all__ = [

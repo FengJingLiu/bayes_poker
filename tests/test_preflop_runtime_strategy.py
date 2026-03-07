@@ -280,6 +280,68 @@ def test_preflop_strategy_falls_back_when_table_state_is_incomplete() -> None:
     assert result["recommended_amount"] == 2.0
 
 
+def test_preflop_strategy_skips_shared_adapter_for_overcall_spot() -> None:
+    """测试 open 后已有 caller 的 overcall 场景不会命中 shared adapter。"""
+    strategy = PreflopStrategy(name="Test", source_dir="/tmp")
+    strategy.add_node(
+        100,
+        StrategyNode(
+            history_full="R2-F-F",
+            history_actions="R-F-F",
+            history_token_count=3,
+            acting_position="BTN",
+            source_file="test.json",
+            actions=(
+                StrategyAction(
+                    order_index=0,
+                    action_code="F",
+                    action_type="FOLD",
+                    bet_size_bb=None,
+                    is_all_in=False,
+                    total_frequency=0.4,
+                    next_position="",
+                    range=_range_with_single_hand_probability("AKs", 0.0),
+                ),
+                StrategyAction(
+                    order_index=1,
+                    action_code="C",
+                    action_type="CALL",
+                    bet_size_bb=None,
+                    is_all_in=False,
+                    total_frequency=0.6,
+                    next_position="",
+                    range=_range_with_single_hand_probability("AKs", 1.0),
+                ),
+            ),
+        ),
+    )
+
+    handler = create_preflop_strategy(strategy=strategy)
+    observed_state = _create_observed_state_for_test(
+        hero_seat=0,  # BTN
+        btn_seat=0,
+        stack_bb=100.0,
+        hero_cards=("As", "Ks"),
+        action_history=[
+            (3, ActionType.RAISE, 2.0),  # UTG open
+            (4, ActionType.CALL, 2.0),  # MP cold call
+            (5, ActionType.FOLD, 0.0),  # CO fold
+        ],
+    )
+
+    result = asyncio.run(
+        handler(
+            "s1",
+            {
+                "state_version": 1,
+                "observed_state": observed_state,
+            },
+        )
+    )
+
+    assert "preflopStrategy[shared]" not in result["notes"]
+
+
 def test_preflop_strategy_skips_shared_adapter_outside_preflop() -> None:
     """测试翻后状态不会误命中 shared preflop adapter。"""
     strategy = PreflopStrategy(name="Test", source_dir="/tmp")

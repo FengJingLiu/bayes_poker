@@ -264,3 +264,76 @@ def test_hero_engine_raises_from_check_branch_against_limp_fold_limper() -> None
 
     assert result.recommended_action == "ISO_RAISE"
     assert "limp-fold" in result.explanation.summary
+
+
+def test_hero_engine_returns_no_size_for_solver_fold_code() -> None:
+    """测试 solver code 风格的 fold 推荐不会错误带出激进行动尺寸。"""
+
+    hero_engine_module = _load_hero_engine_module()
+    hero_engine = hero_engine_module.PreflopHeroEngine(
+        base_policy=_build_policy(
+            {
+                "F": 0.70,
+                "R2.5": 0.30,
+            }
+        )
+    )
+
+    result = hero_engine.decide(
+        hero_state=PreflopDecisionState(
+            action_family=ActionFamily.OPEN,
+            actor_position=TablePosition.BTN,
+            aggressor_position=None,
+            call_count=0,
+            limp_count=0,
+            raise_size_bb=None,
+        ),
+        opponents={},
+    )
+
+    assert result.recommended_action == "F"
+    assert result.recommended_size_bb is None
+
+
+def test_hero_engine_widens_solver_code_open_against_under_defending_blinds() -> None:
+    """测试 solver code 风格动作也会触发 BTN steal 调整。"""
+
+    hero_engine_module = _load_hero_engine_module()
+    hero_engine = hero_engine_module.PreflopHeroEngine(
+        base_policy=_build_policy(
+            {
+                "F": 0.80,
+                "R2.5": 0.20,
+            }
+        )
+    )
+
+    result = hero_engine.decide(
+        hero_state=PreflopDecisionState(
+            action_family=ActionFamily.OPEN,
+            actor_position=TablePosition.BTN,
+            aggressor_position=None,
+            call_count=0,
+            limp_count=0,
+            raise_size_bb=None,
+        ),
+        opponents={
+            TablePosition.SB: hero_engine_module.HeroOpponentContext(
+                tendency_profile=PlayerTendencyProfile(
+                    open_freq=0.10,
+                    call_freq=0.05,
+                    confidence=1.0,
+                )
+            ),
+            TablePosition.BB: hero_engine_module.HeroOpponentContext(
+                tendency_profile=PlayerTendencyProfile(
+                    open_freq=0.08,
+                    call_freq=0.05,
+                    confidence=1.0,
+                )
+            ),
+        },
+    )
+
+    assert result.action_distribution["R2.5"] > 0.20
+    assert "防守偏弱" in result.explanation.summary
