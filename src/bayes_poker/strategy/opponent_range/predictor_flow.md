@@ -25,6 +25,20 @@
 
 ### 3. 首次翻前动作分支
 
+在进入旧场景分类前, 当前实现会先尝试共享 preflop 内核:
+
+1. 调用 `_try_update_with_shared_preflop_engine(...)`。
+2. 仅当共享状态层能表达当前 `decision_prefix` 时继续:
+   - first-in open
+   - 单次 open 面前且无前置 caller 的 cold call
+3. 首次 3bet、squeeze、overcall 仍显式回退到旧逻辑。
+4. 共享链路依次经过:
+   - `build_preflop_decision_state(...)`
+   - `PreflopNodeMapper`
+   - `ActionPolicy` + 最小玩家画像校准
+   - `RangeEngine.observe_action(...)`
+5. 若共享链路任一步失败, 则继续走下面的旧场景分类与回退逻辑。
+
 先通过 `_classify_first_preflop_scenario(...)` 分类场景:
 
 1. `FIRST_LIMP`
@@ -47,7 +61,8 @@
    - `current_prefix` 用于构建 `PreFlopParams` 并查询 RFI 频率。
    - `decision_prefix` 用于查询当前决策节点。
    - 按节点 raise EV 排序并按目标频率裁剪范围。
-4. RFI 场景若构建成功, 直接覆盖该 seat 的翻前范围并返回; 失败时回退缩放。
+4. 若共享链路已经成功, 则不会再进入上述旧 RFI 路径。
+5. RFI 场景若旧路径构建成功, 直接覆盖该 seat 的翻前范围并返回; 失败时回退缩放。
 
 ### 4. 非首次翻前动作分支
 
@@ -60,6 +75,9 @@
 4. 若首次动作是 raise/bet/all-in, 进入
    `_handle_non_first_after_first_raise(...)`。
 5. 以上分支当前都落到 `_apply_preflop_action_scale(...)`。
+
+当前 Task 9 只把共享 adapter 接在“首次翻前动作”的范围构建点上,
+不改变 non-first 分发壳, 以保持 server 增量 action queue 和现有测试契约。
 
 ### 5. 前缀驱动的范围构建(当前聚焦 limp)
 
@@ -141,7 +159,9 @@
 
 ### 9. 当前实现特征
 
-1. 翻前已形成完整主链路, 且 RFI 场景已支持 prefix 频率 + EV 裁剪。
-2. 翻后主流程仍是占位状态。
-3. 多数动作分支当前通过统一缩放模型收敛范围, 后续可逐步替换为
+1. 翻前已形成“共享 adapter + 旧回退”双层主链路。
+2. 首次 open / cold call vs open 会优先尝试共享 preflop 内核。
+3. limp 与多数非首次动作仍通过旧分支或统一缩放模型收敛范围。
+4. 翻后主流程仍是占位状态。
+5. 后续可继续把更多 preflop 分支替换为
    更细化的策略节点映射。

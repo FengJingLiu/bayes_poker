@@ -21,6 +21,23 @@ from typing import TYPE_CHECKING
 from bayes_poker.comm.strategy_history import build_preflop_history
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.player_metrics.enums import TableType
+from bayes_poker.strategy.preflop_engine.mapper import PreflopNodeMapper
+from bayes_poker.strategy.preflop_engine.policy_calibrator import (
+    ActionPolicy,
+    ActionPolicyAction,
+    calibrate_binary_policy,
+    calibrate_multinomial_policy,
+)
+from bayes_poker.strategy.preflop_engine.range_engine import RangeEngine
+from bayes_poker.strategy.preflop_engine.state import (
+    ActionFamily,
+    ObservedAction as EngineObservedAction,
+    build_preflop_decision_state,
+)
+from bayes_poker.strategy.preflop_engine.tendency import (
+    PlayerTendencyProfile,
+    PlayerTendencyProfileBuilder,
+)
 from bayes_poker.strategy.opponent_range.frequency_fill import build_limp_calling_range
 from bayes_poker.strategy.opponent_range.preflop_context import (
     build_opponent_preflop_context,
@@ -36,7 +53,10 @@ from bayes_poker.strategy.range import (
     combos_per_hand,
 )
 from bayes_poker.strategy.runtime.preflop_history import PreflopScenario
-from bayes_poker.table.layout.base import Position as TablePosition
+from bayes_poker.table.layout.base import (
+    Position as TablePosition,
+    get_position_by_seat,
+)
 
 if TYPE_CHECKING:
     from bayes_poker.player_metrics.models import PlayerStats
@@ -129,6 +149,10 @@ class OpponentRangePredictor:
     table_type: TableType = TableType.SIX_MAX
     _preflop_ranges: dict[int, PreflopRange] = field(default_factory=dict)
     _postflop_ranges: dict[int, PostflopRange] = field(default_factory=dict)
+    _shared_range_engine: RangeEngine = field(default_factory=RangeEngine)
+    _shared_profile_builder: PlayerTendencyProfileBuilder = field(
+        default_factory=PlayerTendencyProfileBuilder
+    )
 
     def get_preflop_range(self, seat_index: int) -> PreflopRange | None:
         """获取指定座位的翻前范围。"""
@@ -373,6 +397,15 @@ class OpponentRangePredictor:
         current_prefix: Sequence["PlayerAction"],
     ) -> None:
         """处理首次翻前行动。"""
+        if self._try_update_with_shared_preflop_engine(
+            player=player,
+            action=action,
+            table_state=table_state,
+            decision_prefix=preflop_prefix,
+            current_prefix=current_prefix,
+        ):
+            return
+
         scenario = self._classify_first_preflop_scenario(
             preflop_prefix=preflop_prefix,
             action=action,
@@ -460,6 +493,601 @@ class OpponentRangePredictor:
             action=action,
             table_state=table_state,
         )
+
+    def _try_update_with_shared_preflop_engine(
+        self,
+        *,
+        player: "Player",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+        decision_prefix: Sequence["PlayerAction"],
+        current_prefix: Sequence["PlayerAction"],
+    ) -> bool:
+        """尝试通过共享 preflop 内核更新对手范围。
+
+        当前最小接入只覆盖共享状态层稳定支持的首次翻前动作场景:
+        - first-in open
+        - cold call vs open
+
+        Args:
+            player: 触发动作的玩家。
+            action: 当前观测动作。
+            table_state: 当前牌桌状态。
+            decision_prefix: 玩家行动前的翻前前缀。
+            current_prefix: 包含当前动作的翻前前缀。
+
+        Returns:
+            当共享内核成功产出后验范围时返回 `True`。
+        """
+
+        if self.preflop_strategy is None or table_state.street != Street.PREFLOP:
+            return False
+
+        actor_position = self._resolve_player_table_position(
+            player=player,
+            table_state=table_state,
+        )
+        if actor_position is None:
+            return False
+
+        try:
+            decision_state = build_preflop_decision_state(
+                actor_position=actor_position,
+                actions=self._build_shared_engine_prefix(
+                    action_prefix=decision_prefix,
+                    table_state=table_state,
+                ),
+            )
+        except ValueError:
+            return False
+
+        if not self._is_supported_shared_preflop_update(
+            decision_state=decision_state,
+            action=action,
+        ):
+            return False
+
+        stack_bb = int(round(player.get_stack_bb(table_state.big_blind)))
+        if stack_bb <= 0:
+            return False
+
+        resolved_stack_bb = self.preflop_strategy.resolve_stack_bb(stack_bb)
+        mapper = PreflopNodeMapper(
+            strategy=self.preflop_strategy,
+            stack_bb=resolved_stack_bb,
+        )
+        try:
+            mapped_context = mapper.map_state(decision_state)
+        except ValueError:
+            return False
+
+        if mapped_context.synthetic_template_kind is not None:
+            return False
+
+        node = self.preflop_strategy.get_node(
+            resolved_stack_bb,
+            mapped_context.matched_history,
+        )
+        if node is None:
+            return False
+
+        action_name = self._resolve_observed_action_name(
+            node=node,
+            action=action,
+            table_state=table_state,
+        )
+        if action_name is None:
+            return False
+
+        policy = self._build_shared_action_policy(node=node)
+        calibrated_policy = self._build_calibrated_shared_policy(
+            policy=policy,
+            player=player,
+            table_state=table_state,
+            current_prefix=current_prefix,
+        )
+        prior = self._preflop_ranges.get(player.seat_index)
+        if prior is None:
+            prior = self._get_initial_preflop_range(player, table_state)
+
+        posterior = self._shared_range_engine.observe_action(
+            prior=prior,
+            calibrated_policy=calibrated_policy,
+            action_name=action_name,
+        )
+        self._preflop_ranges[player.seat_index] = posterior.to_preflop_range()
+        return True
+
+    def _is_supported_shared_preflop_update(
+        self,
+        *,
+        decision_state: "PreflopDecisionState",
+        action: "PlayerAction",
+    ) -> bool:
+        """判断当前首次翻前动作是否在共享 adapter 覆盖范围内。
+
+        当前 Task 9 仅允许两类动作成功接管:
+        1. 无人入池时的 first-in open。
+        2. 单次 open 面前且无前置 caller 的 cold call。
+
+        Args:
+            decision_state: 共享状态构建器产出的决策状态。
+            action: 当前观测到的真实动作。
+
+        Returns:
+            当前动作是否应由共享 preflop 内核接管。
+        """
+
+        if decision_state.action_family == ActionFamily.OPEN:
+            return (
+                decision_state.aggressor_position is None
+                and decision_state.call_count == 0
+                and decision_state.limp_count == 0
+                and action.action_type
+                in (
+                    ActionType.BET,
+                    ActionType.RAISE,
+                    ActionType.ALL_IN,
+                )
+            )
+
+        if decision_state.action_family == ActionFamily.CALL_VS_OPEN:
+            return (
+                decision_state.limp_count == 0
+                and decision_state.call_count == 0
+                and action.action_type == ActionType.CALL
+            )
+
+        return False
+
+    def _resolve_player_table_position(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+    ) -> TablePosition | None:
+        """解析玩家在当前牌桌中的逻辑位置。
+
+        Args:
+            player: 目标玩家。
+            table_state: 当前牌桌状态。
+
+        Returns:
+            解析出的逻辑位置; 无法解析时返回 `None`。
+        """
+
+        try:
+            return get_position_by_seat(
+                player.seat_index,
+                table_state.btn_seat,
+                table_state.player_count,
+            )
+        except Exception:
+            return _coerce_table_position(player.position)
+
+    def _build_shared_engine_prefix(
+        self,
+        *,
+        action_prefix: Sequence["PlayerAction"],
+        table_state: "ObservedTableState",
+    ) -> list[EngineObservedAction]:
+        """将翻前动作前缀转换为共享状态构建器输入。
+
+        Args:
+            action_prefix: 玩家行动前的翻前动作前缀。
+            table_state: 当前牌桌状态。
+
+        Returns:
+            共享状态构建器可消费的动作事实列表。
+        """
+
+        shared_prefix: list[EngineObservedAction] = []
+        for prefix_action in action_prefix:
+            if prefix_action.street != Street.PREFLOP:
+                continue
+
+            try:
+                position = get_position_by_seat(
+                    prefix_action.player_index,
+                    table_state.btn_seat,
+                    table_state.player_count,
+                )
+            except Exception:
+                continue
+
+            raise_size_bb: float | None = None
+            if prefix_action.action_type in (
+                ActionType.BET,
+                ActionType.RAISE,
+                ActionType.ALL_IN,
+            ):
+                if table_state.big_blind <= 0:
+                    return []
+                raise_size_bb = prefix_action.amount / table_state.big_blind
+
+            shared_prefix.append(
+                EngineObservedAction(
+                    position=position,
+                    action_type=prefix_action.action_type,
+                    raise_size_bb=raise_size_bb,
+                )
+            )
+
+        return shared_prefix
+
+    def _build_shared_action_policy(self, *, node: "StrategyNode") -> ActionPolicy:
+        """将策略节点转换为共享范围引擎可消费的动作策略。
+
+        Args:
+            node: 命中的策略节点。
+
+        Returns:
+            范围引擎可消费的动作策略。
+        """
+
+        return ActionPolicy(
+            actions=tuple(
+                ActionPolicyAction(
+                    action_name=action.action_code,
+                    range=PreflopRange(
+                        strategy=list(action.range.strategy),
+                        evs=list(action.range.evs),
+                    ),
+                )
+                for action in node.actions
+            )
+        )
+
+    def _build_calibrated_shared_policy(
+        self,
+        *,
+        policy: ActionPolicy,
+        player: "Player",
+        table_state: "ObservedTableState",
+        current_prefix: Sequence["PlayerAction"],
+    ) -> ActionPolicy:
+        """基于当前 prefix 画像校准共享动作策略。
+
+        Args:
+            policy: 基础动作策略。
+            player: 触发动作的玩家。
+            table_state: 当前牌桌状态。
+            current_prefix: 包含当前动作的翻前前缀。
+
+        Returns:
+            结合玩家画像后的校准动作策略。
+        """
+
+        profile = self._build_shared_tendency_profile(
+            player=player,
+            table_state=table_state,
+            current_prefix=current_prefix,
+        )
+        if profile is None:
+            return policy
+
+        target_mix = self._build_shared_target_mix(
+            policy=policy,
+            profile=profile,
+        )
+        if len(policy.actions) == 2:
+            target_action_name = next(
+                (
+                    action_name
+                    for action_name in policy.action_names
+                    if not self._is_fold_action_name(action_name)
+                ),
+                policy.action_names[0],
+            )
+            return calibrate_binary_policy(
+                policy,
+                target_frequency=target_mix[target_action_name],
+                action_name=target_action_name,
+            )
+
+        return calibrate_multinomial_policy(
+            policy,
+            target_mix=target_mix,
+        )
+
+    def _build_shared_tendency_profile(
+        self,
+        *,
+        player: "Player",
+        table_state: "ObservedTableState",
+        current_prefix: Sequence["PlayerAction"],
+    ) -> PlayerTendencyProfile | None:
+        """构建共享校准使用的最小玩家画像。
+
+        Args:
+            player: 触发动作的玩家。
+            table_state: 当前牌桌状态。
+            current_prefix: 包含当前动作的翻前前缀。
+
+        Returns:
+            可用于共享校准的玩家画像; 无法构建时返回 `None`。
+        """
+
+        if self.stats_repo is None:
+            return None
+
+        context = build_opponent_preflop_context(
+            player=player,
+            action_prefix=current_prefix,
+            table_state=table_state,
+            table_type=self.table_type,
+        )
+        if context.params is None:
+            return None
+
+        population_player_stats = get_aggregated_player_stats(
+            self.stats_repo,
+            self.table_type,
+        )
+        if population_player_stats is None:
+            return None
+
+        population_action_stats = population_player_stats.get_preflop_stats(
+            context.params
+        )
+        player_stats = None
+        if player.player_id:
+            player_stats = self.stats_repo.get(player.player_id, self.table_type)
+        if player_stats is None:
+            player_stats = population_player_stats
+
+        return self._shared_profile_builder.build(
+            player_stats=player_stats,
+            params=context.params,
+            population_stats=population_action_stats,
+        )
+
+    def _build_shared_target_mix(
+        self,
+        *,
+        policy: ActionPolicy,
+        profile: PlayerTendencyProfile,
+    ) -> dict[str, float]:
+        """把玩家画像映射为共享校准目标混合。
+
+        Args:
+            policy: 基础动作策略。
+            profile: 玩家倾向画像。
+
+        Returns:
+            以动作编码为键的目标混合分布。
+        """
+
+        fold_actions = [
+            action_name
+            for action_name in policy.action_names
+            if self._is_fold_action_name(action_name)
+        ]
+        call_actions = [
+            action_name
+            for action_name in policy.action_names
+            if self._is_call_action_name(action_name)
+        ]
+        aggressive_actions = [
+            action_name
+            for action_name in policy.action_names
+            if self._is_aggressive_action_name(action_name)
+        ]
+
+        aggressive_total = (
+            _clamp_probability(profile.open_freq) if aggressive_actions else 0.0
+        )
+        call_total = _clamp_probability(profile.call_freq) if call_actions else 0.0
+        if aggressive_total + call_total > 1.0:
+            scale = 1.0 / (aggressive_total + call_total)
+            aggressive_total *= scale
+            call_total *= scale
+
+        fold_total = 0.0
+        if fold_actions:
+            fold_total = max(0.0, 1.0 - aggressive_total - call_total)
+        else:
+            remaining = max(0.0, 1.0 - aggressive_total - call_total)
+            if aggressive_actions and call_actions:
+                aggressive_base = sum(
+                    policy.total_frequency(action_name)
+                    for action_name in aggressive_actions
+                )
+                call_base = sum(
+                    policy.total_frequency(action_name)
+                    for action_name in call_actions
+                )
+                total_base = aggressive_base + call_base
+                if total_base > 0.0:
+                    aggressive_total += remaining * (aggressive_base / total_base)
+                    call_total += remaining * (call_base / total_base)
+                else:
+                    aggressive_total += remaining / 2.0
+                    call_total += remaining / 2.0
+            elif aggressive_actions:
+                aggressive_total += remaining
+            elif call_actions:
+                call_total += remaining
+
+        target_mix = {}
+        target_mix.update(
+            self._distribute_shared_category_target(
+                policy=policy,
+                action_names=fold_actions,
+                target_total=fold_total,
+            )
+        )
+        target_mix.update(
+            self._distribute_shared_category_target(
+                policy=policy,
+                action_names=call_actions,
+                target_total=call_total,
+            )
+        )
+        target_mix.update(
+            self._distribute_shared_category_target(
+                policy=policy,
+                action_names=aggressive_actions,
+                target_total=aggressive_total,
+            )
+        )
+
+        total_target = sum(target_mix.values())
+        if total_target <= 0.0:
+            base_total = {
+                action_name: policy.total_frequency(action_name)
+                for action_name in policy.action_names
+            }
+            normalization = sum(base_total.values())
+            if normalization <= 0.0:
+                equal_weight = 1.0 / float(len(policy.action_names))
+                return {
+                    action_name: equal_weight
+                    for action_name in policy.action_names
+                }
+            return {
+                action_name: base_total[action_name] / normalization
+                for action_name in policy.action_names
+            }
+
+        return {
+            action_name: target_mix.get(action_name, 0.0) / total_target
+            for action_name in policy.action_names
+        }
+
+    def _distribute_shared_category_target(
+        self,
+        *,
+        policy: ActionPolicy,
+        action_names: Sequence[str],
+        target_total: float,
+    ) -> dict[str, float]:
+        """按基础动作权重分摊分类目标频率。
+
+        Args:
+            policy: 基础动作策略。
+            action_names: 需要分摊的动作编码集合。
+            target_total: 该动作分类的目标总频率。
+
+        Returns:
+            该动作分类内各动作的目标频率分布。
+        """
+
+        if not action_names or target_total <= 0.0:
+            return {}
+
+        base_total = sum(policy.total_frequency(action_name) for action_name in action_names)
+        if base_total <= 0.0:
+            equal_weight = target_total / float(len(action_names))
+            return {
+                action_name: equal_weight
+                for action_name in action_names
+            }
+
+        return {
+            action_name: target_total * (policy.total_frequency(action_name) / base_total)
+            for action_name in action_names
+        }
+
+    def _resolve_observed_action_name(
+        self,
+        *,
+        node: "StrategyNode",
+        action: "PlayerAction",
+        table_state: "ObservedTableState",
+    ) -> str | None:
+        """将真实动作映射为策略节点中的动作编码。
+
+        Args:
+            node: 当前命中的策略节点。
+            action: 真实观测到的动作。
+            table_state: 当前牌桌状态。
+
+        Returns:
+            对应的策略动作编码; 若无法映射则返回 `None`。
+        """
+
+        if action.action_type == ActionType.FOLD:
+            for strategy_action in node.actions:
+                if self._is_fold_action_name(strategy_action.action_code):
+                    return strategy_action.action_code
+            return None
+
+        if action.action_type in (ActionType.CALL, ActionType.CHECK):
+            for strategy_action in node.actions:
+                if self._is_call_action_name(strategy_action.action_code):
+                    return strategy_action.action_code
+            return None
+
+        if action.action_type == ActionType.ALL_IN:
+            for strategy_action in node.actions:
+                if strategy_action.action_code.upper() == "RAI":
+                    return strategy_action.action_code
+
+        if action.action_type not in (
+            ActionType.BET,
+            ActionType.RAISE,
+            ActionType.ALL_IN,
+        ):
+            return None
+        if table_state.big_blind <= 0:
+            return None
+
+        target_size_bb = action.amount / table_state.big_blind
+        raise_actions = [
+            strategy_action
+            for strategy_action in node.actions
+            if self._is_aggressive_action_name(strategy_action.action_code)
+        ]
+        if not raise_actions:
+            return None
+
+        best_action = min(
+            raise_actions,
+            key=lambda strategy_action: (
+                abs(float(strategy_action.bet_size_bb or 0.0) - target_size_bb),
+                float(strategy_action.bet_size_bb or 0.0),
+                strategy_action.order_index,
+            ),
+        )
+        return best_action.action_code
+
+    def _is_fold_action_name(self, action_name: str) -> bool:
+        """判断动作编码是否为 fold。
+
+        Args:
+            action_name: 待判断的动作编码。
+
+        Returns:
+            是否为 fold 动作。
+        """
+
+        return action_name.upper() == "F"
+
+    def _is_call_action_name(self, action_name: str) -> bool:
+        """判断动作编码是否为 call/check。
+
+        Args:
+            action_name: 待判断的动作编码。
+
+        Returns:
+            是否为 call/check 动作。
+        """
+
+        return action_name.upper() == "C"
+
+    def _is_aggressive_action_name(self, action_name: str) -> bool:
+        """判断动作编码是否为激进行动。
+
+        Args:
+            action_name: 待判断的动作编码。
+
+        Returns:
+            是否为激进行动。
+        """
+
+        normalized_name = action_name.upper()
+        return normalized_name == "RAI" or normalized_name.startswith("R")
 
     def _get_player_first_preflop_action(
         self,

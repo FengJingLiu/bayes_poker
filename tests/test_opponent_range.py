@@ -11,14 +11,21 @@ import pytest
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.player_metrics.enums import TableType
+from bayes_poker.player_metrics.models import PlayerStats
 from bayes_poker.strategy.opponent_range import (
     OpponentRangePredictor,
     create_opponent_range_predictor,
 )
-from bayes_poker.strategy.preflop_parse.models import PreflopStrategy
+from bayes_poker.strategy.preflop_parse.models import (
+    PreflopStrategy,
+    StrategyAction,
+    StrategyNode,
+)
 from bayes_poker.strategy.preflop_parse.parser import parse_strategy_directory
 from bayes_poker.strategy.range import (
     PreflopRange,
+    RANGE_169_LENGTH,
+    get_hand_key_to_169_index,
 )
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
 from bayes_poker.table.layout.base import (
@@ -137,6 +144,159 @@ def _is_preflop_range_non_uniform(preflop_range: PreflopRange) -> bool:
     min_frequency = min(preflop_range.strategy)
     max_frequency = max(preflop_range.strategy)
     return (max_frequency - min_frequency) > 1e-9
+
+
+def _range_with_hand_weights(
+    hand_weights: dict[str, float],
+    *,
+    default_weight: float = 0.0,
+) -> PreflopRange:
+    """根据若干 169 手牌权重构造范围。
+
+    Args:
+        hand_weights: 手牌到权重的映射。
+        default_weight: 未指定手牌的默认权重。
+
+    Returns:
+        构造后的翻前范围。
+    """
+    strategy = [default_weight] * RANGE_169_LENGTH
+    evs = [default_weight] * RANGE_169_LENGTH
+    index_by_hand = get_hand_key_to_169_index()
+    for hand_key, weight in hand_weights.items():
+        strategy[index_by_hand[hand_key]] = weight
+        evs[index_by_hand[hand_key]] = weight
+    return PreflopRange(strategy=strategy, evs=evs)
+
+
+def _complement_range(base_range: PreflopRange) -> PreflopRange:
+    """为二元动作策略构造补集范围。
+
+    Args:
+        base_range: 基础范围。
+
+    Returns:
+        与基础范围互补的翻前范围。
+    """
+    return PreflopRange(
+        strategy=[1.0 - weight for weight in base_range.strategy],
+        evs=[0.0] * RANGE_169_LENGTH,
+    )
+
+
+def _build_shared_predictor_stub() -> OpponentRangePredictor:
+    """构造 Task 9 使用的共享 adapter stub predictor。
+
+    Returns:
+        带最小策略树和聚合统计 stub 的预测器。
+    """
+
+    strategy = PreflopStrategy(name="Stub", source_dir="/tmp")
+    open_range = _range_with_hand_weights(
+        {
+            "AA": 1.0,
+            "AKs": 0.95,
+            "AQs": 0.80,
+            "KQs": 0.60,
+            "T9s": 0.20,
+        }
+    )
+    call_range = _range_with_hand_weights(
+        {
+            "JJ": 0.95,
+            "TT": 0.90,
+            "99": 0.88,
+            "AQs": 0.82,
+            "KQs": 0.78,
+            "A5s": 0.15,
+        }
+    )
+    strategy.add_node(
+        100,
+        StrategyNode(
+            history_full="",
+            history_actions="",
+            history_token_count=0,
+            acting_position="UTG",
+            source_file="stub.json",
+            actions=(
+                StrategyAction(
+                    order_index=0,
+                    action_code="F",
+                    action_type="FOLD",
+                    bet_size_bb=None,
+                    is_all_in=False,
+                    total_frequency=0.82,
+                    next_position="MP",
+                    range=_complement_range(open_range),
+                ),
+                StrategyAction(
+                    order_index=1,
+                    action_code="R2",
+                    action_type="RAISE",
+                    bet_size_bb=2.0,
+                    is_all_in=False,
+                    total_frequency=0.18,
+                    next_position="MP",
+                    range=open_range,
+                ),
+            ),
+        ),
+    )
+    strategy.add_node(
+        100,
+        StrategyNode(
+            history_full="R2",
+            history_actions="R",
+            history_token_count=1,
+            acting_position="MP",
+            source_file="stub.json",
+            actions=(
+                StrategyAction(
+                    order_index=0,
+                    action_code="F",
+                    action_type="FOLD",
+                    bet_size_bb=None,
+                    is_all_in=False,
+                    total_frequency=0.70,
+                    next_position="CO",
+                    range=_complement_range(call_range),
+                ),
+                StrategyAction(
+                    order_index=1,
+                    action_code="C",
+                    action_type="CALL",
+                    bet_size_bb=None,
+                    is_all_in=False,
+                    total_frequency=0.30,
+                    next_position="CO",
+                    range=call_range,
+                ),
+            ),
+        ),
+    )
+
+    aggregated_stats = PlayerStats(
+        player_name="aggregated_sixmax_100",
+        table_type=TableType.SIX_MAX,
+    )
+    for action_stats in aggregated_stats.preflop_stats:
+        action_stats.raise_samples = 18
+        action_stats.check_call_samples = 12
+        action_stats.fold_samples = 70
+
+    class _StubRepo:
+        def get(self, player_name: str, table_type: TableType) -> PlayerStats | None:
+            _ = table_type
+            if player_name == "aggregated_sixmax_100":
+                return aggregated_stats
+            return None
+
+    return create_opponent_range_predictor(
+        preflop_strategy=strategy,
+        stats_repo=_StubRepo(),  # type: ignore[arg-type]
+        table_type=TableType.SIX_MAX,
+    )
 
 
 @pytest.fixture
@@ -823,6 +983,233 @@ class TestOpponentRangePredictor:
         assert preflop_range is not None
         assert preflop_range.total_frequency() > 0.0
         assert _is_preflop_range_non_uniform(preflop_range)
+
+    def test_rfi_utg_first_in_routes_through_shared_adapter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """UTG first-in open 应命中共享 preflop adapter。"""
+        original = getattr(
+            OpponentRangePredictor,
+            "_try_update_with_shared_preflop_engine",
+            None,
+        )
+        shared_calls: list[tuple[int, ActionType]] = []
+
+        def _wrapped_shared_adapter(
+            self: OpponentRangePredictor,
+            *,
+            player: Player,
+            action: PlayerAction,
+            table_state: ObservedTableState,
+            decision_prefix: Sequence[PlayerAction],
+            current_prefix: Sequence[PlayerAction],
+        ) -> bool:
+            shared_calls.append((player.seat_index, action.action_type))
+            if original is None:
+                return False
+            return original(
+                self,
+                player=player,
+                action=action,
+                table_state=table_state,
+                decision_prefix=decision_prefix,
+                current_prefix=current_prefix,
+            )
+
+        monkeypatch.setattr(
+            OpponentRangePredictor,
+            "_try_update_with_shared_preflop_engine",
+            _wrapped_shared_adapter,
+            raising=False,
+        )
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        predictor.update_range_on_action(
+            players[3],
+            PlayerAction(
+                player_index=3,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+            table_state,
+            action_prefix=[],
+        )
+
+        preflop_range = predictor.get_preflop_range(3)
+        assert shared_calls == [(3, ActionType.RAISE)]
+        assert preflop_range is not None
+        assert preflop_range.total_frequency() > 0.0
+        assert _is_preflop_range_non_uniform(preflop_range)
+
+    def test_cold_call_vs_open_uses_shared_adapter_and_condensed_range(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """MP cold call vs open 应通过共享内核生成非均匀范围。"""
+        original = getattr(
+            OpponentRangePredictor,
+            "_try_update_with_shared_preflop_engine",
+            None,
+        )
+        shared_calls: list[tuple[int, ActionType]] = []
+
+        def _wrapped_shared_adapter(
+            self: OpponentRangePredictor,
+            *,
+            player: Player,
+            action: PlayerAction,
+            table_state: ObservedTableState,
+            decision_prefix: Sequence[PlayerAction],
+            current_prefix: Sequence[PlayerAction],
+        ) -> bool:
+            shared_calls.append((player.seat_index, action.action_type))
+            if original is None:
+                return False
+            return original(
+                self,
+                player=player,
+                action=action,
+                table_state=table_state,
+                decision_prefix=decision_prefix,
+                current_prefix=current_prefix,
+            )
+
+        monkeypatch.setattr(
+            OpponentRangePredictor,
+            "_try_update_with_shared_preflop_engine",
+            _wrapped_shared_adapter,
+            raising=False,
+        )
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        predictor.update_range_on_action(
+            players[4],
+            PlayerAction(
+                player_index=4,
+                action_type=ActionType.CALL,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+            table_state,
+            action_prefix=[
+                PlayerAction(
+                    player_index=3,
+                    action_type=ActionType.RAISE,
+                    amount=2.5,
+                    street=Street.PREFLOP,
+                ),
+            ],
+        )
+
+        preflop_range = predictor.get_preflop_range(4)
+        assert shared_calls == [(4, ActionType.CALL)]
+        assert preflop_range is not None
+        assert preflop_range.total_frequency() > 0.0
+        assert _is_preflop_range_non_uniform(preflop_range)
+
+    def test_shared_adapter_rejects_three_bet_first_action(self) -> None:
+        """首次 3bet 不应由 Task 9 的共享 adapter 接管。"""
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        decision_prefix = [
+            PlayerAction(
+                player_index=3,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+        ]
+        current_action = PlayerAction(
+            player_index=4,
+            action_type=ActionType.RAISE,
+            amount=8.0,
+            street=Street.PREFLOP,
+        )
+
+        accepted = predictor._try_update_with_shared_preflop_engine(
+            player=players[4],
+            action=current_action,
+            table_state=table_state,
+            decision_prefix=decision_prefix,
+            current_prefix=[*decision_prefix, current_action],
+        )
+
+        assert accepted is False
+        assert predictor.get_preflop_range(4) is None
+
+    def test_shared_adapter_rejects_overcall_vs_open_plus_call(self) -> None:
+        """open 后已有 cold call 时, overcall 不应由共享 adapter 接管。"""
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+        decision_prefix = [
+            PlayerAction(
+                player_index=3,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+            PlayerAction(
+                player_index=4,
+                action_type=ActionType.CALL,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+        ]
+        current_action = PlayerAction(
+            player_index=5,
+            action_type=ActionType.CALL,
+            amount=2.5,
+            street=Street.PREFLOP,
+        )
+
+        accepted = predictor._try_update_with_shared_preflop_engine(
+            player=players[5],
+            action=current_action,
+            table_state=table_state,
+            decision_prefix=decision_prefix,
+            current_prefix=[*decision_prefix, current_action],
+        )
+
+        assert accepted is False
+        assert predictor.get_preflop_range(5) is None
 
     def test_real_predictor_hero_btn_utg_fold_mp_limp_co_fold(
         self,
