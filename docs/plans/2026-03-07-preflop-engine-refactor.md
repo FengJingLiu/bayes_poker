@@ -4,7 +4,7 @@
 
 **Goal:** 为项目引入统一的 preflop 推理内核, 同时打通节点映射、对手范围更新和 Hero 决策三条主线, 并让 `runtime` 与 `opponent_range` 复用同一套核心逻辑。
 
-**Architecture:** 新增 `strategy/preflop_engine` 共享目录, 以 `PreflopDecisionState -> NodeMapper -> SolverPrior -> PlayerTendencyProfile -> PolicyCalibrator` 为主干, 在此基础上分化出 `RangeEngine` 和 `HeroDecisionEngine`。现有 `runtime/preflop.py` 和 `opponent_range/predictor.py` 退化为 adapter, 新增代码全部使用 Google 风格中文注释与完整类型标注。
+**Architecture:** 新增 `strategy/preflop_engine` 共享目录, 以 `PreflopDecisionState -> PreflopNodeMapper -> SolverPrior -> PlayerTendencyProfile -> PolicyCalibrator` 为主干, 在此基础上分化出 `RangeEngine` 和 `PreflopHeroEngine`。现有 `runtime/preflop.py` 和 `opponent_range/predictor.py` 退化为 adapter, 新增代码全部使用 Google 风格中文注释与完整类型标注。
 
 **Tech Stack:** Python 3.12, pytest, uv, 现有 `PreflopStrategy` / `PreflopRange` / `PlayerStatsRepository` / `ObservedTableState` 模型。
 
