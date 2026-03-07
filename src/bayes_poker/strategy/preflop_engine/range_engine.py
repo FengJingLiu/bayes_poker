@@ -15,10 +15,10 @@ class RangeBelief:
     """翻前后验范围包装器.
 
     Attributes:
-        posterior_range: 后验范围.
+        _posterior_range: 私有后验范围.
     """
 
-    posterior_range: PreflopRange
+    _posterior_range: PreflopRange
 
     def total_frequency(self) -> float:
         """返回后验范围的总频率.
@@ -27,7 +27,7 @@ class RangeBelief:
             组合加权后的总频率.
         """
 
-        return self.posterior_range.total_frequency()
+        return self._posterior_range.total_frequency()
 
     def __getitem__(self, hand_key: str) -> float:
         """按 169 手牌键读取后验频率.
@@ -42,7 +42,7 @@ class RangeBelief:
             KeyError: 当手牌键不存在时抛出.
         """
 
-        return self.posterior_range.strategy[_HAND_KEY_TO_169_INDEX[hand_key]]
+        return self._posterior_range.strategy[_HAND_KEY_TO_169_INDEX[hand_key]]
 
     def to_preflop_range(self) -> PreflopRange:
         """返回后验范围副本.
@@ -52,8 +52,8 @@ class RangeBelief:
         """
 
         return PreflopRange(
-            strategy=list(self.posterior_range.strategy),
-            evs=list(self.posterior_range.evs),
+            strategy=list(self._posterior_range.strategy),
+            evs=list(self._posterior_range.evs),
         )
 
 
@@ -79,7 +79,7 @@ class RangeEngine:
         """
 
         return RangeBelief(
-            posterior_range=update_posterior(
+            _posterior_range=update_posterior(
                 prior=prior,
                 calibrated_policy=calibrated_policy,
                 action_name=action_name,

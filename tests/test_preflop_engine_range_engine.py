@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 from types import ModuleType
 
+import pytest
+
 from bayes_poker.strategy.preflop_engine.policy_calibrator import (
     ActionPolicy,
     ActionPolicyAction,
@@ -104,7 +106,7 @@ def test_range_engine_builds_tight_utg_open_posterior() -> None:
         action_name="OPEN",
     )
 
-    assert posterior.total_frequency() > 0.0
+    assert posterior.total_frequency() == pytest.approx(1.0)
     assert posterior["KQo"] < posterior["AQo"]
 
 
@@ -132,4 +134,67 @@ def test_range_engine_builds_condensed_mp_cold_call_range() -> None:
         action_name="CALL",
     )
 
+    assert posterior.total_frequency() == pytest.approx(1.0)
     assert posterior["AJs"] > posterior["AKs"]
+
+
+def test_range_engine_posterior_respects_non_uniform_prior() -> None:
+    """测试后验会受到非均匀先验影响.
+
+    Returns:
+        None.
+    """
+
+    range_engine_module = _load_range_engine_module()
+    range_engine = range_engine_module.RangeEngine()
+    calibrated_policy = _build_action_policy(
+        action_name="OPEN",
+        default_frequency=0.05,
+        overrides={
+            "AQo": 0.30,
+            "KQo": 0.30,
+        },
+    )
+    prior = _build_range(
+        default_frequency=0.01,
+        overrides={
+            "AQo": 0.10,
+            "KQo": 0.60,
+        },
+    )
+
+    posterior = range_engine.observe_action(
+        prior=prior,
+        calibrated_policy=calibrated_policy,
+        action_name="OPEN",
+    )
+
+    assert posterior.total_frequency() == pytest.approx(1.0)
+    assert posterior["KQo"] > posterior["AQo"]
+
+
+def test_range_belief_hides_mutable_posterior_range() -> None:
+    """测试后验包装器不会公开可变范围对象.
+
+    Returns:
+        None.
+    """
+
+    range_engine_module = _load_range_engine_module()
+    range_engine = range_engine_module.RangeEngine()
+    calibrated_policy = _build_action_policy(
+        action_name="OPEN",
+        default_frequency=0.05,
+        overrides={
+            "AQo": 0.30,
+        },
+    )
+
+    posterior = range_engine.observe_action(
+        prior=PreflopRange.ones(),
+        calibrated_policy=calibrated_policy,
+        action_name="OPEN",
+    )
+
+    with pytest.raises(AttributeError):
+        _ = posterior.posterior_range
