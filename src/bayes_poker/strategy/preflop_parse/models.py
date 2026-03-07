@@ -117,6 +117,33 @@ class PreflopStrategy:
         """
         return sorted(self.nodes_by_stack.keys())
 
+    def resolve_stack_bb(self, requested_stack_bb: int) -> int:
+        """解析最接近的可用 stack 大小。
+
+        Args:
+            requested_stack_bb: 当前请求中的有效筹码深度。
+
+        Returns:
+            策略内最接近的可用 stack_bb。
+
+        Raises:
+            ValueError: 当策略中没有任何可用 stack 时抛出。
+        """
+
+        available_stacks = self.stack_sizes()
+        if not available_stacks:
+            raise ValueError("当前策略没有可用的 stack 配置。")
+        if requested_stack_bb in self.nodes_by_stack:
+            return requested_stack_bb
+
+        return min(
+            available_stacks,
+            key=lambda stack_bb: (
+                abs(stack_bb - requested_stack_bb),
+                stack_bb,
+            ),
+        )
+
     def node_count(self, stack_bb: int | None = None) -> int:
         """获取节点数量。
 

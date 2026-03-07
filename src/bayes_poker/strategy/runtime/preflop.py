@@ -16,10 +16,20 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from bayes_poker.domain.poker import ActionType
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
+from bayes_poker.strategy.preflop_engine.mapper import (
+    MappedSolverContext,
+    PreflopNodeMapper,
+)
+from bayes_poker.strategy.preflop_engine.state import (
+    ActionFamily,
+    ObservedAction as EngineObservedAction,
+    build_preflop_decision_state,
+)
 from bayes_poker.strategy.runtime.base import StrategyHandler, _base_response
 from bayes_poker.strategy.preflop_parse.models import (
     PreflopStrategy,
@@ -42,9 +52,7 @@ from bayes_poker.table.layout.base import (
     Position as TablePosition,
     get_position_by_seat,
 )
-
-if TYPE_CHECKING:
-    from bayes_poker.table.observed_state import ObservedTableState
+from bayes_poker.table.observed_state import ObservedTableState
 
 LOGGER = logging.getLogger(__name__)
 
@@ -137,6 +145,86 @@ def _coerce_table_position(value: Any) -> TablePosition | None:
         except ValueError:
             return None
     return None
+
+
+def _extract_observed_state(payload: dict[str, Any]) -> ObservedTableState | None:
+    """从 payload 中提取观察者状态。
+
+    Args:
+        payload: 策略请求 payload。
+
+    Returns:
+        `ObservedTableState` 实例; 不存在或反序列化失败时返回 `None`。
+    """
+
+    observed_state = payload.get("observed_state")
+    if isinstance(observed_state, ObservedTableState):
+        return observed_state
+
+    table_state = payload.get("table_state")
+    if not isinstance(table_state, dict):
+        return None
+
+    try:
+        return ObservedTableState.from_dict(table_state)
+    except Exception:
+        LOGGER.warning("preflopStrategy: table_state 反序列化失败")
+        return None
+
+
+def _build_preflop_engine_actions(
+    observed_state: ObservedTableState,
+) -> list[EngineObservedAction]:
+    """将观察者动作历史转换为共享引擎动作事实。
+
+    Args:
+        observed_state: 观察者状态。
+
+    Returns:
+        共享状态构建器可消费的动作序列。
+    """
+
+    actions: list[EngineObservedAction] = []
+    for action in observed_state.action_history:
+        if action.action_type not in (
+            ActionType.FOLD,
+            ActionType.CHECK,
+            ActionType.CALL,
+            ActionType.BET,
+            ActionType.RAISE,
+            ActionType.ALL_IN,
+        ):
+            continue
+
+        try:
+            position = get_position_by_seat(
+                action.player_index,
+                observed_state.btn_seat,
+                observed_state.player_count,
+            )
+        except Exception:
+            continue
+
+        raise_size_bb: float | None = None
+        if action.action_type in (
+            ActionType.BET,
+            ActionType.RAISE,
+            ActionType.ALL_IN,
+        ):
+            if observed_state.big_blind > 0:
+                raise_size_bb = action.amount / observed_state.big_blind
+            else:
+                raise_size_bb = action.amount
+
+        actions.append(
+            EngineObservedAction(
+                position=position,
+                action_type=action.action_type,
+                raise_size_bb=raise_size_bb,
+            )
+        )
+
+    return actions
 
 
 def _find_first_raise(node: StrategyNode) -> StrategyAction | None:
@@ -376,7 +464,7 @@ class PreflopRuntime:
         state_version = int(payload.get("state_version", 0) or 0)
 
         # 优先从 observed_state 提取信息
-        observed_state: ObservedTableState | None = payload.get("observed_state")
+        observed_state = _extract_observed_state(payload)
 
         if observed_state is not None:
             # 新格式: 直接从 ObservedTableState 提取
@@ -416,8 +504,19 @@ class PreflopRuntime:
             "hero_position": hero_position,
             "player_count": player_count,
         }
+        if observed_state is not None:
+            enriched_payload.setdefault("players", observed_state.players)
+            enriched_payload.setdefault("btn_seat", observed_state.btn_seat)
 
         try:
+            shared_result = self._decide_with_shared_engine_adapter(
+                payload=enriched_payload,
+                hero_idx_169=hero_idx_169,
+                observed_state=observed_state,
+            )
+            if shared_result is not None:
+                return shared_result
+
             if layer == PreflopLayer.RFI:
                 return self._decide_rfi(
                     enriched_payload, stack_bb, hero_idx_169, history
@@ -436,6 +535,130 @@ class PreflopRuntime:
         except Exception as exc:
             LOGGER.exception("preflopStrategy 计算异常: %s", exc)
             return _base_response(state_version, f"preflopStrategy: 异常 {exc}")
+
+    def _decide_with_shared_engine_adapter(
+        self,
+        *,
+        payload: dict[str, Any],
+        hero_idx_169: int,
+        observed_state: ObservedTableState | None,
+    ) -> dict[str, Any] | None:
+        """尝试通过共享 preflop 内核做最小 runtime 适配。
+
+        当前最小接入只覆盖共享状态层已经稳定支持的
+        `CALL_VS_OPEN` 场景。其他场景返回 `None`, 继续走旧 runtime。
+
+        Args:
+            payload: 已补充基础字段的请求 payload。
+            hero_idx_169: Hero 手牌的 169 索引。
+            observed_state: 观察者状态。
+
+        Returns:
+            共享 adapter 生成的策略响应; 当前场景不适合接入时返回 `None`。
+        """
+
+        if observed_state is None:
+            return None
+
+        actor_position = observed_state.get_hero_position_enum()
+        if actor_position is None:
+            return None
+
+        try:
+            decision_state = build_preflop_decision_state(
+                actor_position=actor_position,
+                actions=_build_preflop_engine_actions(observed_state),
+            )
+        except ValueError:
+            return None
+
+        if decision_state.action_family != ActionFamily.CALL_VS_OPEN:
+            return None
+
+        resolved_stack_bb = self.strategy.resolve_stack_bb(
+            int(payload.get("stack_bb", 0) or 0)
+        )
+        mapper = PreflopNodeMapper(
+            strategy=self.strategy,
+            stack_bb=resolved_stack_bb,
+        )
+
+        try:
+            mapped_context = mapper.map_state(decision_state)
+        except ValueError:
+            return None
+
+        if mapped_context.synthetic_template_kind is not None:
+            return None
+
+        mapped_node = self.strategy.get_node(
+            resolved_stack_bb,
+            mapped_context.matched_history,
+        )
+        if mapped_node is None:
+            return None
+
+        chosen = _pick_action_by_hero_hand(mapped_node, hero_idx_169)
+        if chosen is None:
+            return None
+
+        return self._build_shared_engine_response(
+            payload=payload,
+            hero_idx_169=hero_idx_169,
+            chosen=chosen,
+            mapped_node=mapped_node,
+            mapped_context=mapped_context,
+        )
+
+    def _build_shared_engine_response(
+        self,
+        *,
+        payload: dict[str, Any],
+        hero_idx_169: int,
+        chosen: StrategyAction,
+        mapped_node: StrategyNode,
+        mapped_context: MappedSolverContext,
+    ) -> dict[str, Any]:
+        """构造共享 adapter 的 runtime 响应。
+
+        Args:
+            payload: 已补充基础字段的请求 payload。
+            hero_idx_169: Hero 手牌的 169 索引。
+            chosen: 最终选中的动作。
+            mapped_node: 映射命中的策略节点。
+            mapped_context: 共享 mapper 输出的解释信息。
+
+        Returns:
+            兼容现有 runtime 契约的响应字典。
+        """
+
+        state_version = int(payload.get("state_version", 0) or 0)
+        result = _base_response(
+            state_version,
+            (
+                "preflopStrategy[shared]: "
+                f"matched={mapped_context.matched_history}, mapped_level={mapped_context.matched_level}"
+            ),
+        )
+        result.update(
+            {
+                "recommended_action": chosen.action_code,
+                "recommended_amount": float(chosen.bet_size_bb or 0.0),
+                "confidence": float(chosen.range.strategy[hero_idx_169]),
+                "action_evs": {
+                    action.action_code: float(action.range.evs[hero_idx_169])
+                    for action in mapped_node.actions
+                },
+                "explanation": {
+                    "mapped_level": mapped_context.matched_level,
+                    "matched_history": mapped_context.matched_history,
+                    "candidate_histories": list(mapped_context.candidate_histories),
+                    "price_adjustment_applied": mapped_context.price_adjustment_applied,
+                    "price_adjustment_factor": mapped_context.price_adjustment_factor,
+                },
+            }
+        )
+        return result
 
     # ----------------------------
     # RFI

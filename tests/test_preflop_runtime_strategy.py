@@ -142,6 +142,79 @@ def test_preflop_strategy_uses_query_node_and_recommends_by_hero_hand() -> None:
     assert result["recommended_amount"] == 2.0
 
 
+def test_preflop_strategy_uses_shared_engine_for_non_standard_open_size() -> None:
+    """测试 runtime 会用共享映射处理非标准 open 尺度。"""
+    strategy = PreflopStrategy(name="Test", source_dir="/tmp")
+
+    fold_action = StrategyAction(
+        order_index=0,
+        action_code="F",
+        action_type="FOLD",
+        bet_size_bb=None,
+        is_all_in=False,
+        total_frequency=0.20,
+        next_position="",
+        range=_range_with_single_hand_probability("AKs", 0.0),
+    )
+    call_action = StrategyAction(
+        order_index=1,
+        action_code="C",
+        action_type="CALL",
+        bet_size_bb=None,
+        is_all_in=False,
+        total_frequency=0.30,
+        next_position="",
+        range=_range_with_single_hand_probability("AKs", 0.1),
+    )
+    raise_action = StrategyAction(
+        order_index=2,
+        action_code="R9.5",
+        action_type="RAISE",
+        bet_size_bb=9.5,
+        is_all_in=False,
+        total_frequency=0.50,
+        next_position="",
+        range=_range_with_single_hand_probability("AKs", 1.0),
+    )
+    node = StrategyNode(
+        history_full="R2",
+        history_actions="R",
+        history_token_count=1,
+        acting_position="MP",
+        source_file="test.json",
+        actions=(fold_action, call_action, raise_action),
+    )
+    strategy.add_node(100, node)
+
+    handler = create_preflop_strategy(strategy=strategy)
+    observed_state = _create_observed_state_for_test(
+        hero_seat=4,  # MP
+        btn_seat=5,
+        stack_bb=90.0,
+        hero_cards=("As", "Ks"),
+        action_history=[
+            (2, ActionType.RAISE, 3.0),  # UTG open 3bb
+        ],
+    )
+
+    result = asyncio.run(
+        handler(
+            "s1",
+            {
+                "state_version": 1,
+                "observed_state": observed_state,
+            },
+        )
+    )
+
+    assert result.get("recommended_action") == "R9.5"
+    assert result.get("recommended_amount") == 9.5
+    explanation = result.get("explanation", {})
+    assert explanation.get("mapped_level") == 2
+    assert explanation.get("matched_history") == "R2"
+    assert explanation.get("price_adjustment_applied") is True
+
+
 def test_preflop_strategy_adjusts_iso_raise_size_by_num_limpers() -> None:
     """测试 ISO 加注尺度根据 limper 数量调整。"""
     strategy = PreflopStrategy(name="Test", source_dir="/tmp")
