@@ -6,7 +6,8 @@
 from bayes_poker.comm.server import ServerConfig, WebSocketServer
 from bayes_poker.comm.session import SessionManager, TableSession
 from bayes_poker.domain.poker import ActionType, Street
-from bayes_poker.table.observed_state import ObservedTableState, Player, PlayerAction
+from bayes_poker.domain.table import Player, PlayerAction
+from bayes_poker.table.observed_state import ObservedTableState
 
 
 class _RecordingPredictor:

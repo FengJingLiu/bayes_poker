@@ -10,12 +10,14 @@ import numpy as np
 from pathlib import Path
 
 import bayes_poker.table as table_module
+import bayes_poker.table.layout.base as table_layout_base_module
 import bayes_poker.table.layout as table_layout_module
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import (
     Position as DomainPosition,
     Player,
     PlayerAction,
+    SEAT_ORDER_6MAX,
     get_position_by_seat as get_domain_position_by_seat,
 )
 from bayes_poker.ocr.schema import (
@@ -25,11 +27,7 @@ from bayes_poker.ocr.schema import (
     RelativeArea,
     Color,
 )
-from bayes_poker.table.layout.base import (
-    ScaledLayout,
-    get_position_by_seat,
-    SEAT_ORDER_6MAX,
-)
+from bayes_poker.table.layout.base import ScaledLayout
 from bayes_poker.table.layout.gg_6max import (
     GGPoker6MaxLayout,
     get_gg_6max_layout,
@@ -120,28 +118,35 @@ class TestPosition:
         assert get_domain_position_by_seat(0, 0, 6) == DomainPosition.BTN
 
     def test_table_module_reexports_domain_position_tools(self) -> None:
-        assert table_module.Position is DomainPosition
-        assert table_module.get_position_by_seat is get_domain_position_by_seat
+        assert not hasattr(table_module, "Position")
+        assert not hasattr(table_module, "Player")
+        assert not hasattr(table_module, "PlayerAction")
+        assert not hasattr(table_module, "get_position_by_seat")
 
     def test_table_layout_module_no_longer_exports_position_tools(self) -> None:
         assert not hasattr(table_layout_module, "Position")
         assert not hasattr(table_layout_module, "get_position_by_seat")
 
+    def test_table_layout_base_module_no_longer_exports_position_tools(self) -> None:
+        assert not hasattr(table_layout_base_module, "Position")
+        assert not hasattr(table_layout_base_module, "get_position_by_seat")
+        assert not hasattr(table_layout_base_module, "SEAT_ORDER_6MAX")
+
     def test_get_position_by_seat_btn_is_seat_0(self) -> None:
-        assert get_position_by_seat(0, 0, 6) == DomainPosition.BTN
-        assert get_position_by_seat(1, 0, 6) == DomainPosition.SB
-        assert get_position_by_seat(2, 0, 6) == DomainPosition.BB
-        assert get_position_by_seat(3, 0, 6) == DomainPosition.UTG
-        assert get_position_by_seat(4, 0, 6) == DomainPosition.MP
-        assert get_position_by_seat(5, 0, 6) == DomainPosition.CO
+        assert get_domain_position_by_seat(0, 0, 6) == DomainPosition.BTN
+        assert get_domain_position_by_seat(1, 0, 6) == DomainPosition.SB
+        assert get_domain_position_by_seat(2, 0, 6) == DomainPosition.BB
+        assert get_domain_position_by_seat(3, 0, 6) == DomainPosition.UTG
+        assert get_domain_position_by_seat(4, 0, 6) == DomainPosition.MP
+        assert get_domain_position_by_seat(5, 0, 6) == DomainPosition.CO
 
     def test_get_position_by_seat_btn_is_seat_3(self) -> None:
-        assert get_position_by_seat(3, 3, 6) == DomainPosition.BTN
-        assert get_position_by_seat(4, 3, 6) == DomainPosition.SB
-        assert get_position_by_seat(5, 3, 6) == DomainPosition.BB
-        assert get_position_by_seat(0, 3, 6) == DomainPosition.UTG
-        assert get_position_by_seat(1, 3, 6) == DomainPosition.MP
-        assert get_position_by_seat(2, 3, 6) == DomainPosition.CO
+        assert get_domain_position_by_seat(3, 3, 6) == DomainPosition.BTN
+        assert get_domain_position_by_seat(4, 3, 6) == DomainPosition.SB
+        assert get_domain_position_by_seat(5, 3, 6) == DomainPosition.BB
+        assert get_domain_position_by_seat(0, 3, 6) == DomainPosition.UTG
+        assert get_domain_position_by_seat(1, 3, 6) == DomainPosition.MP
+        assert get_domain_position_by_seat(2, 3, 6) == DomainPosition.CO
 
 
 class TestGGPoker6MaxLayout:

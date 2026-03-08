@@ -9,12 +9,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from bayes_poker.domain.table import (
-    Position,
-    SEAT_ORDER_6MAX,
-    SEAT_ORDER_9MAX,
-    get_position_by_seat,
-)
 from bayes_poker.ocr.schema import (
     Area,
     AreaColorCheck,

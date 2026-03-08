@@ -1,6 +1,7 @@
 """对手翻前上下文构建测试。"""
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.domain.table import Player, PlayerAction
 from bayes_poker.player_metrics.enums import Position, TableType
 from bayes_poker.strategy.opponent_range.preflop_context import (
     build_opponent_preflop_context,
@@ -9,7 +10,7 @@ from bayes_poker.strategy.runtime.preflop_history import (
     PreflopScenario,
     classify_preflop_scenario,
 )
-from bayes_poker.table.observed_state import ObservedTableState, Player, PlayerAction
+from bayes_poker.table.observed_state import ObservedTableState
 
 
 def _build_sixmax_players() -> list[Player]:

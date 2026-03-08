@@ -4,12 +4,6 @@
 """
 
 from bayes_poker.domain.poker import ActionType, Street
-from bayes_poker.domain.table import (
-    Player,
-    PlayerAction,
-    Position,
-    get_position_by_seat,
-)
 from bayes_poker.table.detector import (
     ParsedCard,
     TableDetector,
@@ -43,9 +37,6 @@ __all__ = [
     "ParsedCard",
     "ParserInfo",
     "ParserState",
-    "Player",
-    "PlayerAction",
-    "Position",
     "ScaledLayout",
     "Street",
     "TableContext",
@@ -56,5 +47,4 @@ __all__ = [
     "create_manager",
     "create_observed_state",
     "get_gg_6max_layout",
-    "get_position_by_seat",
 ]
