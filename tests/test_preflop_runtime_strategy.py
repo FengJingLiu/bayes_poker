@@ -546,6 +546,44 @@ def test_preflop_strategy_adjusts_iso_raise_size_by_num_limpers() -> None:
     assert result["recommended_amount"] == 4.0
 
 
+def test_player_cluster_beliefs_reads_smoothed_player_stats() -> None:
+    """玩家聚类信念读取应显式启用玩家池平滑。"""
+
+    from bayes_poker.player_metrics.enums import TableType
+    from bayes_poker.player_metrics.models import PlayerStats
+    from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
+    from bayes_poker.strategy.runtime.preflop import _player_cluster_beliefs
+
+    class StubRepo(PlayerStatsRepository):
+        def __init__(self) -> None:
+            pass
+
+        def get(
+            self,
+            player_name: str,
+            table_type: TableType,
+            *,
+            smooth_with_pool: bool = False,
+            pool_prior_strength: float = 20.0,
+        ) -> PlayerStats | None:  # type: ignore[override]
+            self.last_call = (
+                player_name,
+                table_type,
+                smooth_with_pool,
+                pool_prior_strength,
+            )
+            stats = PlayerStats(player_name="BB", table_type=TableType.SIX_MAX)
+            for each in stats.preflop_stats:
+                each.fold_samples = 100
+            return stats
+
+    repo = StubRepo()
+
+    _player_cluster_beliefs(repo, "villain", TableType.SIX_MAX)
+
+    assert repo.last_call == ("villain", TableType.SIX_MAX, True, 20.0)
+
+
 def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
     """测试 SB open 根据 BB 统计调整频率。"""
     from bayes_poker.player_metrics.enums import TableType
@@ -556,8 +594,15 @@ def test_preflop_strategy_adjusts_sb_open_frequency_by_bb_stats() -> None:
         def __init__(self) -> None:
             pass
 
-        def get(self, player_name: str, table_type: TableType) -> PlayerStats | None:  # type: ignore[override]
-            _ = player_name, table_type
+        def get(
+            self,
+            player_name: str,
+            table_type: TableType,
+            *,
+            smooth_with_pool: bool = False,
+            pool_prior_strength: float = 20.0,
+        ) -> PlayerStats | None:  # type: ignore[override]
+            _ = player_name, table_type, smooth_with_pool, pool_prior_strength
             stats = PlayerStats(player_name="BB", table_type=TableType.SIX_MAX)
             for s in stats.preflop_stats:
                 s.fold_samples = 100

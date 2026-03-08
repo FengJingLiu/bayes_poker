@@ -61,6 +61,9 @@ from bayes_poker.table.observed_state import ObservedTableState
 LOGGER = logging.getLogger(__name__)
 
 
+_POOL_PRIOR_STRENGTH = 20.0
+
+
 @dataclass(slots=True, frozen=True)
 class PreflopRuntimeConfig:
     """翻前 runtime 配置(最小集合，后续可扩展)。
@@ -387,7 +390,12 @@ def _player_cluster_beliefs(
     Returns:
         (fold_belief, raise_belief) 二元组。
     """
-    stats = repo.get(player_id, table_type)
+    stats = repo.get(
+        player_id,
+        table_type,
+        smooth_with_pool=True,
+        pool_prior_strength=_POOL_PRIOR_STRENGTH,
+    )
     if stats is None or not stats.preflop_stats:
         return 1.0 / 3, 1.0 / 3
 
