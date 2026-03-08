@@ -11,7 +11,7 @@ from bayes_poker.strategy.preflop_parse.records import (
 )
 from bayes_poker.strategy.range import PreflopRange
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 
 
 def _make_node_record(
@@ -29,8 +29,8 @@ def _make_node_record(
         acting_position="CO",
         source_file="test.json",
         action_family=ActionFamily.CALL_VS_OPEN,
-        actor_position=TablePosition.CO,
-        aggressor_position=TablePosition.UTG,
+        actor_position=Position.CO,
+        aggressor_position=Position.UTG,
         call_count=1,
         limp_count=0,
         raise_size_bb=2.0,
@@ -109,7 +109,7 @@ def test_repository_reads_candidates_and_actions_by_node_id(tmp_path: Path) -> N
         source_id=source_id,
         stack_bb=100,
         action_family=ActionFamily.CALL_VS_OPEN,
-        actor_position=TablePosition.CO,
+        actor_position=Position.CO,
     )
     actions_by_node_id = repo.get_actions_for_nodes((node_ids["R2-C"],))
 

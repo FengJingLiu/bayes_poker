@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.parser import parse_strategy_node_records
 
@@ -58,8 +58,8 @@ def test_parse_strategy_node_records_extracts_mapper_fields() -> None:
     assert node_record.history_full == "R2-C"
     assert node_record.history_actions == "R-C"
     assert node_record.action_family == ActionFamily.CALL_VS_OPEN
-    assert node_record.actor_position == TablePosition.CO
-    assert node_record.aggressor_position == TablePosition.UTG
+    assert node_record.actor_position == Position.CO
+    assert node_record.aggressor_position == Position.UTG
     assert node_record.call_count == 1
     assert node_record.limp_count == 0
     assert node_record.raise_size_bb == pytest.approx(2.0)

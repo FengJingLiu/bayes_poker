@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 from bayes_poker.strategy.preflop_engine.explain import (
     DecisionExplanation,
     build_summary,
@@ -70,7 +70,7 @@ class PreflopHeroEngine:
         self,
         *,
         hero_state: PreflopDecisionState,
-        opponents: Mapping[TablePosition, HeroOpponentContext] | None = None,
+        opponents: Mapping[Position, HeroOpponentContext] | None = None,
     ) -> HeroDecision:
         """根据共享状态与对手上下文产出 Hero 决策.
 
@@ -91,7 +91,7 @@ class PreflopHeroEngine:
         self,
         *,
         hero_state: PreflopDecisionState,
-        opponents: Mapping[TablePosition, HeroOpponentContext],
+        opponents: Mapping[Position, HeroOpponentContext],
     ) -> HeroDecision:
         """构建最小 Hero 决策结果.
 
@@ -108,7 +108,7 @@ class PreflopHeroEngine:
 
         if (
             hero_state.action_family == ActionFamily.OPEN
-            and hero_state.actor_position == TablePosition.BTN
+            and hero_state.actor_position == Position.BTN
         ):
             self._apply_btn_steal_adjustment(
                 distribution=distribution,
@@ -162,7 +162,7 @@ class PreflopHeroEngine:
         self,
         *,
         distribution: dict[str, float],
-        opponents: Mapping[TablePosition, HeroOpponentContext],
+        opponents: Mapping[Position, HeroOpponentContext],
         reasons: list[str],
     ) -> None:
         """对 BTN first-in open 应用偷盲扩宽.
@@ -179,7 +179,7 @@ class PreflopHeroEngine:
 
         boost = 0.0
         under_defending_positions: list[str] = []
-        for blind_position in (TablePosition.SB, TablePosition.BB):
+        for blind_position in (Position.SB, Position.BB):
             context = opponents.get(blind_position)
             profile = context.tendency_profile if context is not None else None
             if profile is None:
@@ -217,7 +217,7 @@ class PreflopHeroEngine:
         self,
         *,
         distribution: dict[str, float],
-        opponents: Mapping[TablePosition, HeroOpponentContext],
+        opponents: Mapping[Position, HeroOpponentContext],
         reasons: list[str],
     ) -> None:
         """对 limp 场景应用隔离加注调整.

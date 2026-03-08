@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
@@ -138,8 +138,8 @@ class SolverNodeRecord:
     acting_position: str
     source_file: str
     action_family: ActionFamily | None
-    actor_position: TablePosition | None
-    aggressor_position: TablePosition | None
+    actor_position: Position | None
+    aggressor_position: Position | None
     call_count: int
     limp_count: int
     raise_size_bb: float | None
@@ -490,7 +490,7 @@ class PreflopStrategyRepository:
         source_id: int,
         stack_bb: int,
         action_family: ActionFamily,
-        actor_position: TablePosition,
+        actor_position: Position,
     ) -> list[SolverNodeRecord]:
         """按 mapper 的主筛选条件读取候选节点.
 
@@ -672,7 +672,7 @@ def _encode_action_family(action_family: ActionFamily | None) -> str | None:
     return action_family.value
 
 
-def _encode_position(position: TablePosition | None) -> str | None:
+def _encode_position(position: Position | None) -> str | None:
     """将位置编码为 sqlite 文本."""
 
     if position is None:
@@ -696,12 +696,12 @@ def _decode_action_family(value: str | None) -> ActionFamily | None:
     return ActionFamily(value)
 
 
-def _decode_position(value: str | None) -> TablePosition | None:
+def _decode_position(value: str | None) -> Position | None:
     """将 sqlite 文本解码为位置枚举."""
 
     if value is None:
         return None
-    return TablePosition(value)
+    return Position(value)
 
 
 def _decode_bool(value: int | None) -> bool | None:

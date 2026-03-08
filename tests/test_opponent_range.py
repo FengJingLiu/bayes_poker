@@ -14,7 +14,7 @@ from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import (
     Player,
     PlayerAction,
-    Position as TablePosition,
+    Position as Position,
     get_position_by_seat,
 )
 from bayes_poker.player_metrics.enums import TableType
@@ -92,7 +92,7 @@ def real_stats_repo() -> Iterator[PlayerStatsRepository]:
 
 
 def _build_sixmax_players_with_hero_btn(
-    hero_position: str | TablePosition = TablePosition.BTN,
+    hero_position: str | Position = Position.BTN,
 ) -> list[Player]:
     """按 Hero 位置动态构建 6-max 玩家列表。
 
@@ -103,17 +103,17 @@ def _build_sixmax_players_with_hero_btn(
         玩家列表。
     """
     if isinstance(hero_position, str):
-        target_position = TablePosition(hero_position.upper())
+        target_position = Position(hero_position.upper())
     else:
         target_position = hero_position
 
     seat_order_6max = [
-        TablePosition.BTN,
-        TablePosition.SB,
-        TablePosition.BB,
-        TablePosition.UTG,
-        TablePosition.MP,
-        TablePosition.CO,
+        Position.BTN,
+        Position.SB,
+        Position.BB,
+        Position.UTG,
+        Position.MP,
+        Position.CO,
     ]
     hero_offset = seat_order_6max.index(target_position)
     btn_seat = (-hero_offset) % 6
@@ -316,7 +316,7 @@ def _build_shared_predictor_stub() -> OpponentRangePredictor:
                 acting_position="UTG",
                 source_file="stub.json",
                 action_family=ActionFamily.OPEN,
-                actor_position=TablePosition.UTG,
+                actor_position=Position.UTG,
                 aggressor_position=None,
                 call_count=0,
                 limp_count=0,
@@ -331,8 +331,8 @@ def _build_shared_predictor_stub() -> OpponentRangePredictor:
                 acting_position="MP",
                 source_file="stub.json",
                 action_family=ActionFamily.CALL_VS_OPEN,
-                actor_position=TablePosition.MP,
-                aggressor_position=TablePosition.UTG,
+                actor_position=Position.MP,
+                aggressor_position=Position.UTG,
                 call_count=0,
                 limp_count=0,
                 raise_size_bb=2.0,
@@ -452,7 +452,7 @@ class TestOpponentRangePredictor:
         player = Player(
             seat_index=1,
             player_id="opponent",
-            position=TablePosition.BTN,
+            position=Position.BTN,
         )
         table_state = ObservedTableState(
             player_count=6,
@@ -486,7 +486,7 @@ class TestOpponentRangePredictor:
         player = Player(
             seat_index=1,
             player_id="opponent",
-            position=TablePosition.UTG,
+            position=Position.UTG,
         )
         table_state = ObservedTableState(
             player_count=6,
@@ -528,7 +528,7 @@ class TestOpponentRangePredictor:
         player = Player(
             seat_index=1,
             player_id="opponent",
-            position=TablePosition.CO,
+            position=Position.CO,
         )
 
         # 先在 preflop 行动
@@ -576,7 +576,7 @@ class TestOpponentRangePredictor:
         player = Player(
             seat_index=1,
             player_id="opponent",
-            position=TablePosition.BB,
+            position=Position.BB,
         )
 
         # 先在 preflop 行动
@@ -645,7 +645,7 @@ class TestOpponentRangePredictor:
                 self.non_first_calls += 1
 
         predictor = _SpyPredictor()
-        player = Player(seat_index=4, player_id="mp", position=TablePosition.MP)
+        player = Player(seat_index=4, player_id="mp", position=Position.MP)
         state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -695,7 +695,7 @@ class TestOpponentRangePredictor:
                 self.non_first_calls += 1
 
         predictor = _SpyPredictor()
-        player = Player(seat_index=4, player_id="mp", position=TablePosition.MP)
+        player = Player(seat_index=4, player_id="mp", position=Position.MP)
         state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -731,7 +731,7 @@ class TestOpponentRangePredictor:
         player = Player(
             seat_index=1,
             player_id="opponent",
-            position=TablePosition.MP,
+            position=Position.MP,
         )
         table_state = ObservedTableState(
             player_count=6,
@@ -769,7 +769,7 @@ class TestOpponentRangePredictor:
         player = Player(
             seat_index=1,
             player_id="opponent",
-            position=TablePosition.UTG,
+            position=Position.UTG,
         )
         table_state = ObservedTableState(
             player_count=6,
@@ -803,7 +803,7 @@ class TestOpponentRangePredictor:
             player = Player(
                 seat_index=seat,
                 player_id=f"player_{seat}",
-                position=TablePosition.MP,
+                position=Position.MP,
             )
             table_state = ObservedTableState(
                 player_count=6,
@@ -953,7 +953,7 @@ class TestOpponentRangePredictor:
         player = Player(
             seat_index=5,
             player_id="villain",
-            position=TablePosition.CO,
+            position=Position.CO,
             stack=100.0,
         )
         table_state = ObservedTableState(
@@ -966,31 +966,31 @@ class TestOpponentRangePredictor:
                 Player(
                     seat_index=0,
                     player_id="btn",
-                    position=TablePosition.BTN,
+                    position=Position.BTN,
                     stack=100.0,
                 ),
                 Player(
                     seat_index=1,
                     player_id="sb",
-                    position=TablePosition.SB,
+                    position=Position.SB,
                     stack=100.0,
                 ),
                 Player(
                     seat_index=2,
                     player_id="bb",
-                    position=TablePosition.BB,
+                    position=Position.BB,
                     stack=100.0,
                 ),
                 Player(
                     seat_index=3,
                     player_id="utg",
-                    position=TablePosition.UTG,
+                    position=Position.UTG,
                     stack=100.0,
                 ),
                 Player(
                     seat_index=4,
                     player_id="mp",
-                    position=TablePosition.MP,
+                    position=Position.MP,
                     stack=100.0,
                 ),
                 player,

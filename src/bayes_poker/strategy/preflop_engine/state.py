@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from bayes_poker.domain.poker import ActionType
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 
 
 class ActionFamily(str, Enum):
@@ -28,7 +28,7 @@ class ObservedAction:
         raise_size_bb: 动作总尺度, 单位 BB. 非激进行动为 None.
     """
 
-    position: TablePosition
+    position: Position
     action_type: ActionType
     raise_size_bb: float | None = None
 
@@ -47,8 +47,8 @@ class PreflopDecisionState:
     """
 
     action_family: ActionFamily
-    actor_position: TablePosition
-    aggressor_position: TablePosition | None
+    actor_position: Position
+    aggressor_position: Position | None
     call_count: int
     limp_count: int
     raise_size_bb: float | None = None
@@ -73,7 +73,7 @@ def _is_aggressive_action(action_type: ActionType) -> bool:
 
 def build_preflop_decision_state(
     *,
-    actor_position: TablePosition,
+    actor_position: Position,
     actions: Sequence[ObservedAction],
 ) -> PreflopDecisionState:
     """根据翻前动作前缀构建共享决策状态.
@@ -93,7 +93,7 @@ def build_preflop_decision_state(
         ValueError: 当动作序列属于当前最小实现未覆盖的场景时抛出.
     """
 
-    aggressor_position: TablePosition | None = None
+    aggressor_position: Position | None = None
     call_count = 0
     limp_count = 0
     raise_size_bb: float | None = None

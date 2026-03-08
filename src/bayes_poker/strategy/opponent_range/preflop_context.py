@@ -12,7 +12,7 @@ from bayes_poker.domain.poker import Street
 from bayes_poker.domain.table import (
     Player,
     PlayerAction,
-    Position as TablePosition,
+    Position as Position,
     get_position_by_seat,
 )
 from bayes_poker.player_metrics.enums import (
@@ -42,7 +42,7 @@ class OpponentPreflopContext:
 def _resolve_table_position(
     player: "Player",
     table_state: "ObservedTableState",
-) -> TablePosition | None:
+) -> Position | None:
     """解析玩家位置枚举。
 
     Args:
@@ -54,7 +54,7 @@ def _resolve_table_position(
     """
     if table_state.player_count == 2:
         offset = (player.seat_index - table_state.btn_seat) % 2
-        return TablePosition.SB if offset == 0 else TablePosition.BB
+        return Position.SB if offset == 0 else Position.BB
 
     if table_state.player_count in (6, 9):
         try:
@@ -69,7 +69,7 @@ def _resolve_table_position(
     return player.position
 
 
-def _map_table_position_to_metrics(position: TablePosition) -> MetricsPosition:
+def _map_table_position_to_metrics(position: Position) -> MetricsPosition:
     """映射布局位置到统计位置枚举。
 
     Args:
@@ -79,13 +79,13 @@ def _map_table_position_to_metrics(position: TablePosition) -> MetricsPosition:
         统计模块位置枚举。
     """
     mapping = {
-        TablePosition.SB: MetricsPosition.SMALL_BLIND,
-        TablePosition.BB: MetricsPosition.BIG_BLIND,
-        TablePosition.UTG: MetricsPosition.UTG,
-        TablePosition.MP: MetricsPosition.HJ,
-        TablePosition.HJ: MetricsPosition.HJ,
-        TablePosition.CO: MetricsPosition.CO,
-        TablePosition.BTN: MetricsPosition.BUTTON,
+        Position.SB: MetricsPosition.SMALL_BLIND,
+        Position.BB: MetricsPosition.BIG_BLIND,
+        Position.UTG: MetricsPosition.UTG,
+        Position.MP: MetricsPosition.HJ,
+        Position.HJ: MetricsPosition.HJ,
+        Position.CO: MetricsPosition.CO,
+        Position.BTN: MetricsPosition.BUTTON,
     }
     return mapping.get(position, MetricsPosition.EMPTY)
 
@@ -112,7 +112,7 @@ def _map_domain_action_to_metrics(action: DomainActionType) -> MetricsActionType
 
 def _is_in_position_on_flop(
     *,
-    table_position: TablePosition,
+    table_position: Position,
     player_count: int,
 ) -> bool:
     """判断是否在翻后处于位置优势。
@@ -125,8 +125,8 @@ def _is_in_position_on_flop(
         是否翻后在位置。
     """
     if player_count == 2:
-        return table_position == TablePosition.SB
-    return table_position == TablePosition.BTN
+        return table_position == Position.SB
+    return table_position == Position.BTN
 
 
 def _build_params_for_player_first_preflop_action(

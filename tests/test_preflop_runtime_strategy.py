@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
-from bayes_poker.domain.table import Player, Position as TablePosition
+from bayes_poker.domain.table import Player, Position as Position
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
     ParsedStrategyNodeRecord,
@@ -108,8 +108,8 @@ def _build_runtime_repository(tmp_path: Path) -> tuple[PreflopStrategyRepository
                 acting_position="CO",
                 source_file="test.json",
                 action_family=ActionFamily.CALL_VS_OPEN,
-                actor_position=TablePosition.CO,
-                aggressor_position=TablePosition.UTG,
+                actor_position=Position.CO,
+                aggressor_position=Position.UTG,
                 call_count=0,
                 limp_count=0,
                 raise_size_bb=2.0,

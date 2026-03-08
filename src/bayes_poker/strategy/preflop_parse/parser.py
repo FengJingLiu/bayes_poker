@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.models import (
     STRATEGY_VECTOR_LENGTH,
@@ -30,35 +30,35 @@ LOGGER = logging.getLogger(__name__)
 _FILENAME_PATTERN = re.compile(
     r"^(?P<strategy_name>.+?)_(?P<stack_bb>\d+)(?:_(?P<history>.+))?$"
 )
-_PREFLOP_ACTION_ORDER_6MAX: tuple[TablePosition, ...] = (
-    TablePosition.UTG,
-    TablePosition.MP,
-    TablePosition.CO,
-    TablePosition.BTN,
-    TablePosition.SB,
-    TablePosition.BB,
+_PREFLOP_ACTION_ORDER_6MAX: tuple[Position, ...] = (
+    Position.UTG,
+    Position.MP,
+    Position.CO,
+    Position.BTN,
+    Position.SB,
+    Position.BB,
 )
-_PREFLOP_ACTION_ORDER_9MAX: tuple[TablePosition, ...] = (
-    TablePosition.UTG,
-    TablePosition.UTG1,
-    TablePosition.MP,
-    TablePosition.MP1,
-    TablePosition.HJ,
-    TablePosition.CO,
-    TablePosition.BTN,
-    TablePosition.SB,
-    TablePosition.BB,
+_PREFLOP_ACTION_ORDER_9MAX: tuple[Position, ...] = (
+    Position.UTG,
+    Position.UTG1,
+    Position.MP,
+    Position.MP1,
+    Position.HJ,
+    Position.CO,
+    Position.BTN,
+    Position.SB,
+    Position.BB,
 )
-_POSTFLOP_POSITION_ORDER: tuple[TablePosition, ...] = (
-    TablePosition.SB,
-    TablePosition.BB,
-    TablePosition.UTG,
-    TablePosition.UTG1,
-    TablePosition.MP,
-    TablePosition.MP1,
-    TablePosition.HJ,
-    TablePosition.CO,
-    TablePosition.BTN,
+_POSTFLOP_POSITION_ORDER: tuple[Position, ...] = (
+    Position.SB,
+    Position.BB,
+    Position.UTG,
+    Position.UTG1,
+    Position.MP,
+    Position.MP1,
+    Position.HJ,
+    Position.CO,
+    Position.BTN,
 )
 
 
@@ -160,7 +160,7 @@ def _parse_vector(solution: dict[str, Any], property_name: str) -> list[float]:
     return [float(v) for v in arr]
 
 
-def _resolve_position(position_name: str) -> TablePosition | None:
+def _resolve_position(position_name: str) -> Position | None:
     """将字符串位置解析为枚举.
 
     Args:
@@ -170,7 +170,7 @@ def _resolve_position(position_name: str) -> TablePosition | None:
         对应的位置枚举；无法识别时返回 None。
     """
 
-    for position in TablePosition:
+    for position in Position:
         if position.value == position_name:
             return position
     return None
@@ -178,9 +178,9 @@ def _resolve_position(position_name: str) -> TablePosition | None:
 
 def _resolve_action_positions(
     *,
-    actor_position: TablePosition,
+    actor_position: Position,
     token_count: int,
-) -> tuple[TablePosition, ...] | None:
+) -> tuple[Position, ...] | None:
     """解析历史 token 对应的行动位置序列.
 
     Args:
@@ -235,8 +235,8 @@ def _extract_raise_size(token: str) -> float | None:
 
 def _is_in_position(
     *,
-    actor_position: TablePosition,
-    aggressor_position: TablePosition,
+    actor_position: Position,
+    aggressor_position: Position,
 ) -> bool:
     """判断行动方相对 aggressor 是否有位置优势.
 
@@ -259,8 +259,8 @@ def _derive_mapper_fields(
     history_full: str,
 ) -> tuple[
     ActionFamily | None,
-    TablePosition | None,
-    TablePosition | None,
+    Position | None,
+    Position | None,
     int,
     int,
     float | None,
@@ -289,7 +289,7 @@ def _derive_mapper_fields(
     if action_positions is None:
         return (None, actor_position, None, 0, 0, None, None)
 
-    aggressor_position: TablePosition | None = None
+    aggressor_position: Position | None = None
     call_count = 0
     limp_count = 0
     raise_size_bb: float | None = None

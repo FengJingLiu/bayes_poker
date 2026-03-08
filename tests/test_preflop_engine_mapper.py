@@ -22,7 +22,7 @@ from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 
 
 def _make_action_record(
@@ -53,9 +53,9 @@ def _make_node_record(
     *,
     history_full: str,
     history_actions: str,
-    acting_position: TablePosition,
+    acting_position: Position,
     action_family: ActionFamily,
-    aggressor_position: TablePosition | None,
+    aggressor_position: Position | None,
     call_count: int,
     limp_count: int,
     raise_size_bb: float | None,
@@ -104,9 +104,9 @@ def _build_repository(
             _make_node_record(
                 history_full="R2-C",
                 history_actions="R-C",
-                acting_position=TablePosition.CO,
+                acting_position=Position.CO,
                 action_family=ActionFamily.CALL_VS_OPEN,
-                aggressor_position=TablePosition.UTG,
+                aggressor_position=Position.UTG,
                 call_count=1,
                 limp_count=0,
                 raise_size_bb=2.0,
@@ -140,9 +140,9 @@ def _build_repository(
             _make_node_record(
                 history_full="R2.5-C",
                 history_actions="R-C",
-                acting_position=TablePosition.CO,
+                acting_position=Position.CO,
                 action_family=ActionFamily.CALL_VS_OPEN,
-                aggressor_position=TablePosition.UTG,
+                aggressor_position=Position.UTG,
                 call_count=1,
                 limp_count=0,
                 raise_size_bb=2.5,
@@ -170,7 +170,7 @@ def _build_repository(
         _make_node_record(
             history_full="F-F-F-R2",
             history_actions="F-F-F-R",
-            acting_position=TablePosition.SB,
+            acting_position=Position.SB,
             action_family=ActionFamily.OPEN,
             aggressor_position=None,
             call_count=0,
@@ -201,7 +201,7 @@ def _build_repository(
             _make_node_record(
                 history_full="F-C",
                 history_actions="F-C",
-                acting_position=TablePosition.CO,
+                acting_position=Position.CO,
                 action_family=ActionFamily.LIMP,
                 aggressor_position=None,
                 call_count=0,
@@ -248,8 +248,8 @@ def _build_state(*, raise_size_bb: float = 2.0) -> PreflopDecisionState:
 
     return PreflopDecisionState(
         action_family=ActionFamily.CALL_VS_OPEN,
-        actor_position=TablePosition.CO,
-        aggressor_position=TablePosition.UTG,
+        actor_position=Position.CO,
+        aggressor_position=Position.UTG,
         call_count=1,
         limp_count=0,
         raise_size_bb=raise_size_bb,
@@ -261,7 +261,7 @@ def _build_limp_state() -> PreflopDecisionState:
 
     return PreflopDecisionState(
         action_family=ActionFamily.LIMP,
-        actor_position=TablePosition.CO,
+        actor_position=Position.CO,
         aggressor_position=None,
         call_count=0,
         limp_count=1,

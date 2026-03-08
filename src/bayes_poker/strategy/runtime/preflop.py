@@ -20,7 +20,7 @@ from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import (
-    Position as TablePosition,
+    Position,
     get_position_by_seat,
 )
 from bayes_poker.player_metrics.enums import TableType
@@ -156,7 +156,7 @@ def _pick_repository_action_by_hero_hand(
 _is_open_no_limper = is_open_no_limper
 
 
-def _coerce_table_position(value: Any) -> TablePosition | None:
+def _coerce_table_position(value: Any) -> Position | None:
     """将输入值转换为位置枚举。
 
     Args:
@@ -165,11 +165,11 @@ def _coerce_table_position(value: Any) -> TablePosition | None:
     Returns:
         位置枚举, 失败时返回 `None`。
     """
-    if isinstance(value, TablePosition):
+    if isinstance(value, Position):
         return value
     if isinstance(value, str):
         try:
-            return TablePosition(value.upper())
+            return Position(value.upper())
         except ValueError:
             return None
     return None
@@ -341,7 +341,7 @@ def _extract_bb_player_id(payload: dict[str, Any]) -> str | None:
         except Exception:
             continue
 
-        if pos == TablePosition.BB:
+        if pos == Position.BB:
             return player_id
 
     return None
@@ -643,7 +643,7 @@ class PreflopRuntime:
             return None
         if decision_state.call_count != 0:
             return None
-        if actor_position in (TablePosition.SB, TablePosition.BB):
+        if actor_position in (Position.SB, Position.BB):
             return None
         if self.strategy_repository is None or self.strategy_source_id is None:
             return None
@@ -892,7 +892,7 @@ class PreflopRuntime:
         if not (self.stats_repo and self.config.enable_open_level_adjustment):
             return _pick_action_by_hero_hand(node, hero_idx_169)
 
-        if hero_position not in (TablePosition.SB, TablePosition.BTN):
+        if hero_position not in (Position.SB, Position.BTN):
             return _pick_action_by_hero_hand(node, hero_idx_169)
 
         if not _is_open_no_limper(history):
@@ -908,7 +908,7 @@ class PreflopRuntime:
 
         sep = "-" if history else ""
         bb_history = f"{history}{sep}{base_raise_action.action_code}"
-        if hero_position == TablePosition.BTN:
+        if hero_position == Position.BTN:
             bb_history = f"{bb_history}-F"
 
         bb_match = self.strategy.query(stack_bb, bb_history)

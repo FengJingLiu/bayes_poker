@@ -7,7 +7,7 @@ from types import ModuleType
 
 import pytest
 
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 from bayes_poker.strategy.preflop_engine.policy_calibrator import (
     ActionPolicy,
     ActionPolicyAction,
@@ -86,21 +86,21 @@ def test_hero_engine_widens_btn_steal_against_under_defending_blinds() -> None:
     result = hero_engine.decide(
         hero_state=PreflopDecisionState(
             action_family=ActionFamily.OPEN,
-            actor_position=TablePosition.BTN,
+            actor_position=Position.BTN,
             aggressor_position=None,
             call_count=0,
             limp_count=0,
             raise_size_bb=None,
         ),
         opponents={
-            TablePosition.SB: hero_engine_module.HeroOpponentContext(
+            Position.SB: hero_engine_module.HeroOpponentContext(
                 tendency_profile=PlayerTendencyProfile(
                     open_freq=0.12,
                     call_freq=0.05,
                     confidence=1.0,
                 )
             ),
-            TablePosition.BB: hero_engine_module.HeroOpponentContext(
+            Position.BB: hero_engine_module.HeroOpponentContext(
                 tendency_profile=PlayerTendencyProfile(
                     open_freq=0.10,
                     call_freq=0.08,
@@ -130,21 +130,21 @@ def test_hero_engine_does_not_widen_btn_steal_against_aggressive_blinds() -> Non
     result = hero_engine.decide(
         hero_state=PreflopDecisionState(
             action_family=ActionFamily.OPEN,
-            actor_position=TablePosition.BTN,
+            actor_position=Position.BTN,
             aggressor_position=None,
             call_count=0,
             limp_count=0,
             raise_size_bb=None,
         ),
         opponents={
-            TablePosition.SB: hero_engine_module.HeroOpponentContext(
+            Position.SB: hero_engine_module.HeroOpponentContext(
                 tendency_profile=PlayerTendencyProfile(
                     open_freq=0.32,
                     call_freq=0.05,
                     confidence=1.0,
                 )
             ),
-            TablePosition.BB: hero_engine_module.HeroOpponentContext(
+            Position.BB: hero_engine_module.HeroOpponentContext(
                 tendency_profile=PlayerTendencyProfile(
                     open_freq=0.28,
                     call_freq=0.08,
@@ -175,14 +175,14 @@ def test_hero_engine_explains_iso_adjustment_against_limp_fold_player() -> None:
     result = hero_engine.decide(
         hero_state=PreflopDecisionState(
             action_family=ActionFamily.LIMP,
-            actor_position=TablePosition.CO,
+            actor_position=Position.CO,
             aggressor_position=None,
             call_count=0,
             limp_count=1,
             raise_size_bb=None,
         ),
         opponents={
-            TablePosition.UTG: hero_engine_module.HeroOpponentContext(
+            Position.UTG: hero_engine_module.HeroOpponentContext(
                 limp_fold_frequency=0.78,
                 is_limper=True,
             )
@@ -210,18 +210,18 @@ def test_hero_engine_ignores_high_limp_fold_player_when_not_limper() -> None:
     result = hero_engine.decide(
         hero_state=PreflopDecisionState(
             action_family=ActionFamily.LIMP,
-            actor_position=TablePosition.CO,
+            actor_position=Position.CO,
             aggressor_position=None,
             call_count=0,
             limp_count=1,
             raise_size_bb=None,
         ),
         opponents={
-            TablePosition.UTG: hero_engine_module.HeroOpponentContext(
+            Position.UTG: hero_engine_module.HeroOpponentContext(
                 limp_fold_frequency=0.90,
                 is_limper=False,
             ),
-            TablePosition.MP: hero_engine_module.HeroOpponentContext(
+            Position.MP: hero_engine_module.HeroOpponentContext(
                 limp_fold_frequency=0.20,
                 is_limper=True,
             ),
@@ -248,14 +248,14 @@ def test_hero_engine_raises_from_check_branch_against_limp_fold_limper() -> None
     result = hero_engine.decide(
         hero_state=PreflopDecisionState(
             action_family=ActionFamily.LIMP,
-            actor_position=TablePosition.BB,
+            actor_position=Position.BB,
             aggressor_position=None,
             call_count=0,
             limp_count=1,
             raise_size_bb=None,
         ),
         opponents={
-            TablePosition.BTN: hero_engine_module.HeroOpponentContext(
+            Position.BTN: hero_engine_module.HeroOpponentContext(
                 limp_fold_frequency=0.75,
                 is_limper=True,
             )
@@ -282,7 +282,7 @@ def test_hero_engine_returns_no_size_for_solver_fold_code() -> None:
     result = hero_engine.decide(
         hero_state=PreflopDecisionState(
             action_family=ActionFamily.OPEN,
-            actor_position=TablePosition.BTN,
+            actor_position=Position.BTN,
             aggressor_position=None,
             call_count=0,
             limp_count=0,
@@ -311,21 +311,21 @@ def test_hero_engine_widens_solver_code_open_against_under_defending_blinds() ->
     result = hero_engine.decide(
         hero_state=PreflopDecisionState(
             action_family=ActionFamily.OPEN,
-            actor_position=TablePosition.BTN,
+            actor_position=Position.BTN,
             aggressor_position=None,
             call_count=0,
             limp_count=0,
             raise_size_bb=None,
         ),
         opponents={
-            TablePosition.SB: hero_engine_module.HeroOpponentContext(
+            Position.SB: hero_engine_module.HeroOpponentContext(
                 tendency_profile=PlayerTendencyProfile(
                     open_freq=0.10,
                     call_freq=0.05,
                     confidence=1.0,
                 )
             ),
-            TablePosition.BB: hero_engine_module.HeroOpponentContext(
+            Position.BB: hero_engine_module.HeroOpponentContext(
                 tendency_profile=PlayerTendencyProfile(
                     open_freq=0.08,
                     call_freq=0.05,

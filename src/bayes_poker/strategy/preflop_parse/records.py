@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.range import PreflopRange
 
@@ -65,8 +65,8 @@ class ParsedStrategyNodeRecord:
     acting_position: str
     source_file: str
     action_family: ActionFamily | None
-    actor_position: TablePosition | None
-    aggressor_position: TablePosition | None
+    actor_position: Position | None
+    aggressor_position: Position | None
     call_count: int
     limp_count: int
     raise_size_bb: float | None

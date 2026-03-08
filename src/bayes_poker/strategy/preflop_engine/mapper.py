@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from bayes_poker.domain.table import Position as TablePosition
+from bayes_poker.domain.table import Position
 from bayes_poker.storage.preflop_strategy_repository import (
     PreflopStrategyRepository,
     SolverNodeRecord,
@@ -221,21 +221,21 @@ def _calculate_raise_size_distance(
 
 def _is_in_position(
     *,
-    actor_position: TablePosition,
-    aggressor_position: TablePosition,
+    actor_position: Position,
+    aggressor_position: Position,
 ) -> bool:
     """判断当前行动方相对 aggressor 是否处于位置优势。"""
 
-    postflop_position_order: tuple[TablePosition, ...] = (
-        TablePosition.SB,
-        TablePosition.BB,
-        TablePosition.UTG,
-        TablePosition.UTG1,
-        TablePosition.MP,
-        TablePosition.MP1,
-        TablePosition.HJ,
-        TablePosition.CO,
-        TablePosition.BTN,
+    postflop_position_order: tuple[Position, ...] = (
+        Position.SB,
+        Position.BB,
+        Position.UTG,
+        Position.UTG1,
+        Position.MP,
+        Position.MP1,
+        Position.HJ,
+        Position.CO,
+        Position.BTN,
     )
     actor_index = postflop_position_order.index(actor_position)
     aggressor_index = postflop_position_order.index(aggressor_position)

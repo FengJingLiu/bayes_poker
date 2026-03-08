@@ -23,7 +23,7 @@ from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import (
     Player,
     PlayerAction,
-    Position as TablePosition,
+    Position as Position,
     get_position_by_seat,
 )
 from bayes_poker.player_metrics.enums import TableType
@@ -621,7 +621,7 @@ class OpponentRangePredictor:
 
         if decision_state.action_family == ActionFamily.OPEN:
             return (
-                decision_state.actor_position == TablePosition.UTG
+                decision_state.actor_position == Position.UTG
                 and decision_state.aggressor_position is None
                 and decision_state.call_count == 0
                 and decision_state.limp_count == 0
@@ -631,7 +631,7 @@ class OpponentRangePredictor:
         if decision_state.action_family == ActionFamily.CALL_VS_OPEN:
             return (
                 decision_state.actor_position
-                not in (TablePosition.SB, TablePosition.BB)
+                not in (Position.SB, Position.BB)
                 and decision_state.limp_count == 0
                 and decision_state.call_count == 0
                 and action.action_type == ActionType.CALL
@@ -644,7 +644,7 @@ class OpponentRangePredictor:
         *,
         player: "Player",
         table_state: "ObservedTableState",
-    ) -> TablePosition | None:
+    ) -> Position | None:
         """解析玩家在当前牌桌中的逻辑位置。
 
         Args:
@@ -1620,16 +1620,16 @@ class OpponentRangePredictor:
 
     def _get_position_default_range(
         self,
-        position: TablePosition | None,
+        position: Position | None,
     ) -> PreflopRange:
         """根据位置获取默认范围。"""
         position_vpip = {
-            TablePosition.UTG: 0.15,
-            TablePosition.MP: 0.18,
-            TablePosition.CO: 0.25,
-            TablePosition.BTN: 0.40,
-            TablePosition.SB: 0.35,
-            TablePosition.BB: 0.50,
+            Position.UTG: 0.15,
+            Position.MP: 0.18,
+            Position.CO: 0.25,
+            Position.BTN: 0.40,
+            Position.SB: 0.35,
+            Position.BB: 0.50,
         }
         frequency = position_vpip.get(position, 0.25)
         strategy = [frequency] * RANGE_169_LENGTH
