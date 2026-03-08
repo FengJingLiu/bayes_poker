@@ -11,7 +11,7 @@ from bayes_poker.strategy.preflop_parse.records import (
 )
 from bayes_poker.strategy.range import PreflopRange
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
-from bayes_poker.table.layout.base import Position as TablePosition
+from bayes_poker.domain.table import Position as TablePosition
 
 
 def _make_node_record(

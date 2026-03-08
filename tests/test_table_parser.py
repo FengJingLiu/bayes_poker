@@ -10,6 +10,12 @@ import numpy as np
 from pathlib import Path
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.domain.table import (
+    Position as DomainPosition,
+    Player,
+    PlayerAction,
+    get_position_by_seat as get_domain_position_by_seat,
+)
 from bayes_poker.ocr.schema import (
     Point,
     RelativePoint,
@@ -18,7 +24,6 @@ from bayes_poker.ocr.schema import (
     Color,
 )
 from bayes_poker.table.layout.base import (
-    Position,
     ScaledLayout,
     get_position_by_seat,
     SEAT_ORDER_6MAX,
@@ -29,12 +34,7 @@ from bayes_poker.table.layout.gg_6max import (
     BASE_WIDTH,
     BASE_HEIGHT,
 )
-from bayes_poker.table.observed_state import (
-    Player,
-    ObservedTableState,
-    PlayerAction,
-    create_observed_state,
-)
+from bayes_poker.table.observed_state import ObservedTableState, create_observed_state
 
 
 class TestPoint:
@@ -113,21 +113,25 @@ class TestColor:
 
 
 class TestPosition:
+    def test_domain_table_exports_position_tools(self) -> None:
+        assert DomainPosition.BTN.value == "BTN"
+        assert get_domain_position_by_seat(0, 0, 6) == DomainPosition.BTN
+
     def test_get_position_by_seat_btn_is_seat_0(self) -> None:
-        assert get_position_by_seat(0, 0, 6) == Position.BTN
-        assert get_position_by_seat(1, 0, 6) == Position.SB
-        assert get_position_by_seat(2, 0, 6) == Position.BB
-        assert get_position_by_seat(3, 0, 6) == Position.UTG
-        assert get_position_by_seat(4, 0, 6) == Position.MP
-        assert get_position_by_seat(5, 0, 6) == Position.CO
+        assert get_position_by_seat(0, 0, 6) == DomainPosition.BTN
+        assert get_position_by_seat(1, 0, 6) == DomainPosition.SB
+        assert get_position_by_seat(2, 0, 6) == DomainPosition.BB
+        assert get_position_by_seat(3, 0, 6) == DomainPosition.UTG
+        assert get_position_by_seat(4, 0, 6) == DomainPosition.MP
+        assert get_position_by_seat(5, 0, 6) == DomainPosition.CO
 
     def test_get_position_by_seat_btn_is_seat_3(self) -> None:
-        assert get_position_by_seat(3, 3, 6) == Position.BTN
-        assert get_position_by_seat(4, 3, 6) == Position.SB
-        assert get_position_by_seat(5, 3, 6) == Position.BB
-        assert get_position_by_seat(0, 3, 6) == Position.UTG
-        assert get_position_by_seat(1, 3, 6) == Position.MP
-        assert get_position_by_seat(2, 3, 6) == Position.CO
+        assert get_position_by_seat(3, 3, 6) == DomainPosition.BTN
+        assert get_position_by_seat(4, 3, 6) == DomainPosition.SB
+        assert get_position_by_seat(5, 3, 6) == DomainPosition.BB
+        assert get_position_by_seat(0, 3, 6) == DomainPosition.UTG
+        assert get_position_by_seat(1, 3, 6) == DomainPosition.MP
+        assert get_position_by_seat(2, 3, 6) == DomainPosition.CO
 
 
 class TestGGPoker6MaxLayout:
@@ -297,7 +301,7 @@ class TestPlayer:
             player_id="player1",
             stack=100.0,
             bet=5.0,
-            position="BTN",
+            position=DomainPosition.BTN,
             is_folded=False,
             is_thinking=True,
             is_button=True,
@@ -314,7 +318,7 @@ class TestPlayer:
         assert restored.seat_index == 0
         assert restored.player_id == "player1"
         assert restored.stack == 100.0
-        assert restored.position == "BTN"
+        assert restored.position == DomainPosition.BTN
         assert restored.is_button is True
 
     def test_player_action_history(self) -> None:

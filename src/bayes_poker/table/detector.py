@@ -8,16 +8,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING
 
 import numpy as np
 
+from bayes_poker.domain.table import Player
 from bayes_poker.ocr.interface import OCREngine
 from bayes_poker.ocr.schema import Area, Color, Point, CARD_SUIT_COLORS
 from bayes_poker.table.layout.base import ScaledLayout
-
-if TYPE_CHECKING:
-    from bayes_poker.table.observed_state import Player
 
 LOGGER = logging.getLogger(__name__)
 
@@ -274,8 +271,6 @@ class TableDetector:
 
     def parse_all_player_states(self, img: np.ndarray) -> list["Player"]:
         """解析所有玩家状态。"""
-        from bayes_poker.table.observed_state import Player
-
         player_count = self._layout.layout.player_count
         btn_seat = self.detect_button_seat(img)
         thinking_seat = self.detect_thinking_seat(img)

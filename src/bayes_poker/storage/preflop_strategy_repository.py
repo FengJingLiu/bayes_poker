@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from bayes_poker.domain.table import Position as TablePosition
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
@@ -18,7 +19,6 @@ from bayes_poker.strategy.preflop_parse.serialization import (
     encode_preflop_range,
 )
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.table.layout.base import Position as TablePosition
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

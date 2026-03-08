@@ -5,15 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.domain.table import Player, Position as TablePosition
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
     ParsedStrategyNodeRecord,
 )
-from bayes_poker.table.observed_state import (
-    Player,
-    ObservedTableState,
-    create_observed_state,
-)
+from bayes_poker.table.observed_state import ObservedTableState, create_observed_state
 from bayes_poker.strategy.preflop_parse.models import (
     PreflopStrategy,
     StrategyAction,
@@ -27,7 +24,6 @@ from bayes_poker.strategy.range import (
 )
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
 from bayes_poker.strategy.runtime.preflop import create_preflop_strategy
-from bayes_poker.table.layout.base import Position as TablePosition
 
 
 def _range_with_single_hand_probability(hand_key: str, prob: float) -> PreflopRange:
@@ -74,7 +70,7 @@ def _create_observed_state_for_test(
             player_id=f"P{i}",
             stack=stack_bb,
             bet=0.0,
-            position="",
+            position=None,
             is_folded=False,
             is_thinking=False,
             is_button=i == btn_seat,

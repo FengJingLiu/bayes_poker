@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from bayes_poker.domain.poker import ActionType
-from bayes_poker.table.layout.base import Position as TablePosition
+from bayes_poker.domain.table import Position as TablePosition
 
 
 class ActionFamily(str, Enum):

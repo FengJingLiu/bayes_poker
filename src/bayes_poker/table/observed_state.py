@@ -13,161 +13,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
-from bayes_poker.table.layout.base import Position as TablePosition, get_position_by_seat
-
-
-@dataclass
-class PlayerAction:
-    """玩家动作记录。
-
-    Attributes:
-        player_index: 玩家座位索引。
-        action_type: 动作类型。
-        amount: 动作金额（下注/加注时使用）。
-        street: 动作发生的街道。
-    """
-
-    player_index: int
-    action_type: ActionType
-    amount: float = 0.0
-    street: Street = Street.PREFLOP
-
-    def to_dict(self) -> dict[str, Any]:
-        """序列化为字典。
-
-        Returns:
-            包含动作信息的字典。
-        """
-        return {
-            "player_index": self.player_index,
-            "action_type": self.action_type.value,
-            "amount": self.amount,
-            "street": self.street.value,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PlayerAction":
-        """从字典反序列化。
-
-        Args:
-            data: 包含动作信息的字典。
-
-        Returns:
-            PlayerAction 实例。
-        """
-        return cls(
-            player_index=data["player_index"],
-            action_type=ActionType(data["action_type"]),
-            amount=data.get("amount", 0.0),
-            street=Street(data.get("street", "preflop")),
-        )
-
-
-@dataclass
-class Player:
-    """玩家状态。
-
-    统一的玩家状态类，用于牌桌解析和服务端状态同步。
-
-    Attributes:
-        seat_index: 座位索引（0 = Hero，顺时针递增）。
-        player_id: 玩家 ID。
-        stack: 当前筹码量。
-        bet: 当前下注金额。
-        position: 位置枚举或位置字符串（BTN/SB/BB/UTG/MP/CO）。
-        is_folded: 是否已弃牌。
-        is_thinking: 是否正在思考。
-        is_button: 是否是庄家。
-        vpip: VPIP 统计值。
-        action_history: 该玩家的行动历史。
-    """
-
-    seat_index: int
-    player_id: str = ""
-    stack: float = 0.0
-    bet: float = 0.0
-    position: str | TablePosition = ""
-    is_folded: bool = False
-    is_thinking: bool = False
-    is_button: bool = False
-    vpip: int = 0
-    action_history: list[PlayerAction] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        """序列化为字典。
-
-        Returns:
-            包含玩家状态信息的字典。
-        """
-        return {
-            "seat_index": self.seat_index,
-            "player_id": self.player_id,
-            "stack": self.stack,
-            "bet": self.bet,
-            "position": self.position.value
-            if isinstance(self.position, TablePosition)
-            else self.position,
-            "is_folded": self.is_folded,
-            "is_thinking": self.is_thinking,
-            "is_button": self.is_button,
-            "vpip": self.vpip,
-            "action_history": [a.to_dict() for a in self.action_history],
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Player":
-        """从字典反序列化。
-
-        Args:
-            data: 包含玩家状态信息的字典。
-
-        Returns:
-            Player 实例。
-        """
-        action_history = [
-            PlayerAction.from_dict(a) for a in data.get("action_history", [])
-        ]
-        position_raw = data.get("position", "")
-        position: str | TablePosition = position_raw
-        if isinstance(position_raw, str):
-            try:
-                position = TablePosition(position_raw)
-            except ValueError:
-                position = position_raw
-
-        return cls(
-            seat_index=data.get("seat_index", 0),
-            player_id=data.get("player_id", ""),
-            stack=data.get("stack", 0.0),
-            bet=data.get("bet", 0.0),
-            position=position,
-            is_folded=data.get("is_folded", False),
-            is_thinking=data.get("is_thinking", False),
-            is_button=data.get("is_button", False),
-            vpip=data.get("vpip", 0),
-            action_history=action_history,
-        )
-
-    def get_stack_bb(self, big_blind: float) -> float:
-        """获取筹码量（BB 单位）。
-
-        Args:
-            big_blind: 大盲注金额。
-
-        Returns:
-            筹码量（以大盲注为单位）。
-        """
-        if big_blind <= 0:
-            return self.stack
-        return self.stack / big_blind
-
-    def record_action(self, action: PlayerAction) -> None:
-        """记录该玩家的动作。
-
-        Args:
-            action: 玩家动作。
-        """
-        self.action_history.append(action)
+from bayes_poker.domain.table import (
+    Player,
+    PlayerAction,
+    Position,
+    get_position_by_seat,
+)
 
 
 def _get_position_name(hero_seat: int, btn_seat: int, player_count: int = 6) -> str:
@@ -191,7 +42,7 @@ def _get_position_enum(
     hero_seat: int,
     btn_seat: int,
     player_count: int = 6,
-) -> TablePosition | None:
+) -> Position | None:
     """根据座位信息计算位置枚举。
 
     Args:
@@ -207,7 +58,7 @@ def _get_position_enum(
 
     if player_count == 2:
         offset = (hero_seat - btn_seat) % player_count
-        return TablePosition.SB if offset == 0 else TablePosition.BB
+        return Position.SB if offset == 0 else Position.BB
 
     if player_count not in (6, 9):
         return None
@@ -428,7 +279,7 @@ class ObservedTableState:
                 player_id=p.player_id,
                 stack=p.stack,
                 bet=p.bet,
-                position=_get_position_name(p.seat_index, btn_seat, len(players)),
+                position=_get_position_enum(p.seat_index, btn_seat, len(players)),
                 is_folded=p.is_folded,
                 is_thinking=p.is_thinking,
                 is_button=p.is_button,
@@ -458,7 +309,11 @@ class ObservedTableState:
                 player_id=p.player_id,
                 stack=p.stack,
                 bet=p.bet,
-                position=_get_position_name(p.seat_index, self.btn_seat, len(players)),
+                position=_get_position_enum(
+                    p.seat_index,
+                    self.btn_seat,
+                    len(players),
+                ),
                 is_folded=p.is_folded,
                 is_thinking=p.is_thinking,
                 is_button=p.is_button,
@@ -504,7 +359,7 @@ class ObservedTableState:
         """
         return _get_position_name(self.hero_seat, self.btn_seat, self.player_count)
 
-    def get_hero_position_enum(self) -> TablePosition | None:
+    def get_hero_position_enum(self) -> Position | None:
         """获取 Hero 位置枚举。
 
         Returns:

@@ -6,7 +6,8 @@ import tempfile
 from pathlib import Path
 
 from bayes_poker.domain.poker import ActionType
-from bayes_poker.table.observed_state import Player, create_observed_state
+from bayes_poker.domain.table import Player
+from bayes_poker.table.observed_state import create_observed_state
 from bayes_poker.strategy.runtime.preflop import (
     PreflopLayer,
     create_preflop_strategy_from_directory,

@@ -22,7 +22,7 @@ from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.table.layout.base import Position as TablePosition
+from bayes_poker.domain.table import Position as TablePosition
 
 
 def _make_action_record(

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from bayes_poker.domain.poker import ActionType
-from bayes_poker.table.observed_state import PlayerAction
+from bayes_poker.domain.table import PlayerAction
 
 
 def _format_bb(value: float) -> str:

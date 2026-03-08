@@ -7,9 +7,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import TYPE_CHECKING
 
+from bayes_poker.domain.table import (
+    Position,
+    SEAT_ORDER_6MAX,
+    SEAT_ORDER_9MAX,
+    get_position_by_seat,
+)
 from bayes_poker.ocr.schema import (
     Area,
     AreaColorCheck,
@@ -24,58 +29,6 @@ from bayes_poker.ocr.schema import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-
-class Position(Enum):
-    """玩家位置。"""
-
-    SB = "SB"
-    BB = "BB"
-    UTG = "UTG"
-    UTG1 = "UTG+1"
-    MP = "MP"
-    MP1 = "MP+1"
-    HJ = "HJ"
-    CO = "CO"
-    BTN = "BTN"
-
-
-SEAT_ORDER_6MAX: list[Position] = [
-    Position.BTN,
-    Position.SB,
-    Position.BB,
-    Position.UTG,
-    Position.MP,
-    Position.CO,
-]
-
-SEAT_ORDER_9MAX: list[Position] = [
-    Position.BTN,
-    Position.SB,
-    Position.BB,
-    Position.UTG,
-    Position.UTG1,
-    Position.MP,
-    Position.MP1,
-    Position.HJ,
-    Position.CO,
-]
-
-
-def get_position_by_seat(seat_index: int, btn_seat: int, player_count: int) -> Position:
-    """根据屏幕座位索引和庄家位置，计算玩家的逻辑位置。
-
-    Args:
-        seat_index: 屏幕上的座位索引 (0 = Hero)
-        btn_seat: 庄家在屏幕上的座位索引
-        player_count: 玩家总数 (6 或 9)
-
-    Returns:
-        该座位的逻辑位置（SB/BB/UTG 等）
-    """
-    seat_order = SEAT_ORDER_6MAX if player_count == 6 else SEAT_ORDER_9MAX
-    offset = (seat_index - btn_seat) % player_count
-    return seat_order[offset]
 
 
 @dataclass

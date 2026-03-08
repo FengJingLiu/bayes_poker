@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from bayes_poker.domain.table import Position as TablePosition
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.parser import parse_strategy_node_records
-from bayes_poker.table.layout.base import Position as TablePosition
 
 
 def test_parse_strategy_node_records_extracts_mapper_fields() -> None:

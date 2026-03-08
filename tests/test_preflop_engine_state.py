@@ -10,7 +10,7 @@ from bayes_poker.strategy.preflop_engine.state import (
     ObservedAction,
     build_preflop_decision_state,
 )
-from bayes_poker.table.layout.base import Position as TablePosition
+from bayes_poker.domain.table import Position as TablePosition
 
 
 def test_build_preflop_decision_state_for_open_plus_cold_call() -> None:

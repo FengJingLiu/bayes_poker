@@ -19,6 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.domain.table import (
+    Position as TablePosition,
+    get_position_by_seat,
+)
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
 from bayes_poker.storage.preflop_strategy_repository import (
@@ -51,10 +55,6 @@ from bayes_poker.strategy.range import (
     card_to_index52,
     combo_to_index1326,
     get_range_1326_to_169,
-)
-from bayes_poker.table.layout.base import (
-    Position as TablePosition,
-    get_position_by_seat,
 )
 from bayes_poker.table.observed_state import ObservedTableState
 

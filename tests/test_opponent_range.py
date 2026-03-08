@@ -11,6 +11,12 @@ import tempfile
 import pytest
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.domain.table import (
+    Player,
+    PlayerAction,
+    Position as TablePosition,
+    get_position_by_seat,
+)
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.models import PlayerStats
 from bayes_poker.strategy.opponent_range import (
@@ -35,15 +41,7 @@ from bayes_poker.strategy.range import (
 )
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
-from bayes_poker.table.layout.base import (
-    Position as TablePosition,
-    get_position_by_seat,
-)
-from bayes_poker.table.observed_state import (
-    Player,
-    ObservedTableState,
-    PlayerAction,
-)
+from bayes_poker.table.observed_state import ObservedTableState
 
 REAL_PRELFOP_STRATEGY_DIR = Path(
     "/home/autumn/gg_handhistory/preflop_strategy/Cash6m50zSimple25Open_SimpleIP"

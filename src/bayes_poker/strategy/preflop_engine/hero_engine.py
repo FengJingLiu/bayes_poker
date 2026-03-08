@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from bayes_poker.domain.table import Position as TablePosition
 from bayes_poker.strategy.preflop_engine.explain import (
     DecisionExplanation,
     build_summary,
@@ -13,7 +14,6 @@ from bayes_poker.strategy.preflop_engine.policy_calibrator import ActionPolicy
 from bayes_poker.strategy.preflop_engine.range_engine import RangeBelief
 from bayes_poker.strategy.preflop_engine.state import ActionFamily, PreflopDecisionState
 from bayes_poker.strategy.preflop_engine.tendency import PlayerTendencyProfile
-from bayes_poker.table.layout.base import Position as TablePosition
 
 _EPSILON = 1e-9
 _BTN_STEAL_DEFEND_THRESHOLD = 0.25

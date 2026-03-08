@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bayes_poker.domain.table import Position as TablePosition
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.table.layout.base import Position as TablePosition
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,6 +4,12 @@
 """
 
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.domain.table import (
+    Player,
+    PlayerAction,
+    Position,
+    get_position_by_seat,
+)
 from bayes_poker.table.detector import (
     ParsedCard,
     TableDetector,
@@ -11,23 +17,16 @@ from bayes_poker.table.detector import (
 )
 from bayes_poker.table.layout import (
     GGPoker6MaxLayout,
-    Position,
     ScaledLayout,
     TableLayout,
     get_gg_6max_layout,
-    get_position_by_seat,
 )
 from bayes_poker.table.manager import (
     MultiTableManager,
     ParserInfo,
     create_manager,
 )
-from bayes_poker.table.observed_state import (
-    ObservedTableState,
-    Player,
-    PlayerAction,
-    create_observed_state,
-)
+from bayes_poker.table.observed_state import ObservedTableState, create_observed_state
 from bayes_poker.table.parser import (
     ParserState,
     TableContext,

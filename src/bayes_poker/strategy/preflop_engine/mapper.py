@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
+from bayes_poker.domain.table import Position as TablePosition
 from bayes_poker.storage.preflop_strategy_repository import (
     PreflopStrategyRepository,
     SolverNodeRecord,
@@ -14,7 +15,6 @@ from bayes_poker.strategy.preflop_engine.state import (
     ActionFamily,
     PreflopDecisionState,
 )
-from bayes_poker.table.layout.base import Position as TablePosition
 
 
 class SyntheticTemplateKind(str, Enum):

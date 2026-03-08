@@ -20,6 +20,12 @@ from typing import TYPE_CHECKING
 
 from bayes_poker.comm.strategy_history import build_preflop_history
 from bayes_poker.domain.poker import ActionType, Street
+from bayes_poker.domain.table import (
+    Player,
+    PlayerAction,
+    Position as TablePosition,
+    get_position_by_seat,
+)
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.preflop_strategy_repository import (
     PreflopStrategyRepository,
@@ -57,10 +63,6 @@ from bayes_poker.strategy.range import (
     combos_per_hand,
 )
 from bayes_poker.strategy.runtime.preflop_history import PreflopScenario
-from bayes_poker.table.layout.base import (
-    Position as TablePosition,
-    get_position_by_seat,
-)
 
 if TYPE_CHECKING:
     from bayes_poker.player_metrics.models import PlayerStats
@@ -70,11 +72,7 @@ if TYPE_CHECKING:
         StrategyAction,
         StrategyNode,
     )
-    from bayes_poker.table.observed_state import (
-        Player,
-        ObservedTableState,
-        PlayerAction,
-    )
+    from bayes_poker.table.observed_state import ObservedTableState
 
 
 LOGGER = logging.getLogger(__name__)

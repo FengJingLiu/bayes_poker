@@ -7,6 +7,7 @@ from types import ModuleType
 
 import pytest
 
+from bayes_poker.domain.table import Position as TablePosition
 from bayes_poker.strategy.preflop_engine.policy_calibrator import (
     ActionPolicy,
     ActionPolicyAction,
@@ -17,7 +18,6 @@ from bayes_poker.strategy.preflop_engine.state import (
 )
 from bayes_poker.strategy.preflop_engine.tendency import PlayerTendencyProfile
 from bayes_poker.strategy.range import PreflopRange, RANGE_169_LENGTH
-from bayes_poker.table.layout.base import Position as TablePosition
 
 
 def _load_hero_engine_module() -> ModuleType:

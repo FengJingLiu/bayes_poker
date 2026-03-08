@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from bayes_poker.domain.table import Position as TablePosition
 from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.models import (
     STRATEGY_VECTOR_LENGTH,
@@ -23,7 +24,6 @@ from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.table.layout.base import Position as TablePosition
 
 LOGGER = logging.getLogger(__name__)
 

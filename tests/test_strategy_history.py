@@ -1,6 +1,6 @@
 from bayes_poker.comm.strategy_history import build_preflop_history
-from bayes_poker.table.observed_state import PlayerAction
 from bayes_poker.domain.poker import ActionType
+from bayes_poker.domain.table import PlayerAction
 
 
 def test_build_preflop_history_encodes_actions_with_bb_sizes() -> None:

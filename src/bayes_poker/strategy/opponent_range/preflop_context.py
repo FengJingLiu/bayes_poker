@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING
 from bayes_poker.comm.strategy_history import build_preflop_history
 from bayes_poker.domain.poker import ActionType as DomainActionType
 from bayes_poker.domain.poker import Street
+from bayes_poker.domain.table import (
+    Player,
+    PlayerAction,
+    Position as TablePosition,
+    get_position_by_seat,
+)
 from bayes_poker.player_metrics.enums import (
     ActionType as MetricsActionType,
     Position as MetricsPosition,
@@ -19,10 +25,9 @@ from bayes_poker.strategy.runtime.preflop_history import (
     PreflopScenario,
     classify_preflop_scenario,
 )
-from bayes_poker.table.layout.base import Position as TablePosition, get_position_by_seat
 
 if TYPE_CHECKING:
-    from bayes_poker.table.observed_state import ObservedTableState, Player, PlayerAction
+    from bayes_poker.table.observed_state import ObservedTableState
 
 
 @dataclass(slots=True, frozen=True)
