@@ -19,11 +19,16 @@ from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.models import ActionStats, PlayerStats
 from bayes_poker.player_metrics.params import PostFlopParams
 from bayes_poker.player_metrics.posterior import (
-    ActionBucket,
     ActionSpaceKind,
     ActionSpaceSpec,
+    BET_0_40_FIELD,
+    BET_40_80_FIELD,
+    BET_80_120_FIELD,
+    BET_OVER_120_FIELD,
+    CHECK_CALL_FIELD,
+    FOLD_FIELD,
+    RAISE_FIELD,
     classify_postflop_action_space,
-    classify_preflop_action_space,
     smooth_binary_counts,
     smooth_multinomial_counts,
 )
@@ -54,30 +59,29 @@ _POOL_PRIOR_PLAYER_NAMES: dict[TableType, str] = {
 _DEFAULT_MULTINOMIAL_ACTION_SPACE = ActionSpaceSpec(
     kind=ActionSpaceKind.MULTINOMIAL,
     total_fields=(
-        ActionBucket.FOLD.value,
-        ActionBucket.CHECK_CALL.value,
-        ActionBucket.BET_RAISE.value,
+        FOLD_FIELD,
+        CHECK_CALL_FIELD,
+        RAISE_FIELD,
     ),
 )
 
 _BINARY_FOLD_RAISE_ACTION_SPACE = ActionSpaceSpec(
     kind=ActionSpaceKind.BINARY,
     total_fields=(
-        ActionBucket.FOLD.value,
-        ActionBucket.BET_RAISE.value,
+        FOLD_FIELD,
+        RAISE_FIELD,
     ),
-    positive_field=ActionBucket.BET_RAISE.value,
+    positive_field=RAISE_FIELD,
 )
 
 _BINARY_CHECK_RAISE_ACTION_SPACE = ActionSpaceSpec(
     kind=ActionSpaceKind.BINARY,
     total_fields=(
-        ActionBucket.CHECK_CALL.value,
-        ActionBucket.BET_RAISE.value,
+        CHECK_CALL_FIELD,
+        RAISE_FIELD,
     ),
-    positive_field=ActionBucket.BET_RAISE.value,
+    positive_field=RAISE_FIELD,
 )
-
 
 class PlayerStatsRepository:
     """PlayerStats 的 SQLite 存储仓库（只读）。
@@ -466,7 +470,11 @@ class PlayerStatsRepository:
                 continue
 
             action_space = (
-                classify_postflop_action_space(params_list[index])
+                classify_postflop_action_space(
+                    params_list[index],
+                    raw_field_counts=self._extract_field_counts(raw_action_stats),
+                    pool_field_counts=self._extract_field_counts(pool_stats[index]),
+                )
                 if index < len(params_list)
                 else _DEFAULT_MULTINOMIAL_ACTION_SPACE
             )
@@ -491,14 +499,14 @@ class PlayerStatsRepository:
     ) -> ActionStats:
         """平滑单个 `ActionStats`。"""
 
-        raw_counts = self._extract_bucket_counts(raw_action_stats)
-        pool_counts = self._extract_bucket_counts(pool_action_stats)
+        raw_counts = self._extract_field_counts(raw_action_stats)
+        pool_counts = self._extract_field_counts(pool_action_stats)
         prior_probabilities = self._build_prior_probabilities(
             total_fields=action_space.total_fields,
-            bucket_counts=pool_counts,
+            field_counts=pool_counts,
         )
 
-        smoothed_bucket_counts: dict[str, float]
+        smoothed_field_counts: dict[str, float]
         if action_space.kind == ActionSpaceKind.BINARY:
             positive_field = action_space.positive_field
             assert positive_field is not None
@@ -520,7 +528,7 @@ class PlayerStatsRepository:
                 for field_name in action_space.total_fields
                 if field_name != positive_field
             )
-            smoothed_bucket_counts = {
+            smoothed_field_counts = {
                 positive_field: posterior_counts.positive,
                 negative_field: posterior_counts.total - posterior_counts.positive,
             }
@@ -533,7 +541,7 @@ class PlayerStatsRepository:
                     for field_name in action_space.total_fields
                 ),
             )
-            smoothed_bucket_counts = {
+            smoothed_field_counts = {
                 field_name: pseudo_count
                 for field_name, pseudo_count in zip(
                     action_space.total_fields,
@@ -542,99 +550,57 @@ class PlayerStatsRepository:
                 )
             }
 
-        return self._build_action_stats_from_bucket_counts(
-            smoothed_bucket_counts=smoothed_bucket_counts,
-            raw_action_stats=raw_action_stats,
-            pool_action_stats=pool_action_stats,
+        return self._build_action_stats_from_field_counts(
+            smoothed_field_counts=smoothed_field_counts,
         )
 
-    def _extract_bucket_counts(
+    def _extract_field_counts(
         self,
         action_stats: ActionStats,
     ) -> dict[str, float]:
-        """提取主动作桶计数。"""
+        """提取 `ActionStats` 的叶子字段计数。"""
 
         return {
-            ActionBucket.FOLD.value: float(action_stats.fold_samples),
-            ActionBucket.CHECK_CALL.value: float(action_stats.check_call_samples),
-            ActionBucket.BET_RAISE.value: float(action_stats.bet_raise_samples),
+            BET_0_40_FIELD: float(action_stats.bet_0_40),
+            BET_40_80_FIELD: float(action_stats.bet_40_80),
+            BET_80_120_FIELD: float(action_stats.bet_80_120),
+            BET_OVER_120_FIELD: float(action_stats.bet_over_120),
+            RAISE_FIELD: float(action_stats.raise_samples),
+            CHECK_CALL_FIELD: float(action_stats.check_call_samples),
+            FOLD_FIELD: float(action_stats.fold_samples),
         }
 
     def _build_prior_probabilities(
         self,
         *,
         total_fields: tuple[str, ...],
-        bucket_counts: dict[str, float],
+        field_counts: dict[str, float],
     ) -> tuple[float, ...]:
         """根据玩家池计数构造先验概率向量。"""
 
-        total_count = sum(bucket_counts[field_name] for field_name in total_fields)
+        total_count = sum(field_counts[field_name] for field_name in total_fields)
         if total_count <= 0.0:
             uniform_probability = 1.0 / float(len(total_fields))
             return tuple(uniform_probability for _ in total_fields)
 
-        return tuple(bucket_counts[field_name] / total_count for field_name in total_fields)
+        return tuple(field_counts[field_name] / total_count for field_name in total_fields)
 
-    def _build_action_stats_from_bucket_counts(
+    def _build_action_stats_from_field_counts(
         self,
         *,
-        smoothed_bucket_counts: dict[str, float],
-        raw_action_stats: ActionStats,
-        pool_action_stats: ActionStats,
+        smoothed_field_counts: dict[str, float],
     ) -> ActionStats:
-        """按平滑后的主动作桶回填 `ActionStats`。"""
-
-        aggressive_total = smoothed_bucket_counts.get(ActionBucket.BET_RAISE.value, 0.0)
-        aggressive_components = self._distribute_aggressive_total(
-            target_total=aggressive_total,
-            raw_action_stats=raw_action_stats,
-            pool_action_stats=pool_action_stats,
-        )
+        """按平滑后的叶子动作字段回填 `ActionStats`。"""
 
         return ActionStats(
-            bet_0_40=aggressive_components[0],
-            bet_40_80=aggressive_components[1],
-            bet_80_120=aggressive_components[2],
-            bet_over_120=aggressive_components[3],
-            raise_samples=aggressive_components[4],
-            check_call_samples=smoothed_bucket_counts.get(ActionBucket.CHECK_CALL.value, 0.0),
-            fold_samples=smoothed_bucket_counts.get(ActionBucket.FOLD.value, 0.0),
+            bet_0_40=smoothed_field_counts.get(BET_0_40_FIELD, 0.0),
+            bet_40_80=smoothed_field_counts.get(BET_40_80_FIELD, 0.0),
+            bet_80_120=smoothed_field_counts.get(BET_80_120_FIELD, 0.0),
+            bet_over_120=smoothed_field_counts.get(BET_OVER_120_FIELD, 0.0),
+            raise_samples=smoothed_field_counts.get(RAISE_FIELD, 0.0),
+            check_call_samples=smoothed_field_counts.get(CHECK_CALL_FIELD, 0.0),
+            fold_samples=smoothed_field_counts.get(FOLD_FIELD, 0.0),
         )
-
-    def _distribute_aggressive_total(
-        self,
-        *,
-        target_total: float,
-        raw_action_stats: ActionStats,
-        pool_action_stats: ActionStats,
-    ) -> tuple[float, float, float, float, float]:
-        """按已有 aggressive 细分占比回填目标总量。"""
-
-        raw_components = (
-            float(raw_action_stats.bet_0_40),
-            float(raw_action_stats.bet_40_80),
-            float(raw_action_stats.bet_80_120),
-            float(raw_action_stats.bet_over_120),
-            float(raw_action_stats.raise_samples),
-        )
-        pool_components = (
-            float(pool_action_stats.bet_0_40),
-            float(pool_action_stats.bet_40_80),
-            float(pool_action_stats.bet_80_120),
-            float(pool_action_stats.bet_over_120),
-            float(pool_action_stats.raise_samples),
-        )
-        raw_total = sum(raw_components)
-        pool_total = sum(pool_components)
-
-        if raw_total > 0.0:
-            weights = tuple(component / raw_total for component in raw_components)
-        elif pool_total > 0.0:
-            weights = tuple(component / pool_total for component in pool_components)
-        else:
-            weights = (0.0, 0.0, 0.0, 0.0, 1.0)
-
-        return tuple(target_total * weight for weight in weights)
 
     def get_all(self, table_type: TableType | None = None) -> list[PlayerStats]:
         """查询所有玩家的统计数据。

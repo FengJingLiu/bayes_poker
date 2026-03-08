@@ -35,6 +35,7 @@ from .posterior import (
     PosteriorSmoothingConfig,
     classify_postflop_action_space,
     classify_preflop_action_space,
+    resolve_aggressive_leaf_fields,
     smooth_binary_counts,
     smooth_multinomial_counts,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "get_player_position",
     "increment_player_stats",
     "is_in_position",
+    "resolve_aggressive_leaf_fields",
     "smooth_binary_counts",
     "smooth_multinomial_counts",
 ]
