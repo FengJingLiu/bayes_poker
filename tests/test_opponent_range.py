@@ -449,7 +449,11 @@ class TestOpponentRangePredictor:
         """测试根据位置生成初始翻前范围。"""
         predictor = real_predictor
 
-        player = Player(seat_index=1, player_id="opponent", position="BTN")
+        player = Player(
+            seat_index=1,
+            player_id="opponent",
+            position=TablePosition.BTN,
+        )
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=1,
@@ -479,7 +483,11 @@ class TestOpponentRangePredictor:
         """测试弃牌时范围清零。"""
         predictor = real_predictor
 
-        player = Player(seat_index=1, player_id="opponent", position="UTG")
+        player = Player(
+            seat_index=1,
+            player_id="opponent",
+            position=TablePosition.UTG,
+        )
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=5,
@@ -517,7 +525,11 @@ class TestOpponentRangePredictor:
         """测试当前阶段翻后逻辑留空。"""
         predictor = real_predictor
 
-        player = Player(seat_index=1, player_id="opponent", position="CO")
+        player = Player(
+            seat_index=1,
+            player_id="opponent",
+            position=TablePosition.CO,
+        )
 
         # 先在 preflop 行动
         preflop_state = ObservedTableState(
@@ -561,7 +573,11 @@ class TestOpponentRangePredictor:
         """测试当前阶段翻后公共牌逻辑留空。"""
         predictor = real_predictor
 
-        player = Player(seat_index=1, player_id="opponent", position="BB")
+        player = Player(
+            seat_index=1,
+            player_id="opponent",
+            position=TablePosition.BB,
+        )
 
         # 先在 preflop 行动
         preflop_state = ObservedTableState(
@@ -629,7 +645,7 @@ class TestOpponentRangePredictor:
                 self.non_first_calls += 1
 
         predictor = _SpyPredictor()
-        player = Player(seat_index=4, player_id="mp", position="MP")
+        player = Player(seat_index=4, player_id="mp", position=TablePosition.MP)
         state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -679,7 +695,7 @@ class TestOpponentRangePredictor:
                 self.non_first_calls += 1
 
         predictor = _SpyPredictor()
-        player = Player(seat_index=4, player_id="mp", position="MP")
+        player = Player(seat_index=4, player_id="mp", position=TablePosition.MP)
         state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -712,7 +728,11 @@ class TestOpponentRangePredictor:
         """测试重置玩家范围。"""
         predictor = real_predictor
 
-        player = Player(seat_index=1, player_id="opponent", position="MP")
+        player = Player(
+            seat_index=1,
+            player_id="opponent",
+            position=TablePosition.MP,
+        )
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=5,
@@ -746,7 +766,11 @@ class TestOpponentRangePredictor:
         """测试加注动作收窄范围。"""
         predictor = real_predictor
 
-        player = Player(seat_index=1, player_id="opponent", position="UTG")
+        player = Player(
+            seat_index=1,
+            player_id="opponent",
+            position=TablePosition.UTG,
+        )
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=5,
@@ -776,7 +800,11 @@ class TestOpponentRangePredictor:
 
         # 为多个玩家初始化范围
         for seat in range(3):
-            player = Player(seat_index=seat, player_id=f"player_{seat}", position="MP")
+            player = Player(
+                seat_index=seat,
+                player_id=f"player_{seat}",
+                position=TablePosition.MP,
+            )
             table_state = ObservedTableState(
                 player_count=6,
                 btn_seat=5,
@@ -922,7 +950,12 @@ class TestOpponentRangePredictor:
                 return None
 
         predictor = _SpyPredictor()
-        player = Player(seat_index=5, player_id="villain", position="CO", stack=100.0)
+        player = Player(
+            seat_index=5,
+            player_id="villain",
+            position=TablePosition.CO,
+            stack=100.0,
+        )
         table_state = ObservedTableState(
             player_count=6,
             btn_seat=0,
@@ -930,11 +963,36 @@ class TestOpponentRangePredictor:
             street=Street.PREFLOP,
             big_blind=1.0,
             players=[
-                Player(seat_index=0, player_id="btn", position="BTN", stack=100.0),
-                Player(seat_index=1, player_id="sb", position="SB", stack=100.0),
-                Player(seat_index=2, player_id="bb", position="BB", stack=100.0),
-                Player(seat_index=3, player_id="utg", position="UTG", stack=100.0),
-                Player(seat_index=4, player_id="mp", position="MP", stack=100.0),
+                Player(
+                    seat_index=0,
+                    player_id="btn",
+                    position=TablePosition.BTN,
+                    stack=100.0,
+                ),
+                Player(
+                    seat_index=1,
+                    player_id="sb",
+                    position=TablePosition.SB,
+                    stack=100.0,
+                ),
+                Player(
+                    seat_index=2,
+                    player_id="bb",
+                    position=TablePosition.BB,
+                    stack=100.0,
+                ),
+                Player(
+                    seat_index=3,
+                    player_id="utg",
+                    position=TablePosition.UTG,
+                    stack=100.0,
+                ),
+                Player(
+                    seat_index=4,
+                    player_id="mp",
+                    position=TablePosition.MP,
+                    stack=100.0,
+                ),
                 player,
             ],
         )

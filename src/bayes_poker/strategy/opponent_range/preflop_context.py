@@ -39,25 +39,6 @@ class OpponentPreflopContext:
     params: PreFlopParams | None
 
 
-def _coerce_table_position(value: object) -> TablePosition | None:
-    """将输入值转换为位置枚举。
-
-    Args:
-        value: 输入值。
-
-    Returns:
-        位置枚举, 失败时返回 `None`。
-    """
-    if isinstance(value, TablePosition):
-        return value
-    if isinstance(value, str):
-        try:
-            return TablePosition(value.upper())
-        except ValueError:
-            return None
-    return None
-
-
 def _resolve_table_position(
     player: "Player",
     table_state: "ObservedTableState",
@@ -83,9 +64,9 @@ def _resolve_table_position(
                 table_state.player_count,
             )
         except Exception:
-            return _coerce_table_position(player.position)
+            return player.position
 
-    return _coerce_table_position(player.position)
+    return player.position
 
 
 def _map_table_position_to_metrics(position: TablePosition) -> MetricsPosition:

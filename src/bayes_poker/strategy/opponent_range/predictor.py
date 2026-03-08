@@ -101,25 +101,6 @@ class FirstPreflopScenario(str, Enum):
     UNKNOWN = "unknown"
 
 
-def _coerce_table_position(value: object) -> TablePosition | None:
-    """将输入值转换为位置枚举。
-
-    Args:
-        value: 输入位置值, 支持枚举或字符串。
-
-    Returns:
-        位置枚举, 失败时返回 `None`。
-    """
-    if isinstance(value, TablePosition):
-        return value
-    if isinstance(value, str):
-        try:
-            return TablePosition(value.upper())
-        except ValueError:
-            return None
-    return None
-
-
 def _clamp_probability(value: float) -> float:
     """限制概率到 [0.0, 1.0] 区间。
 
@@ -681,7 +662,7 @@ class OpponentRangePredictor:
                 table_state.player_count,
             )
         except Exception:
-            return _coerce_table_position(player.position)
+            return player.position
 
     def _build_shared_engine_prefix(
         self,
@@ -1627,7 +1608,7 @@ class OpponentRangePredictor:
                 initial_range = self._range_from_vpip(stats.vpip)
                 if initial_range is not None:
                     return initial_range
-        return self._get_position_default_range(_coerce_table_position(player.position))
+        return self._get_position_default_range(player.position)
 
     def _range_from_vpip(self, vpip: float) -> PreflopRange | None:
         """根据 VPIP 生成初始范围。"""
