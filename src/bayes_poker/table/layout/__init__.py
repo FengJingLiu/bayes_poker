@@ -2,13 +2,9 @@
 
 from bayes_poker.table.layout.base import (
     PlayerLayoutConfig,
-    Position,
     ScaledLayout,
-    SEAT_ORDER_6MAX,
-    SEAT_ORDER_9MAX,
     TableLayout,
     TableLayoutConfig,
-    get_position_by_seat,
 )
 from bayes_poker.table.layout.gg_6max import (
     GGPoker6MaxLayout,
@@ -16,10 +12,6 @@ from bayes_poker.table.layout.gg_6max import (
 )
 
 __all__ = [
-    "Position",
-    "SEAT_ORDER_6MAX",
-    "SEAT_ORDER_9MAX",
-    "get_position_by_seat",
     "PlayerLayoutConfig",
     "TableLayoutConfig",
     "TableLayout",

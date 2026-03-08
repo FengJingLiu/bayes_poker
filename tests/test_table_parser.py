@@ -9,6 +9,8 @@ import pytest
 import numpy as np
 from pathlib import Path
 
+import bayes_poker.table as table_module
+import bayes_poker.table.layout as table_layout_module
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import (
     Position as DomainPosition,
@@ -116,6 +118,14 @@ class TestPosition:
     def test_domain_table_exports_position_tools(self) -> None:
         assert DomainPosition.BTN.value == "BTN"
         assert get_domain_position_by_seat(0, 0, 6) == DomainPosition.BTN
+
+    def test_table_module_reexports_domain_position_tools(self) -> None:
+        assert table_module.Position is DomainPosition
+        assert table_module.get_position_by_seat is get_domain_position_by_seat
+
+    def test_table_layout_module_no_longer_exports_position_tools(self) -> None:
+        assert not hasattr(table_layout_module, "Position")
+        assert not hasattr(table_layout_module, "get_position_by_seat")
 
     def test_get_position_by_seat_btn_is_seat_0(self) -> None:
         assert get_position_by_seat(0, 0, 6) == DomainPosition.BTN

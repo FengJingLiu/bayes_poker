@@ -15,10 +15,12 @@ from bayes_poker.table.detector import (
     TableDetector,
     TablePhase,
 )
-from bayes_poker.table.layout import (
-    GGPoker6MaxLayout,
+from bayes_poker.table.layout.base import (
     ScaledLayout,
     TableLayout,
+)
+from bayes_poker.table.layout.gg_6max import (
+    GGPoker6MaxLayout,
     get_gg_6max_layout,
 )
 from bayes_poker.table.manager import (
