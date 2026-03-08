@@ -16,6 +16,8 @@ class TableType(IntEnum):
 
     HEADS_UP = 2
     SIX_MAX = 6
+    EIGHT_MAX = 8
+    NINE_MAX = 9
 
 
 class Street(IntEnum):
