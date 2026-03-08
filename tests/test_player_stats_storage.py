@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from bayes_poker.player_metrics.enums import TableType
+from bayes_poker.player_metrics.enums import Street, TableType
 from bayes_poker.player_metrics.models import ActionStats, PlayerStats, StatValue
 from bayes_poker.player_metrics.enums import ActionType
-from bayes_poker.player_metrics.params import PreFlopParams
+from bayes_poker.player_metrics.params import PostFlopParams, PreFlopParams
 from bayes_poker.player_metrics.serialization import merge_player_stats
 from bayes_poker.storage import PlayerStatsRepository
 
@@ -212,6 +212,35 @@ def _make_player_stats(
     target.fold_samples = fold_samples
     target.check_call_samples = check_call_samples
     target.raise_samples = raise_samples
+    return stats
+
+
+def _make_postflop_player_stats(
+    *,
+    player_name: str,
+    postflop_index: int,
+    fold_samples: int = 0,
+    check_call_samples: int = 0,
+    raise_samples: int = 0,
+    bet_0_40: int = 0,
+    bet_40_80: int = 0,
+    bet_80_120: int = 0,
+    bet_over_120: int = 0,
+) -> PlayerStats:
+    """构造带指定翻后节点的最小玩家统计。"""
+
+    stats = PlayerStats(player_name=player_name, table_type=TableType.SIX_MAX)
+    stats.vpip = StatValue(positive=10, total=20)
+    while len(stats.postflop_stats) <= postflop_index:
+        stats.postflop_stats.append(ActionStats())
+    target = stats.postflop_stats[postflop_index]
+    target.fold_samples = fold_samples
+    target.check_call_samples = check_call_samples
+    target.raise_samples = raise_samples
+    target.bet_0_40 = bet_0_40
+    target.bet_40_80 = bet_40_80
+    target.bet_80_120 = bet_80_120
+    target.bet_over_120 = bet_over_120
     return stats
 
 
@@ -417,6 +446,106 @@ class TestPoolSmoothedGet:
         target = aggregated_stats.preflop_stats[params.to_index()]
         assert target.raise_samples == pytest.approx(50.0)
         assert target.fold_samples == pytest.approx(50.0)
+
+    def test_get_can_return_pool_smoothed_sized_postflop_stats(
+        self,
+        db_path: Path,
+    ) -> None:
+        """翻后 sizing node 应直接在 bet 叶子动作上做多元后验。"""
+
+        params = PostFlopParams(
+            table_type=TableType.SIX_MAX,
+            street=Street.FLOP,
+            round=0,
+            prev_action=ActionType.CHECK,
+            num_bets=0,
+            in_position=False,
+            num_players=2,
+        )
+        index = params.to_index()
+        with PlayerStatsRepository(db_path) as repo:
+            _insert_player_stats(
+                repo,
+                _make_postflop_player_stats(
+                    player_name="Hero",
+                    postflop_index=index,
+                    check_call_samples=2,
+                    bet_40_80=3,
+                ),
+            )
+            _insert_player_stats(
+                repo,
+                _make_postflop_player_stats(
+                    player_name="aggregated_sixmax_100",
+                    postflop_index=index,
+                    check_call_samples=10,
+                    bet_0_40=2,
+                    bet_40_80=4,
+                    bet_80_120=3,
+                    bet_over_120=1,
+                ),
+            )
+
+            smoothed_stats = repo.get(
+                "Hero",
+                TableType.SIX_MAX,
+                smooth_with_pool=True,
+                pool_prior_strength=10.0,
+            )
+
+        assert smoothed_stats is not None
+        target = smoothed_stats.postflop_stats[index]
+        assert target.check_call_samples == pytest.approx(7.0)
+        assert target.bet_0_40 == pytest.approx(1.0)
+        assert target.bet_40_80 == pytest.approx(5.0)
+        assert target.bet_80_120 == pytest.approx(1.5)
+        assert target.bet_over_120 == pytest.approx(0.5)
+        assert target.raise_samples == pytest.approx(0.0)
+
+    def test_get_rejects_mixed_bet_and_raise_samples_in_same_node(
+        self,
+        db_path: Path,
+    ) -> None:
+        """同一翻后 node 同时出现 bet* 与 raise_samples 时应拒绝平滑。"""
+
+        params = PostFlopParams(
+            table_type=TableType.SIX_MAX,
+            street=Street.FLOP,
+            round=0,
+            prev_action=ActionType.CHECK,
+            num_bets=0,
+            in_position=False,
+            num_players=2,
+        )
+        index = params.to_index()
+        with PlayerStatsRepository(db_path) as repo:
+            _insert_player_stats(
+                repo,
+                _make_postflop_player_stats(
+                    player_name="Hero",
+                    postflop_index=index,
+                    check_call_samples=2,
+                    raise_samples=1,
+                    bet_40_80=1,
+                ),
+            )
+            _insert_player_stats(
+                repo,
+                _make_postflop_player_stats(
+                    player_name="aggregated_sixmax_100",
+                    postflop_index=index,
+                    check_call_samples=10,
+                    bet_40_80=4,
+                ),
+            )
+
+            with pytest.raises(ValueError, match="bet_\\* 与 raise_samples"):
+                repo.get(
+                    "Hero",
+                    TableType.SIX_MAX,
+                    smooth_with_pool=True,
+                    pool_prior_strength=10.0,
+                )
 
 
 def _build_stats(

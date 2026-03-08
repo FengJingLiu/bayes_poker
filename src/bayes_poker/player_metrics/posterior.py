@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 import math
@@ -17,6 +17,21 @@ class ActionBucket(StrEnum):
     FOLD = "fold"
     CHECK_CALL = "check_call"
     BET_RAISE = "bet_raise"
+
+
+FOLD_FIELD = "fold_samples"
+CHECK_CALL_FIELD = "check_call_samples"
+RAISE_FIELD = "raise_samples"
+BET_0_40_FIELD = "bet_0_40"
+BET_40_80_FIELD = "bet_40_80"
+BET_80_120_FIELD = "bet_80_120"
+BET_OVER_120_FIELD = "bet_over_120"
+SIZED_BET_FIELDS = (
+    BET_0_40_FIELD,
+    BET_40_80_FIELD,
+    BET_80_120_FIELD,
+    BET_OVER_120_FIELD,
+)
 
 
 class ActionSpaceKind(StrEnum):
@@ -190,59 +205,111 @@ def classify_preflop_action_space(params: PreFlopParams) -> ActionSpaceSpec:
             return ActionSpaceSpec(
                 kind=ActionSpaceKind.BINARY,
                 total_fields=(
-                    ActionBucket.CHECK_CALL.value,
-                    ActionBucket.BET_RAISE.value,
+                    CHECK_CALL_FIELD,
+                    RAISE_FIELD,
                 ),
-                positive_field=ActionBucket.BET_RAISE.value,
+                positive_field=RAISE_FIELD,
             )
         if params.position != Position.SMALL_BLIND and params.num_callers == 0:
             return ActionSpaceSpec(
                 kind=ActionSpaceKind.BINARY,
                 total_fields=(
-                    ActionBucket.FOLD.value,
-                    ActionBucket.BET_RAISE.value,
+                    FOLD_FIELD,
+                    RAISE_FIELD,
                 ),
-                positive_field=ActionBucket.BET_RAISE.value,
+                positive_field=RAISE_FIELD,
             )
 
     return ActionSpaceSpec(
         kind=ActionSpaceKind.MULTINOMIAL,
         total_fields=(
-            ActionBucket.FOLD.value,
-            ActionBucket.CHECK_CALL.value,
-            ActionBucket.BET_RAISE.value,
+            FOLD_FIELD,
+            CHECK_CALL_FIELD,
+            RAISE_FIELD,
         ),
     )
 
 
-def classify_postflop_action_space(params: PostFlopParams) -> ActionSpaceSpec:
+def classify_postflop_action_space(
+    params: PostFlopParams,
+    *,
+    raw_field_counts: Mapping[str, float],
+    pool_field_counts: Mapping[str, float],
+) -> ActionSpaceSpec:
     """判定翻后动作空间.
 
     Args:
         params: 翻后情境参数.
+        raw_field_counts: 玩家原始字段计数.
+        pool_field_counts: 玩家池原始字段计数.
 
     Returns:
         可驱动后续平滑与回填的动作空间描述.
     """
 
+    aggressive_fields = resolve_aggressive_leaf_fields(
+        raw_field_counts=raw_field_counts,
+        pool_field_counts=pool_field_counts,
+        allow_sized_aggression=True,
+    )
+
     if params.num_bets == 0:
+        total_fields = (CHECK_CALL_FIELD, *aggressive_fields)
+    else:
+        total_fields = (FOLD_FIELD, CHECK_CALL_FIELD, *aggressive_fields)
+
+    if len(total_fields) == 2:
         return ActionSpaceSpec(
             kind=ActionSpaceKind.BINARY,
-            total_fields=(
-                ActionBucket.CHECK_CALL.value,
-                ActionBucket.BET_RAISE.value,
-            ),
-            positive_field=ActionBucket.BET_RAISE.value,
+            total_fields=total_fields,
+            positive_field=aggressive_fields[0],
         )
 
     return ActionSpaceSpec(
         kind=ActionSpaceKind.MULTINOMIAL,
-        total_fields=(
-            ActionBucket.FOLD.value,
-            ActionBucket.CHECK_CALL.value,
-            ActionBucket.BET_RAISE.value,
-        ),
+        total_fields=total_fields,
     )
+
+
+def resolve_aggressive_leaf_fields(
+    *,
+    raw_field_counts: Mapping[str, float],
+    pool_field_counts: Mapping[str, float],
+    allow_sized_aggression: bool,
+) -> tuple[str, ...]:
+    """解析 aggressive 动作应使用的叶子字段集合.
+
+    Args:
+        raw_field_counts: 玩家原始字段计数.
+        pool_field_counts: 玩家池原始字段计数.
+        allow_sized_aggression: 当前节点是否允许使用 bet sizing 叶子动作.
+
+    Returns:
+        叶子字段元组.
+
+    Raises:
+        ValueError: 当同一节点混用了 `bet_*` 与 `raise_samples` 时抛出.
+    """
+
+    if not allow_sized_aggression:
+        return (RAISE_FIELD,)
+
+    raw_has_sized = _has_any_positive(raw_field_counts, SIZED_BET_FIELDS)
+    pool_has_sized = _has_any_positive(pool_field_counts, SIZED_BET_FIELDS)
+    raw_has_raise = _field_value(raw_field_counts, RAISE_FIELD) > 0.0
+    pool_has_raise = _field_value(pool_field_counts, RAISE_FIELD) > 0.0
+
+    if raw_has_sized and raw_has_raise:
+        raise ValueError("同一 node 中 bet_* 与 raise_samples 不能同时为正.")
+    if pool_has_sized and pool_has_raise:
+        raise ValueError("同一 node 中 bet_* 与 raise_samples 不能同时为正.")
+    if (raw_has_sized or pool_has_sized) and (raw_has_raise or pool_has_raise):
+        raise ValueError("同一 node 中 bet_* 与 raise_samples 不能同时为正.")
+
+    if raw_has_sized or pool_has_sized:
+        return SIZED_BET_FIELDS
+
+    return (RAISE_FIELD,)
 
 
 def _validate_probability(value: float, *, field_name: str) -> None:
@@ -289,14 +356,38 @@ def _validate_non_negative(value: float, *, field_name: str) -> None:
         raise ValueError(f"{field_name} 不能为负数.")
 
 
+def _field_value(field_counts: Mapping[str, float], field_name: str) -> float:
+    """读取字段计数，缺失字段按 0 处理."""
+
+    return float(field_counts.get(field_name, 0.0))
+
+
+def _has_any_positive(
+    field_counts: Mapping[str, float],
+    field_names: Sequence[str],
+) -> bool:
+    """判断指定字段中是否存在正计数."""
+
+    return any(_field_value(field_counts, field_name) > 0.0 for field_name in field_names)
+
+
 __all__ = [
     "ActionBucket",
     "ActionSpaceKind",
     "ActionSpaceSpec",
+    "BET_0_40_FIELD",
+    "BET_40_80_FIELD",
+    "BET_80_120_FIELD",
+    "BET_OVER_120_FIELD",
     "BinaryPosteriorCounts",
+    "CHECK_CALL_FIELD",
+    "FOLD_FIELD",
     "PosteriorSmoothingConfig",
+    "RAISE_FIELD",
+    "SIZED_BET_FIELDS",
     "classify_postflop_action_space",
     "classify_preflop_action_space",
+    "resolve_aggressive_leaf_fields",
     "smooth_binary_counts",
     "smooth_multinomial_counts",
 ]

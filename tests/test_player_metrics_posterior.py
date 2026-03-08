@@ -12,6 +12,7 @@ from bayes_poker.player_metrics.posterior import (
     PosteriorSmoothingConfig,
     classify_postflop_action_space,
     classify_preflop_action_space,
+    resolve_aggressive_leaf_fields,
     smooth_binary_counts,
     smooth_multinomial_counts,
 )
@@ -130,12 +131,59 @@ def test_classify_preflop_action_space_marks_unopened_rfi_as_binary() -> None:
     action_space = classify_preflop_action_space(params)
 
     assert action_space.kind is ActionSpaceKind.BINARY
-    assert action_space.positive_field == "bet_raise"
-    assert action_space.total_fields == ("fold", "bet_raise")
+    assert action_space.positive_field == "raise_samples"
+    assert action_space.total_fields == ("fold_samples", "raise_samples")
 
 
-def test_classify_postflop_action_space_marks_check_spot_as_binary() -> None:
-    """翻后无人下注 spot 应视为二元节点。"""
+def test_classify_postflop_action_space_marks_sized_check_spot_as_multinomial() -> None:
+    """翻后无人下注且使用 bet sizing 时应解析为多元叶子动作空间。"""
+
+    params = PostFlopParams(
+        table_type=TableType.SIX_MAX,
+        street=Street.FLOP,
+        round=0,
+        prev_action=ActionType.CHECK,
+        num_bets=0,
+        in_position=False,
+        num_players=2,
+    )
+    raw_stats = {
+        "bet_0_40": 0,
+        "bet_40_80": 3,
+        "bet_80_120": 0,
+        "bet_over_120": 0,
+        "raise_samples": 0,
+        "check_call_samples": 2,
+        "fold_samples": 0,
+    }
+    pool_stats = {
+        "bet_0_40": 2,
+        "bet_40_80": 4,
+        "bet_80_120": 3,
+        "bet_over_120": 1,
+        "raise_samples": 0,
+        "check_call_samples": 10,
+        "fold_samples": 0,
+    }
+
+    action_space = classify_postflop_action_space(
+        params,
+        raw_field_counts=raw_stats,
+        pool_field_counts=pool_stats,
+    )
+
+    assert action_space.kind is ActionSpaceKind.MULTINOMIAL
+    assert action_space.total_fields == (
+        "check_call_samples",
+        "bet_0_40",
+        "bet_40_80",
+        "bet_80_120",
+        "bet_over_120",
+    )
+
+
+def test_classify_postflop_action_space_marks_unsized_check_spot_as_binary() -> None:
+    """翻后无人下注且只有 unsized aggressive 时应保持二元。"""
 
     params = PostFlopParams(
         table_type=TableType.SIX_MAX,
@@ -147,15 +195,35 @@ def test_classify_postflop_action_space_marks_check_spot_as_binary() -> None:
         num_players=2,
     )
 
-    action_space = classify_postflop_action_space(params)
+    action_space = classify_postflop_action_space(
+        params,
+        raw_field_counts={
+            "bet_0_40": 0,
+            "bet_40_80": 0,
+            "bet_80_120": 0,
+            "bet_over_120": 0,
+            "raise_samples": 2,
+            "check_call_samples": 4,
+            "fold_samples": 0,
+        },
+        pool_field_counts={
+            "bet_0_40": 0,
+            "bet_40_80": 0,
+            "bet_80_120": 0,
+            "bet_over_120": 0,
+            "raise_samples": 6,
+            "check_call_samples": 8,
+            "fold_samples": 0,
+        },
+    )
 
     assert action_space.kind is ActionSpaceKind.BINARY
-    assert action_space.positive_field == "bet_raise"
-    assert action_space.total_fields == ("check_call", "bet_raise")
+    assert action_space.positive_field == "raise_samples"
+    assert action_space.total_fields == ("check_call_samples", "raise_samples")
 
 
 def test_classify_postflop_action_space_marks_facing_bet_as_multinomial() -> None:
-    """翻后面对下注的 spot 应视为三元节点。"""
+    """翻后面对下注且有 bet sizing 时应视为多元叶子动作空间。"""
 
     params = PostFlopParams(
         table_type=TableType.SIX_MAX,
@@ -167,10 +235,37 @@ def test_classify_postflop_action_space_marks_facing_bet_as_multinomial() -> Non
         num_players=2,
     )
 
-    action_space = classify_postflop_action_space(params)
+    action_space = classify_postflop_action_space(
+        params,
+        raw_field_counts={
+            "bet_0_40": 0,
+            "bet_40_80": 1,
+            "bet_80_120": 0,
+            "bet_over_120": 0,
+            "raise_samples": 0,
+            "check_call_samples": 2,
+            "fold_samples": 4,
+        },
+        pool_field_counts={
+            "bet_0_40": 2,
+            "bet_40_80": 3,
+            "bet_80_120": 1,
+            "bet_over_120": 1,
+            "raise_samples": 0,
+            "check_call_samples": 9,
+            "fold_samples": 5,
+        },
+    )
 
     assert action_space.kind is ActionSpaceKind.MULTINOMIAL
-    assert action_space.total_fields == ("fold", "check_call", "bet_raise")
+    assert action_space.total_fields == (
+        "fold_samples",
+        "check_call_samples",
+        "bet_0_40",
+        "bet_40_80",
+        "bet_80_120",
+        "bet_over_120",
+    )
 
 
 def test_classify_preflop_action_space_marks_unopened_sb_as_multinomial() -> None:
@@ -189,7 +284,11 @@ def test_classify_preflop_action_space_marks_unopened_sb_as_multinomial() -> Non
     action_space = classify_preflop_action_space(params)
 
     assert action_space.kind is ActionSpaceKind.MULTINOMIAL
-    assert action_space.total_fields == ("fold", "check_call", "bet_raise")
+    assert action_space.total_fields == (
+        "fold_samples",
+        "check_call_samples",
+        "raise_samples",
+    )
 
 
 @pytest.mark.parametrize("pool_prior_strength", (0.0, -1.0))
@@ -208,6 +307,29 @@ def test_action_space_spec_rejects_inconsistent_binary_definition() -> None:
     with pytest.raises(ValueError, match="positive_field"):
         ActionSpaceSpec(
             kind=ActionSpaceKind.BINARY,
-            total_fields=("fold", "bet_raise"),
+            total_fields=("fold_samples", "raise_samples"),
             positive_field=None,
+        )
+
+
+def test_resolve_aggressive_leaf_fields_rejects_mixed_bet_and_raise_samples() -> None:
+    """同一 node 同时出现 bet* 和 raise_samples 时应抛错。"""
+
+    with pytest.raises(ValueError, match="bet_\\* 与 raise_samples"):
+        resolve_aggressive_leaf_fields(
+            raw_field_counts={
+                "bet_0_40": 1.0,
+                "bet_40_80": 0.0,
+                "bet_80_120": 0.0,
+                "bet_over_120": 0.0,
+                "raise_samples": 2.0,
+            },
+            pool_field_counts={
+                "bet_0_40": 0.0,
+                "bet_40_80": 0.0,
+                "bet_80_120": 0.0,
+                "bet_over_120": 0.0,
+                "raise_samples": 0.0,
+            },
+            allow_sized_aggression=True,
         )
