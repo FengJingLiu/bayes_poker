@@ -18,19 +18,35 @@ from bayes_poker.strategy.range import (
 class _RecordingRepo:
     """记录 get 调用参数的仓库替身。"""
 
-    called_with: list[tuple[str, TableType]]
+    called_with: list[tuple[str, TableType, bool, float]]
 
-    def get(self, player_name: str, table_type: TableType) -> PlayerStats | None:
+    def get(
+        self,
+        player_name: str,
+        table_type: TableType,
+        *,
+        smooth_with_pool: bool = False,
+        pool_prior_strength: float = 20.0,
+    ) -> PlayerStats | None:
         """记录查询参数并返回空值。
 
         Args:
             player_name: 查询玩家名。
             table_type: 桌型。
+            smooth_with_pool: 是否启用玩家池平滑。
+            pool_prior_strength: 玩家池先验强度。
 
         Returns:
             恒定返回空值。
         """
-        self.called_with.append((player_name, table_type))
+        self.called_with.append(
+            (
+                player_name,
+                table_type,
+                smooth_with_pool,
+                pool_prior_strength,
+            )
+        )
         return None
 
 
@@ -101,4 +117,6 @@ def test_get_aggregated_player_stats_uses_fixed_sixmax_name() -> None:
 
     repo = _RecordingRepo(called_with=[])
     _ = get_aggregated_player_stats(repo, TableType.SIX_MAX)
-    assert repo.called_with == [("aggregated_sixmax_100", TableType.SIX_MAX)]
+    assert repo.called_with == [
+        ("aggregated_sixmax_100", TableType.SIX_MAX, False, 20.0)
+    ]

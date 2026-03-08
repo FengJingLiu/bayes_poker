@@ -27,15 +27,31 @@ from .builder import (
 from .enums import ActionType, Position, Street, TableType
 from .models import ActionStats, BetSizingCategory, PlayerStats, StatValue
 from .params import PostFlopParams, PreFlopParams
+from .posterior import (
+    ActionBucket,
+    ActionSpaceKind,
+    ActionSpaceSpec,
+    BinaryPosteriorCounts,
+    PosteriorSmoothingConfig,
+    classify_postflop_action_space,
+    classify_preflop_action_space,
+    smooth_binary_counts,
+    smooth_multinomial_counts,
+)
 
 __all__ = [
     "ActionStats",
+    "ActionBucket",
     "ActionType",
+    "ActionSpaceKind",
+    "ActionSpaceSpec",
     "BetSizingCategory",
+    "BinaryPosteriorCounts",
     "ParsedAction",
     "PlayerStats",
     "Position",
     "PostFlopParams",
+    "PosteriorSmoothingConfig",
     "PreFlopParams",
     "StatValue",
     "Street",
@@ -46,8 +62,12 @@ __all__ = [
     "calculate_pfr",
     "calculate_total_hands",
     "calculate_wtp",
+    "classify_postflop_action_space",
+    "classify_preflop_action_space",
     "extract_actions_from_hand_history",
     "get_player_position",
     "increment_player_stats",
     "is_in_position",
+    "smooth_binary_counts",
+    "smooth_multinomial_counts",
 ]

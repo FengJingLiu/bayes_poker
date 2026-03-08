@@ -290,9 +290,20 @@ def _build_shared_predictor_stub() -> OpponentRangePredictor:
         action_stats.check_call_samples = 12
         action_stats.fold_samples = 70
 
+    repo_calls: list[tuple[str, TableType, bool, float]] = []
+
     class _StubRepo:
-        def get(self, player_name: str, table_type: TableType) -> PlayerStats | None:
-            _ = table_type
+        def get(
+            self,
+            player_name: str,
+            table_type: TableType,
+            *,
+            smooth_with_pool: bool = False,
+            pool_prior_strength: float = 20.0,
+        ) -> PlayerStats | None:
+            repo_calls.append(
+                (player_name, table_type, smooth_with_pool, pool_prior_strength)
+            )
             if player_name == "aggregated_sixmax_100":
                 return aggregated_stats
             return None
@@ -399,13 +410,15 @@ def _build_shared_predictor_stub() -> OpponentRangePredictor:
         ),
     )
 
-    return create_opponent_range_predictor(
+    predictor = create_opponent_range_predictor(
         preflop_strategy=strategy,
         preflop_strategy_repository=repository,
         preflop_strategy_source_id=source_id,
         stats_repo=_StubRepo(),  # type: ignore[arg-type]
         table_type=TableType.SIX_MAX,
     )
+    setattr(predictor, "_stub_repo_calls", repo_calls)
+    return predictor
 
 
 @pytest.fixture
@@ -1293,6 +1306,41 @@ class TestOpponentRangePredictor:
         assert preflop_range is not None
         assert preflop_range.total_frequency() > 0.0
         assert _is_preflop_range_non_uniform(preflop_range)
+
+    def test_shared_adapter_reads_player_stats_with_pool_smoothing(self) -> None:
+        """共享 adapter 读取玩家统计时应显式启用玩家池平滑。"""
+
+        predictor = _build_shared_predictor_stub()
+        players = _build_sixmax_players_with_hero_btn()
+        table_state = ObservedTableState(
+            player_count=6,
+            btn_seat=0,
+            hero_seat=0,
+            street=Street.PREFLOP,
+            big_blind=1.0,
+            players=players,
+        )
+
+        predictor.update_range_on_action(
+            players[3],
+            PlayerAction(
+                player_index=3,
+                action_type=ActionType.RAISE,
+                amount=2.5,
+                street=Street.PREFLOP,
+            ),
+            table_state,
+            action_prefix=[],
+        )
+
+        repo_calls = getattr(predictor, "_stub_repo_calls")
+        assert (
+            "aggregated_sixmax_100",
+            TableType.SIX_MAX,
+            False,
+            20.0,
+        ) in repo_calls
+        assert ("utg", TableType.SIX_MAX, True, 20.0) in repo_calls
 
     def test_shared_adapter_rejects_three_bet_first_action(self) -> None:
         """首次 3bet 不应由 Task 9 的共享 adapter 接管。"""

@@ -44,4 +44,4 @@ def get_aggregated_player_stats(
     player_name = get_aggregated_player_name(table_type)
     if not player_name:
         return None
-    return repo.get(player_name, table_type)
+    return repo.get(player_name, table_type, smooth_with_pool=False)

@@ -78,6 +78,9 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 
+_POOL_PRIOR_STRENGTH = 20.0
+
+
 # 基于行动类型的范围缩放因子
 _ACTION_SCALE_FACTORS = {
     ActionType.FOLD: 0.0,
@@ -835,7 +838,12 @@ class OpponentRangePredictor:
         )
         player_stats = None
         if player.player_id:
-            player_stats = self.stats_repo.get(player.player_id, self.table_type)
+            player_stats = self.stats_repo.get(
+                player.player_id,
+                self.table_type,
+                smooth_with_pool=True,
+                pool_prior_strength=_POOL_PRIOR_STRENGTH,
+            )
         if player_stats is None:
             player_stats = population_player_stats
 
@@ -1603,7 +1611,12 @@ class OpponentRangePredictor:
     ) -> PreflopRange:
         """获取初始翻前范围。"""
         if self.stats_repo and player.player_id:
-            stats = self.stats_repo.get(player.player_id, self.table_type)
+            stats = self.stats_repo.get(
+                player.player_id,
+                self.table_type,
+                smooth_with_pool=True,
+                pool_prior_strength=_POOL_PRIOR_STRENGTH,
+            )
             if stats and stats.preflop_stats:
                 initial_range = self._range_from_vpip(stats.vpip)
                 if initial_range is not None:
@@ -1645,7 +1658,12 @@ class OpponentRangePredictor:
         base_scale = _ACTION_SCALE_FACTORS.get(action.action_type, 0.5)
 
         if self.stats_repo and player.player_id:
-            stats = self.stats_repo.get(player.player_id, self.table_type)
+            stats = self.stats_repo.get(
+                player.player_id,
+                self.table_type,
+                smooth_with_pool=True,
+                pool_prior_strength=_POOL_PRIOR_STRENGTH,
+            )
             if stats and stats.preflop_stats:
                 if action.action_type in (ActionType.RAISE, ActionType.BET):
                     pfr = getattr(stats, "pfr", 0.0)
