@@ -13,9 +13,17 @@ from bayes_poker.player_metrics.params import PreFlopParams
 class ActionFamily(str, Enum):
     """支持的翻前行动族。"""
 
+    FOLD = "fold"
     OPEN = "open"
     CALL_VS_OPEN = "call_vs_open"
+    CALL_VS_3BET = "call_vs_3bet"
     LIMP = "limp"
+    OVERLIMP = "overlimp"
+    ISO_RAISE = "iso_raise"
+    THREE_BET = "three_bet"
+    SQUEEZE = "squeeze"
+    FOUR_BET = "four_bet"
+    JAM = "jam"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +44,8 @@ class NodeContext:
     aggressor_position: Position | None
     call_count: int
     limp_count: int
+    raise_time: int
+    pot_size: float
     raise_size_bb: float | None = None
 
 

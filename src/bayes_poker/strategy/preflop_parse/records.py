@@ -51,10 +51,12 @@ class ParsedStrategyNodeRecord:
         source_file: 来源 JSON 文件名。
         action_family: 供 mapper 使用的动作族。
         actor_position: 当前待行动位置。
-        aggressor_position: 首个激进行动位置。
-        call_count: 首个激进行动后的跟注人数。
+        aggressor_position: 最后一次激进行动位置。
+        call_count: 最后一次激进行动后的跟注人数。
         limp_count: 首个激进行动前的 limp 人数。
-        raise_size_bb: 首个激进行动尺度。
+        raise_time: 当前节点前出现的加注次数。
+        pot_size: 当前节点前的底池大小（单位 BB）。
+        raise_size_bb: 最后一次激进行动尺度。
         is_in_position: 当前待行动方相对 aggressor 是否有位置优势。
     """
 
@@ -69,5 +71,7 @@ class ParsedStrategyNodeRecord:
     aggressor_position: Position | None
     call_count: int
     limp_count: int
+    raise_time: int
+    pot_size: float
     raise_size_bb: float | None
     is_in_position: bool | None
