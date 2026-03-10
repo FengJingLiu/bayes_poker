@@ -6,10 +6,9 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bayes_poker.domain.table import Position
-from bayes_poker.strategy.preflop_engine.state import ActionFamily
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
     ParsedStrategyNodeRecord,
@@ -44,11 +43,12 @@ CREATE TABLE IF NOT EXISTS solver_nodes (
     history_token_count INTEGER NOT NULL,
     acting_position TEXT NOT NULL,
     source_file TEXT NOT NULL,
-    action_family TEXT,
     actor_position TEXT,
     aggressor_position TEXT,
     call_count INTEGER NOT NULL,
     limp_count INTEGER NOT NULL,
+    raise_time INTEGER NOT NULL,
+    pot_size REAL NOT NULL,
     raise_size_bb REAL,
     is_in_position INTEGER,
     UNIQUE(source_id, stack_bb, history_full),
@@ -78,10 +78,10 @@ CREATE TABLE IF NOT EXISTS solver_actions (
 
 CREATE_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_solver_nodes_primary_match
-ON solver_nodes(source_id, stack_bb, action_family, actor_position);
+ON solver_nodes(source_id, stack_bb, actor_position);
 
 CREATE INDEX IF NOT EXISTS idx_solver_nodes_secondary_match
-ON solver_nodes(source_id, stack_bb, action_family, aggressor_position, call_count, limp_count);
+ON solver_nodes(source_id, stack_bb, actor_position, aggressor_position, call_count, limp_count, raise_time);
 
 CREATE INDEX IF NOT EXISTS idx_solver_actions_node_id
 ON solver_actions(node_id, order_index);
@@ -120,12 +120,13 @@ class SolverNodeRecord:
         history_token_count: 历史 token 数量。
         acting_position: 原始 acting position 字符串。
         source_file: 来源文件名。
-        action_family: 结构化动作族。
         actor_position: 当前待行动位置。
-        aggressor_position: 首个激进行动位置。
-        call_count: 首个激进行动后的跟注人数。
+        aggressor_position: 最后一次激进行动位置。
+        call_count: 最后一次激进行动后的跟注人数。
         limp_count: 首个激进行动前的 limp 人数。
-        raise_size_bb: 首个激进行动尺度。
+        raise_time: 当前节点前出现的加注次数。
+        pot_size: 当前节点前底池大小（单位 BB）。
+        raise_size_bb: 最后一次激进行动尺度。
         is_in_position: 当前待行动方相对 aggressor 是否有位置优势。
     """
 
@@ -137,11 +138,12 @@ class SolverNodeRecord:
     history_token_count: int
     acting_position: str
     source_file: str
-    action_family: ActionFamily | None
     actor_position: Position | None
     aggressor_position: Position | None
     call_count: int
     limp_count: int
+    raise_time: int
+    pot_size: float
     raise_size_bb: float | None
     is_in_position: bool | None
 
@@ -348,24 +350,26 @@ class PreflopStrategyRepository:
                 history_token_count,
                 acting_position,
                 source_file,
-                action_family,
                 actor_position,
                 aggressor_position,
                 call_count,
                 limp_count,
+                raise_time,
+                pot_size,
                 raise_size_bb,
                 is_in_position
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_id, stack_bb, history_full) DO UPDATE SET
                 history_actions = excluded.history_actions,
                 history_token_count = excluded.history_token_count,
                 acting_position = excluded.acting_position,
                 source_file = excluded.source_file,
-                action_family = excluded.action_family,
                 actor_position = excluded.actor_position,
                 aggressor_position = excluded.aggressor_position,
                 call_count = excluded.call_count,
                 limp_count = excluded.limp_count,
+                raise_time = excluded.raise_time,
+                pot_size = excluded.pot_size,
                 raise_size_bb = excluded.raise_size_bb,
                 is_in_position = excluded.is_in_position
             """,
@@ -377,11 +381,12 @@ class PreflopStrategyRepository:
                 node_record.history_token_count,
                 node_record.acting_position,
                 node_record.source_file,
-                _encode_action_family(node_record.action_family),
                 _encode_position(node_record.actor_position),
                 _encode_position(node_record.aggressor_position),
                 node_record.call_count,
                 node_record.limp_count,
+                node_record.raise_time,
+                node_record.pot_size,
                 node_record.raise_size_bb,
                 _encode_bool(node_record.is_in_position),
             ),
@@ -487,26 +492,34 @@ class PreflopStrategyRepository:
     def list_candidates(
         self,
         *,
-        source_id: int,
-        stack_bb: int,
-        action_family: ActionFamily,
+        source_id: int | None = None,
+        stack_bb: int | None = None,
         actor_position: Position,
+        aggressor_position: Position | None,
+        call_count: int,
+        limp_count: int,
+        raise_time: int,
+        pot_size: float | None,
     ) -> list[SolverNodeRecord]:
         """按 mapper 的主筛选条件读取候选节点.
 
         Args:
-            source_id: 所属策略源主键。
-            stack_bb: 筹码深度（BB 数）。
-            action_family: 目标动作族。
+            source_id: 所属策略源主键（可选）。
+            stack_bb: 筹码深度（BB 数）（可选）。
             actor_position: 当前待行动位置。
+            aggressor_position: 最后一次激进行动位置。
+            call_count: 最后一次激进行动后的跟注人数。
+            limp_count: 首个激进行动前的 limp 人数。
+            raise_time: 当前节点前出现的加注次数。
+            pot_size: 当前节点前底池大小（单位 BB）。
 
         Returns:
             候选节点列表。
         """
 
         cursor = self.conn.cursor()
-        cursor.execute(
-            """
+
+        query = """
             SELECT
                 node_id,
                 source_id,
@@ -516,27 +529,51 @@ class PreflopStrategyRepository:
                 history_token_count,
                 acting_position,
                 source_file,
-                action_family,
                 actor_position,
                 aggressor_position,
                 call_count,
                 limp_count,
+                raise_time,
+                pot_size,
                 raise_size_bb,
                 is_in_position
             FROM solver_nodes
-            WHERE source_id = ?
-              AND stack_bb = ?
-              AND action_family = ?
-              AND actor_position = ?
-            ORDER BY node_id ASC
-            """,
-            (
-                source_id,
-                stack_bb,
-                action_family.value,
-                actor_position.value,
-            ),
-        )
+            WHERE actor_position = ?
+              AND (
+                    (aggressor_position IS NULL AND ? IS NULL)
+                 OR aggressor_position = ?
+              )
+              AND call_count = ?
+              AND limp_count = ?
+              AND raise_time = ?
+        """
+        params: list[Any] = [
+            actor_position.value,
+            _encode_position(aggressor_position),
+            _encode_position(aggressor_position),
+            call_count,
+            limp_count,
+            raise_time,
+        ]
+
+        if source_id is not None:
+            query += " AND source_id = ?"
+            params.append(source_id)
+        if stack_bb is not None:
+            query += " AND stack_bb = ?"
+            params.append(stack_bb)
+
+        query += """
+            ORDER BY
+                CASE
+                    WHEN ? IS NULL THEN 0.0
+                    ELSE ABS(pot_size - ?)
+                END ASC,
+                node_id ASC
+        """
+        params.extend([pot_size, pot_size])
+
+        cursor.execute(query, tuple(params))
         return [_row_to_solver_node_record(row) for row in cursor.fetchall()]
 
     def get_actions_for_nodes(
@@ -583,10 +620,7 @@ class PreflopStrategyRepository:
         for row in cursor.fetchall():
             record = _row_to_solver_action_record(row)
             grouped.setdefault(record.node_id, []).append(record)
-        return {
-            node_id: tuple(records)
-            for node_id, records in grouped.items()
-        }
+        return {node_id: tuple(records) for node_id, records in grouped.items()}
 
     def count_nodes(self) -> int:
         """返回节点总数."""
@@ -664,14 +698,6 @@ class PreflopStrategyRepository:
         )
 
 
-def _encode_action_family(action_family: ActionFamily | None) -> str | None:
-    """将动作族编码为 sqlite 文本."""
-
-    if action_family is None:
-        return None
-    return action_family.value
-
-
 def _encode_position(position: Position | None) -> str | None:
     """将位置编码为 sqlite 文本."""
 
@@ -686,14 +712,6 @@ def _encode_bool(value: bool | None) -> int | None:
     if value is None:
         return None
     return int(value)
-
-
-def _decode_action_family(value: str | None) -> ActionFamily | None:
-    """将 sqlite 文本解码为动作族."""
-
-    if value is None:
-        return None
-    return ActionFamily(value)
 
 
 def _decode_position(value: str | None) -> Position | None:
@@ -731,11 +749,12 @@ def _row_to_solver_node_record(row: sqlite3.Row) -> SolverNodeRecord:
         history_token_count=int(row["history_token_count"]),
         acting_position=str(row["acting_position"]),
         source_file=str(row["source_file"]),
-        action_family=_decode_action_family(row["action_family"]),
         actor_position=_decode_position(row["actor_position"]),
         aggressor_position=_decode_position(row["aggressor_position"]),
         call_count=int(row["call_count"]),
         limp_count=int(row["limp_count"]),
+        raise_time=int(row["raise_time"]),
+        pot_size=float(row["pot_size"]),
         raise_size_bb=float(row["raise_size_bb"])
         if row["raise_size_bb"] is not None
         else None,
@@ -758,7 +777,9 @@ def _row_to_solver_action_record(row: sqlite3.Row) -> SolverActionRecord:
         order_index=int(row["order_index"]),
         action_code=str(row["action_code"]),
         action_type=str(row["action_type"]),
-        bet_size_bb=float(row["bet_size_bb"]) if row["bet_size_bb"] is not None else None,
+        bet_size_bb=float(row["bet_size_bb"])
+        if row["bet_size_bb"] is not None
+        else None,
         is_all_in=bool(row["is_all_in"]),
         total_frequency=float(row["total_frequency"]),
         next_position=str(row["next_position"]),
