@@ -268,7 +268,7 @@ class ObservedTableState:
         self.pot = 0.0
         self.board_cards = []
         self.hero_cards = None
-        self.action_history = []
+        self.action_history : list[PlayerAction] = []
         self.small_blind = small_blind
         self.big_blind = big_blind
 

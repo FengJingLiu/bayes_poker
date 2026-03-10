@@ -30,9 +30,6 @@ from bayes_poker.comm.session import (
 )
 from bayes_poker.table.observed_state import ObservedTableState
 
-if TYPE_CHECKING:
-    from bayes_poker.strategy.opponent_range.predictor import OpponentRangePredictor
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -52,7 +49,7 @@ class ServerConfig:
     rate_limit_per_second: int = 100
 
 
-StrategyHandler = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+StrategyHandler = Callable[[str, ObservedTableState], Awaitable[dict[str, Any]]]
 
 
 class WebSocketServer:
@@ -70,19 +67,16 @@ class WebSocketServer:
         self,
         config: ServerConfig,
         strategy_handler: StrategyHandler | None = None,
-        range_predictor: "OpponentRangePredictor | None" = None,
     ) -> None:
         """初始化 WebSocket 服务器。
 
         Args:
             config: 服务器配置。
             strategy_handler: 策略处理器。
-            range_predictor: 对手范围预测器（可选）。
         """
         self._config = config
         self._session_manager = SessionManager()
         self._strategy_handler = strategy_handler
-        self._range_predictor = range_predictor
 
         self._processed_action_offsets: dict[str, int] = {}
         self._last_hand_by_table: dict[str, str] = {}
@@ -104,14 +98,6 @@ class WebSocketServer:
             handler: 策略处理器。
         """
         self._strategy_handler = handler
-
-    def set_range_predictor(self, predictor: "OpponentRangePredictor") -> None:
-        """设置对手范围预测器。
-
-        Args:
-            predictor: 对手范围预测器。
-        """
-        self._range_predictor = predictor
 
     async def start(self) -> None:
         """启动服务器。"""
@@ -409,84 +395,6 @@ class WebSocketServer:
             # 非 Hero 回合：更新对手范围
             self._update_opponent_ranges(session_id, observed_state)
 
-    def _update_opponent_ranges(
-        self, session_id: str, observed_state: ObservedTableState
-    ) -> None:
-        """更新对手范围。
-
-        使用 TableSession 中的 range_predictor 来隔离每个牌桌的范围预测状态。
-
-        Args:
-            session_id: 会话 ID。
-            observed_state: 观察者状态。
-        """
-        table = self._session_manager.get_table_session(session_id)
-        if not table:
-            return
-
-        # 获取或创建该牌桌的 range_predictor
-        if table.range_predictor is None:
-            if self._range_predictor is not None:
-                # 使用全局 predictor 的配置创建新实例
-                from bayes_poker.strategy.opponent_range.predictor import (
-                    create_opponent_range_predictor,
-                )
-
-                table.range_predictor = create_opponent_range_predictor(
-                    preflop_strategy=self._range_predictor.preflop_strategy,
-                    preflop_strategy_repository=(
-                        self._range_predictor.preflop_strategy_repository
-                    ),
-                    preflop_strategy_source_id=(
-                        self._range_predictor.preflop_strategy_source_id
-                    ),
-                    stats_repo=self._range_predictor.stats_repo,
-                    table_type=self._range_predictor.table_type,
-                )
-            else:
-                return
-
-        predictor = table.range_predictor
-        hero_seat = observed_state.hero_seat
-        hand_id = observed_state.hand_id or "__unknown_hand__"
-
-        # 检测新手牌，重置范围和处理偏移
-        if table.current_hand_id != hand_id:
-            predictor.reset_all_ranges()
-            table.current_hand_id = hand_id
-            self._processed_action_offsets[session_id] = 0
-
-        player_by_seat = {
-            player.seat_index: player for player in observed_state.players
-        }
-        history_len = len(observed_state.action_history)
-        processed_offset = self._processed_action_offsets.get(session_id, 0)
-        if processed_offset < 0 or processed_offset > history_len:
-            processed_offset = 0
-
-        pending_actions = observed_state.action_history[processed_offset:history_len]
-        if not pending_actions:
-            return
-
-        for relative_idx, action in enumerate(pending_actions):
-            if action.player_index == hero_seat:
-                continue
-
-            player = player_by_seat.get(action.player_index)
-            if player is None:
-                continue
-
-            absolute_idx = processed_offset + relative_idx
-            action_prefix = observed_state.action_history[:absolute_idx]
-            predictor.update_range_on_action(
-                player,
-                action,
-                observed_state,
-                action_prefix=action_prefix,
-            )
-
-        self._processed_action_offsets[session_id] = history_len
-
     async def _trigger_strategy(
         self,
         client_session: ClientSession,
@@ -503,21 +411,9 @@ class WebSocketServer:
         if not self._strategy_handler:
             return
 
-        # 先更新对手范围
-        self._update_opponent_ranges(session_id, observed_state)
-
-        payload = {
-            "table_state": observed_state.to_dict(),
-            "state_version": observed_state.state_version,
-            "hero_seat": observed_state.hero_seat,
-            "hero_cards": list(observed_state.hero_cards)
-            if observed_state.hero_cards
-            else [],
-        }
-
         try:
             start_time = time.time()
-            result = await self._strategy_handler(session_id, payload)
+            result = await self._strategy_handler(session_id, observed_state)
             compute_time = int((time.time() - start_time) * 1000)
 
             result["compute_time_ms"] = compute_time

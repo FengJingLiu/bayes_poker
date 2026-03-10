@@ -26,3 +26,5 @@ Cargo.lock
 .envsource
 all_py_files.txt
 tests/fixtures
+
+*.sqlite
