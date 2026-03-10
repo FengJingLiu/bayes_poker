@@ -44,6 +44,32 @@ strategy/
 | `hero_resolver.py` | hero 当前节点的 GTO 推荐（v1 不做 hero posterior） |
 | `engine.py` / `handler.py` | facade 与 `create_strategy_handler()` |
 
+### 核心调用链 (Call Logic)
+
+`StrategyEngine.__call__(session_id, observed_state)` 为顶层入口，调用流程如下：
+
+1. **前置拦截（Hero Turn Validations）**
+   - 若 `actor_seat != hero_seat`，直接返回 `NoResponseDecision`。
+
+2. **对手范围更新阶段 (`OpponentPipeline.process_hero_snapshot`)**
+   - **会话与缓存管理**：从 `StrategySessionStore` 取出会话级缓存。若当前 Action Fingerprint 未变，直接返回缓存上下文，避免重复计算。
+   - **已行动对手 (Posterior 更新)**：
+     - `build_player_node_context`：构建对手历史的 NodeContext。
+     - `PlayerNodeStatsAdapter.load`：加载玩家历史群体统计概率。
+     - `StrategyNodeMapper.map_node_context`：把上下文映射到策略库中的最近 GTO 节点。
+     - `GtoPriorBuilder.build_policy`：计算该节点的 GTO 策略先验（Prior）。
+     - `_calibrate_policy`：利用玩家历史统计概率校准 GTO 先验分布。
+     - `update_posterior`：结合实际 Action，执行贝叶斯更新得到对手 Posterior Range。
+   - **未行动对手 (Prior 只有)**：
+     - 使用根据位置设定的固化频率初始 Prior Range。
+   - 返回 `StrategySessionContext` (包含各对手最新的 `player_ranges` 和分析摘要)。
+
+3. **Hero 推荐生成阶段 (`HeroGtoResolver.resolve`)**
+   - 构建 Hero 当前状态的 NodeContext。
+   - `StrategyNodeMapper.map_node_context` -> `GtoPriorBuilder.build_policy` 获取当前 Hero 节点的 GTO 策略环境。
+   - 选取最高频率（blended_frequency）的操作作为 `RecommendationDecision`。
+   - 将上一步 `OpponentPipeline` 生成的对手 `range_breakdown` 合并入 Decision 中返回。
+
 ## 顶层导出 API
 
 ### 新主链路导出

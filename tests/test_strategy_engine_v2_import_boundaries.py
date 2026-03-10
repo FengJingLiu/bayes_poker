@@ -73,20 +73,26 @@ def test_strategy_engine_v2_support_matrix_is_frozen() -> None:
 
 
 def test_strategy_engine_v2_scope_matches_reference_tests() -> None:
-    state_test = (_REPO_ROOT / "tests" / "test_preflop_engine_state.py").read_text(
-        encoding="utf-8"
-    )
-    opponent_range_test = (_REPO_ROOT / "tests" / "test_opponent_range.py").read_text(
-        encoding="utf-8"
+    legacy_reference_tests = (
+        _REPO_ROOT / "tests" / "test_preflop_engine_state.py",
+        _REPO_ROOT / "tests" / "test_opponent_range.py",
     )
 
-    assert "ActionFamily.OPEN" in state_test
-    assert "ActionFamily.CALL_VS_OPEN" in state_test
-    assert 'match="limp"' in state_test
-    assert 'match="多次加注"' in state_test
+    for test_file in legacy_reference_tests:
+        assert test_file.exists() is False
 
-    assert "test_shared_adapter_rejects_three_bet_first_action" in opponent_range_test
-    assert "Street.PREFLOP" in opponent_range_test
+    supported_action_families = {
+        action_family
+        for action_family in (
+            "OPEN",
+            "CALL_VS_OPEN",
+            "LIMP",
+            "THREE_BET",
+            "FOUR_BET",
+        )
+        if _is_v1_supported(6, "preflop", action_family, True)
+    }
+    assert supported_action_families == {"OPEN", "CALL_VS_OPEN", "LIMP"}
 
 
 def test_top_level_strategy_exports_point_to_v2() -> None:
