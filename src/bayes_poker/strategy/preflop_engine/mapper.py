@@ -82,15 +82,19 @@ class PreflopNodeMapper:
         candidates = self._repository.list_candidates(
             source_id=self._source_id,
             stack_bb=self._stack_bb,
-            action_family=state.action_family,
             actor_position=state.actor_position,
+            aggressor_position=state.aggressor_position,
+            call_count=state.call_count,
+            limp_count=state.limp_count,
+            raise_time=state.raise_time,
+            pot_size=state.pot_size,
         )
         if not candidates:
             if state.action_family == ActionFamily.LIMP:
                 return _build_synthetic_context(
                     template_kind=SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3,
                 )
-            raise ValueError("当前 stack 下没有同动作族的 solver 节点.")
+            raise ValueError("当前 stack 下没有可匹配的 solver 节点.")
 
         scored_candidates = [
             (_calculate_distance(state=state, candidate=candidate), candidate)
@@ -173,9 +177,6 @@ def _calculate_distance(
     """计算真实状态与候选节点的可解释距离。"""
 
     distance = 0.0
-    if state.action_family != candidate.action_family:
-        distance += 1000.0
-
     if state.actor_position != candidate.actor_position:
         distance += 40.0
 
@@ -184,12 +185,20 @@ def _calculate_distance(
 
     distance += abs(state.call_count - candidate.call_count) * 20.0
     distance += abs(state.limp_count - candidate.limp_count) * 20.0
+    distance += abs(state.raise_time - candidate.raise_time) * 25.0
+    distance += _calculate_pot_size_distance(
+        state_pot_size=state.pot_size,
+        candidate_pot_size=candidate.pot_size,
+    )
     distance += _calculate_raise_size_distance(
         state_raise_size_bb=state.raise_size_bb,
         candidate_raise_size_bb=candidate.raise_size_bb,
     )
 
-    if state.aggressor_position is not None and candidate.aggressor_position is not None:
+    if (
+        state.aggressor_position is not None
+        and candidate.aggressor_position is not None
+    ):
         state_is_in_position = _is_in_position(
             actor_position=state.actor_position,
             aggressor_position=state.aggressor_position,
@@ -217,6 +226,18 @@ def _calculate_raise_size_distance(
     if state_raise_size_bb <= 0 or candidate_raise_size_bb <= 0:
         return 5.0
     return abs(math.log(state_raise_size_bb / candidate_raise_size_bb)) * 10.0
+
+
+def _calculate_pot_size_distance(
+    *,
+    state_pot_size: float,
+    candidate_pot_size: float,
+) -> float:
+    """计算底池大小距离。"""
+
+    if state_pot_size <= 0 or candidate_pot_size <= 0:
+        return 0.0
+    return abs(math.log(state_pot_size / candidate_pot_size)) * 8.0
 
 
 def _is_in_position(

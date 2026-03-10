@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import math
 from dataclasses import dataclass
 from enum import Enum
@@ -43,17 +44,17 @@ class StrategyNodeMapper:
         self,
         *,
         repository_adapter: StrategyRepositoryAdapter,
-        source_id: int,
+        source_id: int | Sequence[int],
         stack_bb: int,
         max_candidates: int = 2,
     ) -> None:
-        """初始化节点匹配器。
+        """初始化节点匹配器.
 
         Args:
-            repository_adapter: sqlite 读取适配器。
-            source_id: 当前策略源 ID。
-            stack_bb: 当前使用的筹码深度。
-            max_candidates: 返回候选上限。
+            repository_adapter: sqlite 读取适配器.
+            source_id: 当前策略源 ID 或 ID 序列.
+            stack_bb: 当前使用的筹码深度.
+            max_candidates: 返回候选上限.
         """
 
         self._repository_adapter = repository_adapter
@@ -88,7 +89,7 @@ class StrategyNodeMapper:
                     candidate_distances=(),
                     synthetic_template_kind=SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3,
                 )
-            raise ValueError("当前 stack 下没有同动作族的 solver 节点。")
+            raise ValueError("当前 stack 下没有可匹配的 solver 节点。")
 
         scored_candidates = [
             (
@@ -147,14 +148,17 @@ def _calculate_distance(
     candidate: StrategyNodeCandidate,
 ) -> float:
     distance = 0.0
-    if node_context.action_family.name != candidate.action_family:
-        distance += 1000.0
     if node_context.actor_position.value != candidate.actor_position:
         distance += 40.0
     if _position_value(node_context.aggressor_position) != candidate.aggressor_position:
         distance += 30.0
     distance += abs(node_context.call_count - candidate.call_count) * 20.0
     distance += abs(node_context.limp_count - candidate.limp_count) * 20.0
+    distance += abs(node_context.raise_time - candidate.raise_time) * 25.0
+    distance += _calculate_pot_size_distance(
+        actual_pot_size=node_context.pot_size,
+        candidate_pot_size=candidate.pot_size,
+    )
     distance += _calculate_raise_size_distance(
         actual_size_bb=node_context.raise_size_bb,
         candidate_size_bb=candidate.raise_size_bb,
@@ -185,6 +189,16 @@ def _calculate_raise_size_distance(
     if actual_size_bb <= 0 or candidate_size_bb <= 0:
         return 5.0
     return abs(math.log(actual_size_bb / candidate_size_bb)) * 10.0
+
+
+def _calculate_pot_size_distance(
+    *,
+    actual_pot_size: float,
+    candidate_pot_size: float,
+) -> float:
+    if actual_pot_size <= 0 or candidate_pot_size <= 0:
+        return 0.0
+    return abs(math.log(actual_pot_size / candidate_pot_size)) * 8.0
 
 
 def _is_in_position(*, actor_position: Position, aggressor_position: Position) -> bool:

@@ -94,7 +94,10 @@ def _build_first_action_prefix(
 
 
 def _classify_action_family(
-    prefix_actions: list[PlayerAction], big_blind: float
+    prefix_actions: list[PlayerAction],
+    *,
+    small_blind: float,
+    big_blind: float,
 ) -> NodeContext:
     aggressive_actions = [
         action
@@ -103,6 +106,13 @@ def _classify_action_family(
     ]
     if len(aggressive_actions) >= 2:
         raise UnsupportedContextError("当前最小实现暂不支持多次加注场景")
+
+    raise_time = len(aggressive_actions)
+    pot_size = _calculate_prefix_pot_size(
+        prefix_actions=prefix_actions,
+        small_blind=small_blind,
+        big_blind=big_blind,
+    )
 
     limp_count = 0
     for action in prefix_actions:
@@ -120,6 +130,8 @@ def _classify_action_family(
                 aggressor_position=None,
                 call_count=0,
                 limp_count=0,
+                raise_time=0,
+                pot_size=pot_size,
                 raise_size_bb=None,
             )
         return NodeContext(
@@ -128,6 +140,8 @@ def _classify_action_family(
             aggressor_position=None,
             call_count=0,
             limp_count=limp_count,
+            raise_time=0,
+            pot_size=pot_size,
             raise_size_bb=None,
         )
 
@@ -146,8 +160,54 @@ def _classify_action_family(
         aggressor_position=Position.UTG,
         call_count=call_count,
         limp_count=0,
+        raise_time=raise_time,
+        pot_size=pot_size,
         raise_size_bb=first_raise.amount / big_blind if big_blind > 0 else None,
     )
+
+
+def _calculate_prefix_pot_size(
+    *,
+    prefix_actions: list[PlayerAction],
+    small_blind: float,
+    big_blind: float,
+) -> float:
+    """按动作前缀估算当前底池大小（单位 BB）。
+
+    Args:
+        prefix_actions: 当前 actor 行动前的翻前动作序列。
+        small_blind: 小盲金额（BB 单位）。
+        big_blind: 大盲金额（BB 单位）。
+
+    Returns:
+        当前动作前的底池大小。
+    """
+
+    pot_size = small_blind + big_blind
+    current_to_call = big_blind
+    contribution_by_seat: dict[int, float] = {}
+
+    for action in prefix_actions:
+        if action.action_type in {ActionType.FOLD, ActionType.CHECK}:
+            continue
+
+        target = current_to_call
+        if action.action_type == ActionType.CALL:
+            target = current_to_call
+        elif action.action_type in {
+            ActionType.BET,
+            ActionType.RAISE,
+            ActionType.ALL_IN,
+        }:
+            target = max(action.amount, current_to_call)
+            current_to_call = target
+
+        contributed = contribution_by_seat.get(action.player_index, 0.0)
+        delta = max(target - contributed, 0.0)
+        contribution_by_seat[action.player_index] = contributed + delta
+        pot_size += delta
+
+    return pot_size
 
 
 def build_player_node_context(
@@ -193,7 +253,9 @@ def build_player_node_context(
     )
 
     base_node_context = _classify_action_family(
-        prefix_actions, observed_state.big_blind
+        prefix_actions,
+        small_blind=observed_state.small_blind,
+        big_blind=observed_state.big_blind,
     )
     aggressor_position = None
     if base_node_context.action_family == ActionFamily.CALL_VS_OPEN:
@@ -214,6 +276,8 @@ def build_player_node_context(
         aggressor_position=aggressor_position,
         call_count=base_node_context.call_count,
         limp_count=base_node_context.limp_count,
+        raise_time=base_node_context.raise_time,
+        pot_size=base_node_context.pot_size,
         raise_size_bb=base_node_context.raise_size_bb,
     )
 
