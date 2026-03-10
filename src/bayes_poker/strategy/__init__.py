@@ -5,7 +5,15 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORT_MODULES: dict[str, str] = {
-    "StrategyHandler": "bayes_poker.strategy.runtime",
+    "StrategyHandler": "bayes_poker.strategy.strategy_engine",
+    "StrategyDecision": "bayes_poker.strategy.strategy_engine",
+    "RecommendationDecision": "bayes_poker.strategy.strategy_engine",
+    "NoResponseDecision": "bayes_poker.strategy.strategy_engine",
+    "UnsupportedScenarioDecision": "bayes_poker.strategy.strategy_engine",
+    "SafeFallbackDecision": "bayes_poker.strategy.strategy_engine",
+    "StrategyEngine": "bayes_poker.strategy.strategy_engine",
+    "StrategyEngineConfig": "bayes_poker.strategy.strategy_engine",
+    "create_strategy_handler": "bayes_poker.strategy.strategy_engine",
     "PreflopLayer": "bayes_poker.strategy.runtime",
     "PreflopRuntimeConfig": "bayes_poker.strategy.runtime",
     "create_preflop_strategy": "bayes_poker.strategy.runtime",

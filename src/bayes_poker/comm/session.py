@@ -9,12 +9,9 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from bayes_poker.comm.protocol import MessageEnvelope
-
-if TYPE_CHECKING:
-    from bayes_poker.strategy.opponent_range.predictor import OpponentRangePredictor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,8 +41,6 @@ class TableSession:
         state_version: 状态版本。
         last_snapshot: 最近快照。
         last_activity: 最后活动时间。
-        range_predictor: 对手范围预测器（按牌桌隔离）。
-        current_hand_id: 当前手牌 ID（用于检测新手牌）。
     """
 
     session_id: str
@@ -58,10 +53,6 @@ class TableSession:
     state_version: int = 0
     last_snapshot: dict[str, Any] | None = None
     last_activity: float = field(default_factory=time.time)
-
-    # 对手范围预测器（按牌桌隔离）
-    range_predictor: "OpponentRangePredictor | None" = None
-    current_hand_id: str = ""
 
     _replay_buffer: deque[tuple[int, float, MessageEnvelope]] = field(
         init=False, repr=False

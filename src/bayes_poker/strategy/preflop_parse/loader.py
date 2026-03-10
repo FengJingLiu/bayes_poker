@@ -9,6 +9,8 @@ from bayes_poker.strategy.preflop_parse.importer import (
     import_strategy_directory_to_sqlite,
 )
 
+_EXPECTED_FORMAT_VERSION = 2
+
 
 def build_preflop_strategy_db(
     *,
@@ -43,4 +45,27 @@ def open_preflop_strategy_repository(db_path: Path) -> PreflopStrategyRepository
 
     repo = PreflopStrategyRepository(db_path)
     repo.connect()
+    _assert_repository_format(repo)
     return repo
+
+
+def _assert_repository_format(repo: PreflopStrategyRepository) -> None:
+    """校验仓库格式版本符合 v2 预期。
+
+    Args:
+        repo: 已连接的策略仓库。
+
+    Raises:
+        ValueError: 当仓库内 source 的格式版本不符合预期时抛出。
+    """
+
+    sources = repo.list_sources()
+    if not sources:
+        return
+    invalid_sources = [
+        source
+        for source in sources
+        if source.format_version != _EXPECTED_FORMAT_VERSION
+    ]
+    if invalid_sources:
+        raise ValueError("当前策略库格式版本过旧，请重建 sqlite 数据库。")

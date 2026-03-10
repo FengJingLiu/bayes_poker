@@ -2,6 +2,16 @@
 
 > WebSocket 通信模块，负责 Windows ↔ Linux 之间的实时牌桌状态同步与策略通信。
 
+## 当前架构口径（v2）
+
+- `server.py` 继续负责 transport、认证、消息路由、resume/replay。
+- `server.py` **只在 hero 回合** 调用 `StrategyHandler`。
+- 新 `StrategyHandler` 已切到 `strategy_engine v2` 的强类型边界:
+  - 输入: `(session_id, ObservedTableState)`
+  - 输出: `StrategyDecision`
+- `server.py` 负责把 `StrategyDecision` 映射成 `StrategyResponsePayload`。
+- 对手范围状态、session memory、posterior 更新已经迁入 `strategy_engine`，`comm/session.py` 不再持有 `range_predictor/current_hand_id`。
+
 ## 模块架构
 
 ```
@@ -21,15 +31,15 @@
 │  │ ObservedTable│────▶│ sync_table   │─────▶│  _handle_table_      │   │
 │  │    State     │      │    state()   │      │    snapshot()        │   │
 │  │              │      │              │      │         │            │   │
-│  │              │      │              │      │    ┌────┴────┐       │   │
-│  │              │      │              │      │    ▼         ▼       │   │
-│  │              │      │              │      │ Hero回合?  非Hero    │   │
-│  │              │      │              │      │    │         │       │   │
-│  │              │      │              │      │    ▼         ▼       │   │
-│  │              │      │              │      │ 策略计算   更新对手   │   │
-│  │              │      │              │      │            范围       │   │
-│  │              │      │              │      │    │                 │   │
-│  │              │      │              │      │    ▼                 │   │
+│  │              │      │              │      │    ┌───────┐         │   │
+│  │              │      │              │      │    ▼       │         │   │
+│  │              │      │              │      │ Hero回合?  │         │   │
+│  │              │      │              │      │    │       │         │   │
+│  │              │      │              │      │    ▼       │         │   │
+│  │              │      │              │      │ strategy_  │         │   │
+│  │              │      │              │      │ engine v2  │         │   │
+│  │              │      │              │      │    │       │         │   │
+│  │              │      │              │      │    ▼       │         │   │
 │  │              │◀────│   Client     │◀─────│ STRATEGY_RESPONSE    │   │
 │  │              │      │              │      │                      │   │
 │  └──────────────┘      └──────────────┘      └──────────────────────┘   │
@@ -46,7 +56,7 @@
 | `payload_base.py` | Payload 基类：提供 to_dict/from_dict 序列化 |
 | `session.py` | 会话管理：客户端/牌桌会话、消息重放缓存、断线恢复 |
 | `client.py` | WebSocket 客户端：自动重连、心跳、消息确认、请求-响应模式 |
-| `server.py` | WebSocket 服务器：多客户端、认证、消息路由、策略触发 |
+| `server.py` | WebSocket 服务器：多客户端、认证、消息路由、hero-turn 策略触发与 decision->payload 映射 |
 | `agent.py` | 客户端代理：集成 TableParser，状态同步封装 |
 | `strategy_history.py` | 工具：动作序列编码为翻前 history 字符串 |
 
@@ -114,7 +124,7 @@
      │               │                   │
 ```
 
-### 2. 牌桌状态同步流程
+### 2. 牌桌状态同步流程（v2）
 
 ```
 ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
@@ -143,8 +153,8 @@
        │                 │                 │                 │ 判断是否
        │                 │                 │                 │ Hero回合
        │                 │                 │                 │
-       │                 │                 │                 │ Hero? ────▶ 策略计算
-       │                 │                 │                 │ 非Hero? ──▶ 更新范围
+       │                 │                 │                 │ Hero? ────▶ strategy_engine v2
+       │                 │                 │                 │ 非Hero? ──▶ 不调用 handler
        │                 │                 │                 │
        │                 │                 │                 │
        │                 │                 │◀────────────────│ 策略响应
@@ -191,80 +201,42 @@
      │                          │                                 │
 ```
 
-### 4. 策略计算触发流程
+### 4. 策略计算触发流程（v2）
 
 ```
-┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
-│    Server    │   │   _trigger_       │   │  strategy_handler│
-│              │   │   strategy()       │   │  (用户注入)       │
-└──────┬───────┘   └────────┬─────────┘   └────────┬─────────┘
-       │                    │                      │
-       │ 收到 TABLE_SNAPSHOT │                     │
-       │ 且是 Hero 回合      │                     │
-       │                    │                      │
-       │───────────────────▶│                      │
-       │                    │                      │
-       │                    │  1. 先更新对手范围    │
-       │                    │  _update_opponent_   │
-       │                    │  ranges()            │
-       │                    │                      │
-       │                    │  2. 构建 payload      │
-       │                    │  {                   │
-       │                    │    table_state,      │
-       │                    │    state_version,    │
-       │                    │    hero_seat,        │
-       │                    │    hero_cards        │
-       │                    │  }                   │
-       │                    │                      │
-       │                    │─────────────────────▶│
-       │                    │                      │
-       │                    │  用户自定义策略计算    │
-       │                    │                      │
-       │                    │◀─────────────────────│
-       │                    │  返回: {             │
-       │                    │    recommended_action│
-       │                    │    recommended_amount│
-       │                    │    ev, confidence... │
-       │                    │  }                   │
-       │                    │                      │
-       │◀───────────────────│                      │
-       │ 发送 STRATEGY_     │                      │
-       │ RESPONSE           │                      │
-       │                    │                      │
+┌──────────────┐   ┌──────────────────┐   ┌────────────────────────┐
+│    Server    │   │   _trigger_      │   │   strategy_engine v2   │
+│              │   │   strategy()     │   │   StrategyHandler      │
+└──────┬───────┘   └────────┬─────────┘   └────────────┬───────────┘
+       │                    │                          │
+       │ 收到 TABLE_SNAPSHOT │                         │
+       │ 且是 Hero 回合      │                         │
+       │                    │                          │
+       │───────────────────▶│                          │
+       │                    │                          │
+       │                    │  await handler(         │
+       │                    │    session_id,          │
+       │                    │    observed_state       │
+       │                    │  )                      │
+       │                    │─────────────────────────▶│
+       │                    │                          │
+       │                    │◀─────────────────────────│
+       │                    │  StrategyDecision        │
+       │                    │                          │
+       │                    │  映射到                 │
+       │                    │  StrategyResponsePayload│
+       │                    │                          │
+       │◀───────────────────│                          │
+       │ 发送 STRATEGY_     │                          │
+       │ RESPONSE           │                          │
+       │                    │                          │
 ```
 
-### 5. 对手范围更新流程
+### 5. 对手范围状态归属（v2）
 
-```
-┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
-│    Server    │   │  _update_opponent_│   │ OpponentRange    │
-│              │   │    ranges()        │   │    Predictor     │
-└──────┬───────┘   └────────┬─────────┘   └────────┬─────────┘
-       │                    │                      │
-       │ 收到 TABLE_SNAPSHOT │                     │
-       │ 且非 Hero 回合      │                     │
-       │                    │                      │
-       │───────────────────▶│                      │
-       │                    │                      │
-       │                    │ 检测新手牌?          │
-       │                    │ 重置范围             │
-       │                    │                      │
-       │                    │ 获取未处理的动作      │
-       │                    │ (action_prefix)      │
-       │                    │                      │
-       │                    │ 遍历 pending_actions │
-       │                    │                      │
-       │                    │─────────────────────▶│
-       │                    │                      │
-       │                    │  update_range_on_    │
-       │                    │  action()            │
-       │                    │  每动作更新一次       │
-       │                    │                      │
-       │                    │◀─────────────────────│
-       │                    │                      │
-       │                    │ 更新处理偏移          │
-       │                    │                      │
-```
+- `comm/session.py` 只保留 transport/session/replay 状态。
+- 对手范围、session memory、fingerprint 幂等与 hand reset 全部归 `strategy_engine`。
+- `server.py` 不再维护 `_update_opponent_ranges()` 或 `range_predictor/current_hand_id` 之类的业务状态。
 
 ## 关键数据结构
 

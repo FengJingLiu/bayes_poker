@@ -13,7 +13,7 @@ from bayes_poker.strategy.preflop_parse.parser import (
 )
 
 LOGGER = logging.getLogger(__name__)
-_FORMAT_VERSION = 1
+_FORMAT_VERSION = 2
 
 
 def import_strategy_directory_to_sqlite(
@@ -30,6 +30,9 @@ def import_strategy_directory_to_sqlite(
     Returns:
         导入完成后的数据库路径。
     """
+
+    if db_path.exists():
+        db_path.unlink()
 
     repo = PreflopStrategyRepository(db_path)
     repo.connect()

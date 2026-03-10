@@ -59,6 +59,25 @@ class ResumePayload(PayloadBase):
 
 
 @dataclass
+class StrategyRequestPayload(PayloadBase):
+    """策略请求。
+
+    Args:
+        session_id: 牌桌会话 ID。
+        table_state: 当前牌桌状态快照。
+        hero_seat: Hero 座位索引。
+        hero_cards: Hero 手牌。
+        state_version: 当前状态版本号。
+    """
+
+    session_id: str
+    table_state: dict[str, Any] = field(default_factory=dict)
+    hero_seat: int = 0
+    hero_cards: list[str] = field(default_factory=list)
+    state_version: int = 0
+
+
+@dataclass
 class StrategyResponsePayload(PayloadBase):
     """策略响应。"""
 

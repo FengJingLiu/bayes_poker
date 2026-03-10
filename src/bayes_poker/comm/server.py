@@ -11,7 +11,7 @@ import logging
 import ssl
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Awaitable
+from typing import Any
 
 from bayes_poker.comm.protocol import (
     ErrorCode,
@@ -22,11 +22,19 @@ from bayes_poker.comm.protocol import (
 from bayes_poker.comm.messages import (
     AuthResponsePayload,
     ErrorPayload,
+    StrategyResponsePayload,
 )
 from bayes_poker.comm.session import (
     ClientSession,
     SessionManager,
     TableSession,
+)
+from bayes_poker.strategy.strategy_engine.contracts import (
+    NoResponseDecision,
+    RecommendationDecision,
+    SafeFallbackDecision,
+    StrategyHandler,
+    UnsupportedScenarioDecision,
 )
 from bayes_poker.table.observed_state import ObservedTableState
 
@@ -47,9 +55,6 @@ class ServerConfig:
     heartbeat_timeout: float = 60.0
     max_message_size: int = 1024 * 1024
     rate_limit_per_second: int = 100
-
-
-StrategyHandler = Callable[[str, ObservedTableState], Awaitable[dict[str, Any]]]
 
 
 class WebSocketServer:
@@ -77,9 +82,6 @@ class WebSocketServer:
         self._config = config
         self._session_manager = SessionManager()
         self._strategy_handler = strategy_handler
-
-        self._processed_action_offsets: dict[str, int] = {}
-        self._last_hand_by_table: dict[str, str] = {}
 
         self._running = False
         self._server = None
@@ -324,6 +326,14 @@ class WebSocketServer:
         """处理断线恢复。"""
         session_id = msg.payload.get("session_id")
         last_ack_seq = msg.payload.get("last_ack_seq", 0)
+        if not isinstance(session_id, str):
+            await self._send_error_to_client(
+                client_session,
+                ErrorCode.SCHEMA_INVALID,
+                "缺少 session_id",
+                request_id=msg.request_id,
+            )
+            return
 
         success, messages = self._session_manager.handle_resume(
             client_session.client_id, session_id, last_ack_seq
@@ -359,7 +369,6 @@ class WebSocketServer:
         - 反序列化为 ObservedTableState
         - 判断是否 Hero 回合
         - Hero 回合：触发策略生成
-        - 非 Hero 回合：更新对手范围
 
         Args:
             client_session: 客户端会话。
@@ -391,9 +400,6 @@ class WebSocketServer:
             # Hero 回合：触发策略生成
             if self._strategy_handler:
                 await self._trigger_strategy(client_session, session_id, observed_state)
-        else:
-            # 非 Hero 回合：更新对手范围
-            self._update_opponent_ranges(session_id, observed_state)
 
     async def _trigger_strategy(
         self,
@@ -413,21 +419,87 @@ class WebSocketServer:
 
         try:
             start_time = time.time()
-            result = await self._strategy_handler(session_id, observed_state)
+            decision = await self._strategy_handler(session_id, observed_state)
             compute_time = int((time.time() - start_time) * 1000)
 
-            result["compute_time_ms"] = compute_time
-            result["session_id"] = session_id
+            payload = self._build_strategy_response_payload(
+                session_id=session_id,
+                request_id="",
+                compute_time_ms=compute_time,
+                decision=decision,
+            )
+            if payload is None:
+                return
 
             response = MessageEnvelope(
                 type=MessageType.STRATEGY_RESPONSE,
                 session_id=session_id,
-                payload=result,
+                payload=payload.to_dict(),
             )
             await self._send_to_client(client_session, response)
 
         except Exception as e:
             LOGGER.exception("策略计算失败: %s", e)
+
+    def _build_strategy_response_payload(
+        self,
+        *,
+        session_id: str,
+        request_id: str,
+        compute_time_ms: int,
+        decision: RecommendationDecision
+        | UnsupportedScenarioDecision
+        | SafeFallbackDecision
+        | NoResponseDecision,
+    ) -> StrategyResponsePayload | None:
+        """把强类型决策映射为传输层 payload。"""
+
+        if isinstance(decision, NoResponseDecision):
+            return None
+        if isinstance(decision, RecommendationDecision):
+            return StrategyResponsePayload(
+                session_id=session_id,
+                state_version=decision.state_version,
+                request_id=request_id,
+                recommended_action=decision.action_code or "",
+                recommended_amount=decision.amount or 0.0,
+                confidence=decision.confidence or 0.0,
+                ev=decision.ev or 0.0,
+                action_evs=decision.action_evs,
+                range_breakdown=decision.range_breakdown,
+                notes=decision.notes,
+                is_stale=False,
+                compute_time_ms=compute_time_ms,
+            )
+        if isinstance(decision, UnsupportedScenarioDecision):
+            return StrategyResponsePayload(
+                session_id=session_id,
+                state_version=decision.state_version,
+                request_id=request_id,
+                recommended_action="",
+                recommended_amount=0.0,
+                confidence=0.0,
+                ev=0.0,
+                action_evs={},
+                range_breakdown={},
+                notes=decision.reason,
+                is_stale=False,
+                compute_time_ms=compute_time_ms,
+            )
+        return StrategyResponsePayload(
+            session_id=session_id,
+            state_version=decision.state_version,
+            request_id=request_id,
+            recommended_action="",
+            recommended_amount=0.0,
+            confidence=decision.confidence or 0.0,
+            ev=decision.ev or 0.0,
+            action_evs={},
+            range_breakdown={},
+            notes=decision.notes,
+            is_stale=False,
+            compute_time_ms=compute_time_ms,
+        )
 
     async def _handle_ack(
         self, client_session: ClientSession, msg: MessageEnvelope
