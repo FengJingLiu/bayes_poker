@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,38 @@ _POSTFLOP_POSITION_ORDER: tuple[Position, ...] = (
     Position.CO,
     Position.BTN,
 )
+_SMALL_BLIND_BB = 0.5
+_BIG_BLIND_BB = 1.0
+_STATE_LABEL_TO_ACTION_FAMILY: dict[str, ActionFamily] = {
+    "FOLD": ActionFamily.FOLD,
+    "LIMP": ActionFamily.LIMP,
+    "OVERLIMP": ActionFamily.OVERLIMP,
+    "OPEN": ActionFamily.OPEN,
+    "ISO_RAISE": ActionFamily.ISO_RAISE,
+    "CALL_VS_OPEN": ActionFamily.CALL_VS_OPEN,
+    "CALL_VS_3BET": ActionFamily.CALL_VS_3BET,
+    "THREE_BET": ActionFamily.THREE_BET,
+    "SQUEEZE": ActionFamily.SQUEEZE,
+    "FOUR_BET": ActionFamily.FOUR_BET,
+    "JAM": ActionFamily.JAM,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _AggressionEvent:
+    """历史中的激进行动事件。
+
+    Attributes:
+        position: 执行激进行动的位置。
+        normalized_token: 标准化后的 token。
+        raise_size_bb: 激进行动尺度（BB）。
+        call_count_before_raise: 此次激进行动前、上一轮激进行动后的跟注数。
+    """
+
+    position: Position
+    normalized_token: str
+    raise_size_bb: float | None
+    call_count_before_raise: int
 
 
 def parse_bet_size_from_code(code: str) -> float | None:
@@ -179,13 +212,13 @@ def _resolve_position(position_name: str) -> Position | None:
 def _resolve_action_positions(
     *,
     actor_position: Position,
-    token_count: int,
+    tokens: tuple[str, ...],
 ) -> tuple[Position, ...] | None:
     """解析历史 token 对应的行动位置序列.
 
     Args:
         actor_position: 当前待行动位置。
-        token_count: 历史 token 数量。
+        tokens: 历史 token 序列。
 
     Returns:
         与历史 token 一一对应的位置序列；无法确定时返回 None。
@@ -194,10 +227,15 @@ def _resolve_action_positions(
     for action_order in (_PREFLOP_ACTION_ORDER_6MAX, _PREFLOP_ACTION_ORDER_9MAX):
         if actor_position not in action_order:
             continue
-        actor_index = action_order.index(actor_position)
-        if actor_index != token_count:
+        simulated = _simulate_action_positions(
+            action_order=action_order,
+            tokens=tokens,
+        )
+        if simulated is None:
             continue
-        return action_order[:actor_index]
+        action_positions, next_actor_position = simulated
+        if next_actor_position == actor_position:
+            return action_positions
     return None
 
 
@@ -229,7 +267,7 @@ def _extract_raise_size(token: str) -> float | None:
 
     normalized_token = token.upper()
     if normalized_token == "RAI":
-        return 1000.0
+        return 100.0
     return parse_bet_size_from_code(normalized_token)
 
 
@@ -242,7 +280,7 @@ def _is_in_position(
 
     Args:
         actor_position: 当前待行动位置。
-        aggressor_position: 首个激进行动位置。
+        aggressor_position: 最后一次激进行动位置。
 
     Returns:
         如果当前行动方翻后位置更靠后则返回 True。
@@ -253,16 +291,141 @@ def _is_in_position(
     return actor_index > aggressor_index
 
 
+def _simulate_action_positions(
+    *,
+    action_order: tuple[Position, ...],
+    tokens: tuple[str, ...],
+) -> tuple[tuple[Position, ...], Position] | None:
+    """模拟给定行动序列下的出手位置。
+
+    Args:
+        action_order: 桌型对应的预翻前行动顺序。
+        tokens: 历史 token 序列。
+
+    Returns:
+        `(action_positions, next_actor_position)`；如果历史非法导致无人可行动则返回 None。
+    """
+
+    active_positions = list(action_order)
+    action_positions: list[Position] = []
+    cursor = 0
+
+    for token in tokens:
+        if not active_positions:
+            return None
+
+        position = active_positions[cursor]
+        action_positions.append(position)
+
+        normalized_token = token.upper()
+        if normalized_token in {"F", "FOLD"}:
+            active_positions.pop(cursor)
+            if not active_positions:
+                return None
+            if cursor >= len(active_positions):
+                cursor = 0
+            continue
+
+        cursor = (cursor + 1) % len(active_positions)
+
+    return (tuple(action_positions), active_positions[cursor])
+
+
+def _parse_action_family_state_label(state_label: str | None) -> ActionFamily | None:
+    """将外部状态标签解析为 `ActionFamily`。
+
+    Args:
+        state_label: 外部状态标签。
+
+    Returns:
+        对应的动作族；不支持时返回 None。
+    """
+
+    if state_label is None:
+        return None
+    normalized_state_label = state_label.strip().upper()
+    if not normalized_state_label:
+        return None
+    return _STATE_LABEL_TO_ACTION_FAMILY.get(normalized_state_label)
+
+
+def _extract_state_label_from_data(data: dict[str, Any]) -> str | None:
+    """从 JSON 根对象中提取节点状态标签。
+
+    Args:
+        data: JSON 根对象。
+
+    Returns:
+        节点状态标签；不存在时返回 None。
+    """
+
+    for key in ("state", "node_state", "spot_state", "action_family"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+
+    game = data.get("game")
+    if isinstance(game, dict):
+        for key in ("state", "node_state", "spot_state", "action_family"):
+            value = game.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+
+    return None
+
+
+def _derive_action_family_from_history(
+    *,
+    aggressions: tuple[_AggressionEvent, ...],
+    limp_count: int,
+) -> ActionFamily:
+    """根据历史统计推导动作族。
+
+    Args:
+        aggressions: 历史中的激进行动列表。
+        limp_count: 首次激进行动前的 limp 数。
+
+    Returns:
+        推导得到的动作族。
+    """
+
+    if not aggressions:
+        if limp_count == 0:
+            return ActionFamily.OPEN
+        if limp_count == 1:
+            return ActionFamily.LIMP
+        return ActionFamily.OVERLIMP
+
+    last_aggression = aggressions[-1]
+    if last_aggression.normalized_token == "RAI":
+        return ActionFamily.JAM
+
+    raise_count = len(aggressions)
+    if raise_count == 1:
+        if limp_count > 0:
+            return ActionFamily.ISO_RAISE
+        return ActionFamily.CALL_VS_OPEN
+    if raise_count == 2:
+        second_aggression = aggressions[1]
+        if second_aggression.call_count_before_raise > 0:
+            return ActionFamily.SQUEEZE
+        return ActionFamily.CALL_VS_3BET
+    return ActionFamily.FOUR_BET
+
+
 def _derive_mapper_fields(
     *,
     acting_position: str,
     history_full: str,
+    state_label: str | None = None,
 ) -> tuple[
     ActionFamily | None,
     Position | None,
     Position | None,
     int,
     int,
+    int,
+    float,
     float | None,
     bool | None,
 ]:
@@ -271,27 +434,36 @@ def _derive_mapper_fields(
     Args:
         acting_position: 当前节点行动位置。
         history_full: 完整历史字符串。
+        state_label: 可选的外部状态标签（如 OPEN、CALL_VS_3BET）。
 
     Returns:
-        `(action_family, actor_position, aggressor_position, call_count, limp_count, raise_size_bb, is_in_position)`。
+        `(action_family, actor_position, aggressor_position, call_count, limp_count, raise_time, pot_size, raise_size_bb, is_in_position)`。
         对当前 mapper 不支持的节点形状, `action_family` 等关键字段返回 None。
     """
 
     actor_position = _resolve_position(acting_position)
     if actor_position is None:
-        return (None, None, None, 0, 0, None, None)
+        return (None, None, None, 0, 0, 0, 0.0, None, None)
 
-    tokens = split_history_tokens(history_full)
+    tokens = tuple(split_history_tokens(history_full))
     action_positions = _resolve_action_positions(
         actor_position=actor_position,
-        token_count=len(tokens),
+        tokens=tokens,
     )
     if action_positions is None:
-        return (None, actor_position, None, 0, 0, None, None)
+        return (None, actor_position, None, 0, 0, 0, 0.0, None, None)
 
-    aggressor_position: Position | None = None
+    aggressions: list[_AggressionEvent] = []
+    calls_since_last_aggression = 0
     call_count = 0
     limp_count = 0
+    raise_time = 0
+    pot_size = _SMALL_BLIND_BB + _BIG_BLIND_BB
+    current_to_call_bb = _BIG_BLIND_BB
+    contribution_by_position: dict[Position, float] = {
+        Position.SB: _SMALL_BLIND_BB,
+        Position.BB: _BIG_BLIND_BB,
+    }
     raise_size_bb: float | None = None
 
     for position, token in zip(action_positions, tokens, strict=True):
@@ -300,52 +472,73 @@ def _derive_mapper_fields(
             continue
 
         if normalized_token == "C":
-            if aggressor_position is None:
+            current_contribution_bb = contribution_by_position.get(position, 0.0)
+            call_delta_bb = max(current_to_call_bb - current_contribution_bb, 0.0)
+            contribution_by_position[position] = current_contribution_bb + call_delta_bb
+            pot_size += call_delta_bb
+            if not aggressions:
                 limp_count += 1
             else:
-                call_count += 1
+                calls_since_last_aggression += 1
             continue
 
         if _is_aggressive_token(normalized_token):
-            if aggressor_position is not None or limp_count > 0:
-                return (None, actor_position, None, 0, 0, None, None)
-            aggressor_position = position
-            raise_size_bb = _extract_raise_size(normalized_token)
+            raise_to_bb = _extract_raise_size(normalized_token)
+            if raise_to_bb is None:
+                return (None, actor_position, None, 0, 0, 0, 0.0, None, None)
+            current_contribution_bb = contribution_by_position.get(position, 0.0)
+            raise_delta_bb = max(raise_to_bb - current_contribution_bb, 0.0)
+            contribution_by_position[position] = (
+                current_contribution_bb + raise_delta_bb
+            )
+            pot_size += raise_delta_bb
+            current_to_call_bb = max(current_to_call_bb, raise_to_bb)
+            raise_time += 1
+            aggressions.append(
+                _AggressionEvent(
+                    position=position,
+                    normalized_token=normalized_token,
+                    raise_size_bb=raise_to_bb,
+                    call_count_before_raise=calls_since_last_aggression,
+                )
+            )
+            calls_since_last_aggression = 0
             continue
 
-        return (None, actor_position, None, 0, 0, None, None)
+        return (None, actor_position, None, 0, 0, 0, 0.0, None, None)
 
-    if aggressor_position is None:
-        if limp_count > 0:
-            return (
-                ActionFamily.LIMP,
-                actor_position,
-                None,
-                0,
-                limp_count,
-                None,
-                None,
-            )
-        return (
-            ActionFamily.OPEN,
-            actor_position,
-            None,
-            0,
-            0,
-            None,
-            None,
-        )
+    if aggressions:
+        last_aggression = aggressions[-1]
+        aggressor_position: Position | None = last_aggression.position
+        raise_size_bb = last_aggression.raise_size_bb
+        call_count = calls_since_last_aggression
+    else:
+        aggressor_position = None
+
+    action_family = _derive_action_family_from_history(
+        aggressions=tuple(aggressions),
+        limp_count=limp_count,
+    )
+    state_family = _parse_action_family_state_label(state_label)
+    if state_family is not None:
+        action_family = state_family
 
     return (
-        ActionFamily.CALL_VS_OPEN,
+        action_family,
         actor_position,
         aggressor_position,
         call_count,
         limp_count,
+        raise_time,
+        pot_size,
         raise_size_bb,
-        _is_in_position(
-            actor_position=actor_position,
-            aggressor_position=aggressor_position,
+        (
+            _is_in_position(
+                actor_position=actor_position,
+                aggressor_position=aggressor_position,
+            )
+            if aggressor_position is not None
+            else None
         ),
     )
 
@@ -416,17 +609,21 @@ def parse_strategy_node_records(
 
     tokens = split_history_tokens(history_full)
     history_actions = "-".join(normalize_token(t) for t in tokens)
+    state_label = _extract_state_label_from_data(data)
     (
         action_family,
         actor_position,
         aggressor_position,
         call_count,
         limp_count,
+        raise_time,
+        pot_size,
         raise_size_bb,
         is_in_position,
     ) = _derive_mapper_fields(
         acting_position=acting_position,
         history_full=history_full,
+        state_label=state_label,
     )
 
     return (
@@ -442,6 +639,8 @@ def parse_strategy_node_records(
             aggressor_position=aggressor_position,
             call_count=call_count,
             limp_count=limp_count,
+            raise_time=raise_time,
+            pot_size=pot_size,
             raise_size_bb=raise_size_bb,
             is_in_position=is_in_position,
         ),
