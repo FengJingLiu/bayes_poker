@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import time
 from dataclasses import dataclass
 
@@ -53,10 +54,17 @@ class OpponentPipeline:
         *,
         repository_adapter: StrategyRepositoryAdapter,
         stats_adapter: PlayerNodeStatsAdapter,
-        source_id: int,
+        source_id: int | Sequence[int],
         config: OpponentPipelineConfig | None = None,
     ) -> None:
-        """初始化对手范围更新管线。"""
+        """初始化对手范围更新管线.
+
+        Args:
+            repository_adapter: 策略仓库适配器.
+            stats_adapter: 节点统计适配器.
+            source_id: 策略源 ID 或 ID 序列.
+            config: 可选管线配置.
+        """
 
         self._repository_adapter = repository_adapter
         self._stats_adapter = stats_adapter

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from bayes_poker.domain.table import Player
 from .context_builder import build_player_node_context
 from .contracts import (
@@ -26,9 +27,14 @@ class HeroGtoResolver:
         self,
         *,
         repository_adapter: StrategyRepositoryAdapter,
-        source_id: int,
+        source_id: int | Sequence[int],
     ) -> None:
-        """初始化 hero resolver。"""
+        """初始化 hero resolver.
+
+        Args:
+            repository_adapter: 策略仓库适配器.
+            source_id: 策略源 ID 或 ID 序列.
+        """
 
         self._repository_adapter = repository_adapter
         self._source_id = source_id
