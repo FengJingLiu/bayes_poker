@@ -54,6 +54,8 @@ def _make_node_record(
     aggressor_position: Position | None,
     call_count: int,
     limp_count: int,
+    raise_time: int,
+    pot_size: float,
     raise_size_bb: float | None,
     is_in_position: bool | None,
 ) -> ParsedStrategyNodeRecord:
@@ -69,6 +71,8 @@ def _make_node_record(
         aggressor_position=aggressor_position,
         call_count=call_count,
         limp_count=limp_count,
+        raise_time=raise_time,
+        pot_size=pot_size,
         raise_size_bb=raise_size_bb,
         is_in_position=is_in_position,
     )
@@ -101,6 +105,8 @@ def _build_repository(
                 aggressor_position=Position.UTG,
                 call_count=1,
                 limp_count=0,
+                raise_time=1,
+                pot_size=5.5,
                 raise_size_bb=2.0,
                 is_in_position=True,
             )
@@ -137,6 +143,8 @@ def _build_repository(
                 aggressor_position=Position.UTG,
                 call_count=1,
                 limp_count=0,
+                raise_time=1,
+                pot_size=6.0,
                 raise_size_bb=2.5,
                 is_in_position=True,
             )
@@ -168,6 +176,8 @@ def _build_repository(
                 aggressor_position=None,
                 call_count=0,
                 limp_count=1,
+                raise_time=0,
+                pot_size=2.5,
                 raise_size_bb=None,
                 is_in_position=None,
             )
@@ -222,6 +232,8 @@ def test_price_adjustment_and_gto_prior(tmp_path: Path) -> None:
             aggressor_position=Position.UTG,
             call_count=1,
             limp_count=0,
+            raise_time=1,
+            pot_size=6.5,
             raise_size_bb=3.0,
         )
     )
@@ -249,6 +261,8 @@ def test_exact_match(tmp_path: Path) -> None:
             aggressor_position=Position.UTG,
             call_count=1,
             limp_count=0,
+            raise_time=1,
+            pot_size=5.5,
             raise_size_bb=2.0,
         )
     )
@@ -274,6 +288,8 @@ def test_limp_without_candidates_uses_synthetic_template(tmp_path: Path) -> None
             aggressor_position=None,
             call_count=0,
             limp_count=1,
+            raise_time=0,
+            pot_size=2.5,
             raise_size_bb=None,
         )
     )
@@ -301,6 +317,8 @@ def test_no_match_for_non_limp_raises_value_error(tmp_path: Path) -> None:
                 aggressor_position=Position.UTG,
                 call_count=1,
                 limp_count=0,
+                raise_time=1,
+                pot_size=5.5,
                 raise_size_bb=2.0,
             )
         )

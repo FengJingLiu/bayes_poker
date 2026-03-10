@@ -8,6 +8,7 @@ from bayes_poker.player_metrics.enums import ActionType as MetricsActionType
 from bayes_poker.player_metrics.enums import Position as MetricsPosition
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.params import PreFlopParams
+from bayes_poker.strategy.preflop_parse.parser import _derive_mapper_fields
 from bayes_poker.strategy.strategy_engine import ActionFamily, build_player_node_context
 from bayes_poker.strategy.strategy_engine.context_builder import UnsupportedContextError
 from bayes_poker.table.observed_state import ObservedTableState
@@ -46,6 +47,8 @@ def test_supported_context_open() -> None:
     assert context.node_context.action_family == ActionFamily.OPEN
     assert context.node_context.actor_position == Position.UTG
     assert context.node_context.aggressor_position is None
+    assert context.node_context.raise_time == 0
+    assert context.node_context.pot_size == pytest.approx(1.5)
     assert (
         context.params.to_index()
         == PreFlopParams(
@@ -83,6 +86,8 @@ def test_supported_context_call_vs_open() -> None:
     assert context.node_context.actor_position == Position.MP
     assert context.node_context.aggressor_position == Position.UTG
     assert context.node_context.call_count == 0
+    assert context.node_context.raise_time == 1
+    assert context.node_context.pot_size == pytest.approx(4.0)
     assert context.node_context.raise_size_bb == pytest.approx(2.5)
     assert (
         context.params.to_index()
@@ -124,6 +129,8 @@ def test_supported_context_limp() -> None:
     assert context.node_context.action_family == ActionFamily.LIMP
     assert context.node_context.actor_position == Position.CO
     assert context.node_context.limp_count == 1
+    assert context.node_context.raise_time == 0
+    assert context.node_context.pot_size == pytest.approx(2.5)
     assert (
         context.params.to_index()
         == PreFlopParams(
@@ -199,3 +206,106 @@ def test_unsupported_context_actor_already_acted() -> None:
 
     with pytest.raises(UnsupportedContextError, match="首次翻前行动"):
         build_player_node_context(observed_state)
+
+
+@pytest.mark.parametrize(
+    (
+        "history_full",
+        "acting_position",
+        "actions",
+        "expected_aggressor",
+        "expected_call_count",
+        "expected_limp_count",
+        "expected_raise_time",
+        "expected_pot_size",
+    ),
+    [
+        ("", Position.UTG, [], None, 0, 0, 0, 1.5),
+        (
+            "R2.5",
+            Position.MP,
+            [PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP)],
+            Position.UTG,
+            0,
+            0,
+            1,
+            4.0,
+        ),
+        (
+            "C-F",
+            Position.CO,
+            [
+                PlayerAction(3, ActionType.CALL, 1.0, Street.PREFLOP),
+                PlayerAction(4, ActionType.FOLD, 0.0, Street.PREFLOP),
+            ],
+            None,
+            0,
+            1,
+            0,
+            2.5,
+        ),
+    ],
+)
+def test_context_builder_and_parser_fields_should_be_consistent(
+    history_full: str,
+    acting_position: Position,
+    actions: list[PlayerAction],
+    expected_aggressor: Position | None,
+    expected_call_count: int,
+    expected_limp_count: int,
+    expected_raise_time: int,
+    expected_pot_size: float,
+) -> None:
+    """在线上下文与离线解析的关键 mapper 字段应保持一致。"""
+
+    actor_seat_by_position: dict[Position, int] = {
+        Position.BTN: 0,
+        Position.SB: 1,
+        Position.BB: 2,
+        Position.UTG: 3,
+        Position.MP: 4,
+        Position.CO: 5,
+    }
+    observed_state = ObservedTableState(
+        table_id="parity",
+        player_count=6,
+        small_blind=0.5,
+        big_blind=1.0,
+        hand_id="parity",
+        street=Street.PREFLOP,
+        btn_seat=0,
+        actor_seat=actor_seat_by_position[acting_position],
+        hero_seat=actor_seat_by_position[acting_position],
+        players=_build_sixmax_players(),
+        action_history=actions,
+        state_version=1,
+    )
+
+    context = build_player_node_context(observed_state)
+    (
+        _,
+        actor_position,
+        aggressor_position,
+        call_count,
+        limp_count,
+        raise_time,
+        pot_size,
+        _,
+        _,
+    ) = _derive_mapper_fields(
+        acting_position=acting_position.value,
+        history_full=history_full,
+    )
+
+    assert actor_position == acting_position
+    assert context.node_context.actor_position == acting_position
+    assert aggressor_position == expected_aggressor
+    assert context.node_context.aggressor_position == expected_aggressor
+    assert call_count == expected_call_count
+    assert context.node_context.call_count == expected_call_count
+    assert limp_count == expected_limp_count
+    assert context.node_context.limp_count == expected_limp_count
+    assert raise_time == expected_raise_time
+    assert context.node_context.raise_time == expected_raise_time
+    assert pot_size == pytest.approx(expected_pot_size)
+    assert context.node_context.pot_size == pytest.approx(expected_pot_size)

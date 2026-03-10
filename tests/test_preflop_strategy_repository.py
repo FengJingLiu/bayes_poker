@@ -33,6 +33,8 @@ def _make_node_record(
         aggressor_position=Position.UTG,
         call_count=1,
         limp_count=0,
+        raise_time=1,
+        pot_size=5.5,
         raise_size_bb=2.0,
         is_in_position=True,
     )
@@ -99,7 +101,9 @@ def test_repository_reads_candidates_and_actions_by_node_id(tmp_path: Path) -> N
         source_dir="/tmp/Cash6m50zGeneral",
         format_version=1,
     )
-    node_ids = repo.insert_nodes(source_id=source_id, node_records=(_make_node_record(),))
+    node_ids = repo.insert_nodes(
+        source_id=source_id, node_records=(_make_node_record(),)
+    )
     repo.insert_actions(
         node_id=node_ids["R2-C"],
         action_records=_make_action_records(),
@@ -108,8 +112,12 @@ def test_repository_reads_candidates_and_actions_by_node_id(tmp_path: Path) -> N
     candidates = repo.list_candidates(
         source_id=source_id,
         stack_bb=100,
-        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.CO,
+        aggressor_position=Position.UTG,
+        call_count=1,
+        limp_count=0,
+        raise_time=1,
+        pot_size=5.5,
     )
     actions_by_node_id = repo.get_actions_for_nodes((node_ids["R2-C"],))
 

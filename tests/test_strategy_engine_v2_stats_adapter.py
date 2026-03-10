@@ -109,6 +109,8 @@ def _make_node_context() -> PlayerNodeContext:
             aggressor_position=None,
             call_count=0,
             limp_count=1,
+            raise_time=0,
+            pot_size=2.5,
             raise_size_bb=None,
         ),
         params=params,

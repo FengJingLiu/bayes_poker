@@ -23,6 +23,15 @@ from bayes_poker.strategy.strategy_engine.repository_adapter import (
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
 
 
+REAL_PREFLOP_STRATEGY_SOURCE_NAMES: tuple[str, ...] = (
+    "Cash6m50zGeneral",
+    "Cash6m50zGeneral25Open3betV2",
+    "Cash6m50zGeneral3betV2",
+    "Cash6m50zSimple25Open_SimpleIP",
+    "Cash6m50zSimple_SimpleIP",
+)
+
+
 def _make_node_record(
     *,
     history_full: str = "R2-C",
@@ -40,6 +49,8 @@ def _make_node_record(
         aggressor_position=Position.UTG,
         call_count=1,
         limp_count=0,
+        raise_time=1,
+        pot_size=5.5,
         raise_size_bb=2.0,
         is_in_position=True,
     )
@@ -75,6 +86,25 @@ def _make_action_records() -> tuple[ParsedStrategyActionRecord, ...]:
     )
 
 
+def _make_node_context() -> NodeContext:
+    """构建测试用节点上下文.
+
+    Returns:
+        固定的 CALL_VS_OPEN 场景节点上下文.
+    """
+
+    return NodeContext(
+        action_family=ActionFamily.CALL_VS_OPEN,
+        actor_position=Position.CO,
+        aggressor_position=Position.UTG,
+        call_count=1,
+        limp_count=0,
+        raise_time=1,
+        pot_size=5.5,
+        raise_size_bb=2.0,
+    )
+
+
 def test_repository_adapter_candidate_lookup_and_stack_resolution(
     tmp_path: Path,
 ) -> None:
@@ -101,21 +131,16 @@ def test_repository_adapter_candidate_lookup_and_stack_resolution(
     adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
     adapter.connect()
 
-    source = adapter.resolve_source()
+    sources = adapter.resolve_source()
+    assert len(sources) == 1
+    source = sources[0]
     resolved_stack = adapter.resolve_stack_bb(
         source_id=source.source_id, requested_stack_bb=87
     )
     candidates = adapter.load_candidates(
         source_id=source.source_id,
         stack_bb=100,
-        node_context=NodeContext(
-            action_family=ActionFamily.CALL_VS_OPEN,
-            actor_position=Position.CO,
-            aggressor_position=Position.UTG,
-            call_count=1,
-            limp_count=0,
-            raise_size_bb=2.0,
-        ),
+        node_context=_make_node_context(),
     )
     actions = adapter.load_actions((node_ids["R2-C"],))
 
@@ -123,9 +148,148 @@ def test_repository_adapter_candidate_lookup_and_stack_resolution(
     assert resolved_stack == 100
     assert len(candidates) == 1
     assert candidates[0].history_full == "R2-C"
-    assert candidates[0].action_family == "CALL_VS_OPEN"
+    assert candidates[0].raise_time == 1
+    assert candidates[0].pot_size == pytest.approx(5.5)
     assert len(actions[node_ids["R2-C"]]) == 2
     assert actions[node_ids["R2-C"]][1].action_code == "C"
+
+    adapter.close()
+
+
+def test_repository_adapter_resolve_source_supports_multiple_sources(
+    tmp_path: Path,
+) -> None:
+    """验证 resolve_source 支持通过多个选择器返回多个策略源.
+
+    Args:
+        tmp_path: pytest 临时目录.
+    """
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    first_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=2,
+    )
+    second_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zAggressive",
+        source_dir="/tmp/Cash6m50zAggressive",
+        format_version=2,
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+
+    matched_by_ids = adapter.resolve_source(
+        source_id=(first_source_id, second_source_id)
+    )
+    matched_by_names = adapter.resolve_source(
+        strategy_name=("Cash6m50zGeneral", "Cash6m50zAggressive")
+    )
+
+    assert tuple(source.source_id for source in matched_by_ids) == (
+        first_source_id,
+        second_source_id,
+    )
+    assert tuple(source.strategy_name for source in matched_by_names) == (
+        "Cash6m50zGeneral",
+        "Cash6m50zAggressive",
+    )
+
+    adapter.close()
+
+
+def test_repository_adapter_resolve_stack_bb_supports_multiple_sources(
+    tmp_path: Path,
+) -> None:
+    """验证 resolve_stack_bb 支持多策略源联合解析.
+
+    Args:
+        tmp_path: pytest 临时目录.
+    """
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    first_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=2,
+    )
+    second_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zAggressive",
+        source_dir="/tmp/Cash6m50zAggressive",
+        format_version=2,
+    )
+    repo.insert_nodes(
+        source_id=first_source_id,
+        node_records=(_make_node_record(history_full="R2-C", stack_bb=80),),
+    )
+    repo.insert_nodes(
+        source_id=second_source_id,
+        node_records=(_make_node_record(history_full="R2-C", stack_bb=100),),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+
+    resolved_stack = adapter.resolve_stack_bb(
+        source_id=(first_source_id, second_source_id),
+        requested_stack_bb=94,
+    )
+
+    assert resolved_stack == 100
+
+    adapter.close()
+
+
+def test_repository_adapter_load_candidates_supports_multiple_sources(
+    tmp_path: Path,
+) -> None:
+    """验证 load_candidates 支持多策略源联合读取.
+
+    Args:
+        tmp_path: pytest 临时目录.
+    """
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    first_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=2,
+    )
+    second_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zAggressive",
+        source_dir="/tmp/Cash6m50zAggressive",
+        format_version=2,
+    )
+    repo.insert_nodes(
+        source_id=first_source_id,
+        node_records=(_make_node_record(history_full="R2-C", stack_bb=100),),
+    )
+    repo.insert_nodes(
+        source_id=second_source_id,
+        node_records=(_make_node_record(history_full="R3-C", stack_bb=100),),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+
+    candidates = adapter.load_candidates(
+        source_id=(first_source_id, second_source_id),
+        stack_bb=100,
+        node_context=_make_node_context(),
+    )
+
+    assert len(candidates) == 2
+    assert {candidate.source_id for candidate in candidates} == {
+        first_source_id,
+        second_source_id,
+    }
 
     adapter.close()
 
@@ -172,3 +336,33 @@ def test_build_preflop_strategy_db_rebuilds_database_with_format_version_2(
     assert sources[0].format_version == 2
 
     reopened_repo.close()
+
+
+def test_repository_adapter_resolve_source_can_match_real_database_sources() -> None:
+    """验证 resolve_source 可匹配真实数据库中的多个策略源.
+
+    当测试数据库缺失时, 跳过该用例.
+    """
+
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "database"
+        / "preflop_strategy.sqlite3"
+    )
+    if not db_path.exists():
+        pytest.skip(f"测试数据库不存在: {db_path}")
+
+    adapter = StrategyRepositoryAdapter(db_path)
+    adapter.connect()
+    try:
+        matched_sources = adapter.resolve_source(
+            strategy_name=REAL_PREFLOP_STRATEGY_SOURCE_NAMES
+        )
+    finally:
+        adapter.close()
+
+    assert len(matched_sources) == len(REAL_PREFLOP_STRATEGY_SOURCE_NAMES)
+    assert {source.strategy_name for source in matched_sources} == set(
+        REAL_PREFLOP_STRATEGY_SOURCE_NAMES
+    )
