@@ -84,7 +84,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         raise_time=1,
         pot_size=4.0,
         raise_size_bb=2.5,
-        is_in_position=False,
+        is_in_position=True,
     )
     sb_prior_node = ParsedStrategyNodeRecord(
         stack_bb=100,
@@ -579,12 +579,16 @@ def test_initial_prior_without_matching_node_raises_error(tmp_path: Path) -> Non
     )
     state = _build_state(hand_id="h1")
     player = state.players[2]
+    unmatched_prefix = [
+        PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP),
+        PlayerAction(4, ActionType.RAISE, 8.0, Street.PREFLOP),
+    ]
 
     with pytest.raises(ValueError):
         pipeline._build_initial_prior_range(
             player=player,
             observed_state=state,
-            decision_prefix=[],
+            decision_prefix=unmatched_prefix,
         )
 
     stats_repo.close()

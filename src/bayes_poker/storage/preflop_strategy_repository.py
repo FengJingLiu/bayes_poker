@@ -493,30 +493,12 @@ class PreflopStrategyRepository:
         self,
         *,
         source_id: int | None = None,
+        source_ids: Sequence[int] | None = None,
         stack_bb: int | None = None,
-        actor_position: Position,
-        aggressor_position: Position | None,
-        call_count: int,
-        limp_count: int,
+        is_in_position: bool | None,
         raise_time: int,
         pot_size: float | None,
     ) -> list[SolverNodeRecord]:
-        """按 mapper 的主筛选条件读取候选节点.
-
-        Args:
-            source_id: 所属策略源主键（可选）。
-            stack_bb: 筹码深度（BB 数）（可选）。
-            actor_position: 当前待行动位置。
-            aggressor_position: 最后一次激进行动位置。
-            call_count: 最后一次激进行动后的跟注人数。
-            limp_count: 首个激进行动前的 limp 人数。
-            raise_time: 当前节点前出现的加注次数。
-            pot_size: 当前节点前底池大小（单位 BB）。
-
-        Returns:
-            候选节点列表。
-        """
-
         cursor = self.conn.cursor()
 
         query = """
@@ -538,24 +520,31 @@ class PreflopStrategyRepository:
                 raise_size_bb,
                 is_in_position
             FROM solver_nodes
-            WHERE actor_position = ?
+            WHERE raise_time = ?
               AND (
-                    (aggressor_position IS NULL AND ? IS NULL)
-                 OR aggressor_position = ?
+                    (is_in_position IS NULL AND ? IS NULL)
+                 OR is_in_position = ?
               )
-              AND call_count = ?
-              AND limp_count = ?
-              AND raise_time = ?
         """
+        is_in_position_value = (
+            int(is_in_position) if is_in_position is not None else None
+        )
         params: list[Any] = [
-            actor_position.value,
-            _encode_position(aggressor_position),
-            _encode_position(aggressor_position),
-            call_count,
-            limp_count,
             raise_time,
+            is_in_position_value,
+            is_in_position_value,
         ]
 
+        if source_id is not None and source_ids is not None:
+            raise ValueError("source_id 和 source_ids 不能同时指定。")
+
+        if source_ids is not None:
+            normalized_source_ids = tuple(source_ids)
+            if not normalized_source_ids:
+                raise ValueError("source_ids 不能为空。")
+            placeholders = ",".join("?" for _ in normalized_source_ids)
+            query += f" AND source_id IN ({placeholders})"
+            params.extend(normalized_source_ids)
         if source_id is not None:
             query += " AND source_id = ?"
             params.append(source_id)

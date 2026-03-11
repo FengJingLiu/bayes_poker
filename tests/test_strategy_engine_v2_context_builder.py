@@ -94,7 +94,7 @@ def test_supported_context_call_vs_open() -> None:
             num_raises=1,
             num_active_players=6,
             previous_action=MetricsActionType.FOLD,
-            in_position_on_flop=False,
+            in_position_on_flop=True,
         ).to_index()
     )
 
@@ -196,7 +196,7 @@ def test_supported_context_three_bet_plus_uses_last_aggressor() -> None:
             num_raises=2,
             num_active_players=6,
             previous_action=MetricsActionType.FOLD,
-            in_position_on_flop=False,
+            in_position_on_flop=True,
         ).to_index()
     )
 

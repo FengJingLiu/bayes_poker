@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from bayes_poker.domain.table import Position
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
 from bayes_poker.strategy.strategy_engine.core_types import NodeContext
 
@@ -194,19 +195,19 @@ class StrategyRepositoryAdapter:
             raise ValueError("source_id 不能为空。")
 
         candidates = []
-        for current_source_id in source_ids:
-            candidates.extend(
-                self._repo.list_candidates(
-                    source_id=current_source_id,
-                    stack_bb=stack_bb,
-                    actor_position=node_context.actor_position,
-                    aggressor_position=node_context.aggressor_position,
-                    call_count=node_context.call_count,
-                    limp_count=node_context.limp_count,
-                    raise_time=node_context.raise_time,
-                    pot_size=node_context.pot_size,
-                )
+        is_in_position = _derive_in_position(
+            actor_position=node_context.actor_position,
+            aggressor_position=node_context.aggressor_position,
+        )
+        candidates.extend(
+            self._repo.list_candidates(
+                source_ids=source_ids,
+                stack_bb=stack_bb,
+                is_in_position=is_in_position,
+                raise_time=node_context.raise_time,
+                pot_size=node_context.pot_size,
             )
+        )
         return tuple(
             StrategyNodeCandidate(
                 node_id=candidate.node_id,
@@ -312,3 +313,34 @@ def _normalize_strategy_name_selector(
     if not normalized:
         raise ValueError("strategy_name 不能为空。")
     return normalized
+
+
+def _derive_in_position(
+    *,
+    actor_position: Position,
+    aggressor_position: Position | None,
+) -> bool | None:
+    if aggressor_position is None:
+        return None
+    if actor_position == aggressor_position:
+        return False
+    if {actor_position, aggressor_position} <= {
+        Position.SB,
+        Position.BB,
+    }:
+        return actor_position == Position.SB and aggressor_position == Position.BB
+
+    postflop_position_order = (
+        Position.SB,
+        Position.BB,
+        Position.UTG,
+        Position.UTG1,
+        Position.MP,
+        Position.MP1,
+        Position.HJ,
+        Position.CO,
+        Position.BTN,
+    )
+    return postflop_position_order.index(
+        actor_position
+    ) > postflop_position_order.index(aggressor_position)

@@ -69,10 +69,34 @@ def _map_table_position_to_metrics(position: Position) -> MetricsPosition | None
     return mapping.get(position)
 
 
-def _is_in_position_on_flop(position: Position, player_count: int) -> bool:
+def _is_in_position_on_flop(
+    *,
+    actor_position: Position,
+    aggressor_position: Position | None,
+    player_count: int,
+) -> bool:
+    if aggressor_position is not None:
+        if actor_position == aggressor_position:
+            return False
+        if {actor_position, aggressor_position} <= {Position.SB, Position.BB}:
+            return actor_position == Position.SB and aggressor_position == Position.BB
+        postflop_position_order: tuple[Position, ...] = (
+            Position.SB,
+            Position.BB,
+            Position.UTG,
+            Position.UTG1,
+            Position.MP,
+            Position.MP1,
+            Position.HJ,
+            Position.CO,
+            Position.BTN,
+        )
+        return postflop_position_order.index(
+            actor_position
+        ) > postflop_position_order.index(aggressor_position)
     if player_count == 2:
-        return position == Position.SB
-    return position == Position.BTN
+        return actor_position == Position.SB
+    return actor_position == Position.BTN
 
 
 def _filter_preflop_actions(action_history: list[PlayerAction]) -> list[PlayerAction]:
@@ -284,8 +308,9 @@ def build_player_node_context(
         num_active_players=max(2, observed_state.player_count),
         previous_action=MetricsActionType.FOLD,
         in_position_on_flop=_is_in_position_on_flop(
-            actor_position,
-            observed_state.player_count,
+            actor_position=actor_position,
+            aggressor_position=node_context.aggressor_position,
+            player_count=observed_state.player_count,
         ),
     )
     return PlayerNodeContext(

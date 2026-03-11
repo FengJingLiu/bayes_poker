@@ -79,14 +79,19 @@ class PreflopNodeMapper:
     def _map_by_distance(self, state: PreflopDecisionState) -> MappedSolverContext:
         """按可解释距离选择最近候选。"""
 
+        is_in_position = (
+            _is_in_position(
+                actor_position=state.actor_position,
+                aggressor_position=state.aggressor_position,
+            )
+            if state.aggressor_position is not None
+            else None
+        )
         candidates = self._repository.list_candidates(
             source_id=self._source_id,
             stack_bb=self._stack_bb,
-            actor_position=state.actor_position,
-            aggressor_position=state.aggressor_position,
-            call_count=state.call_count,
-            limp_count=state.limp_count,
             raise_time=state.raise_time,
+            is_in_position=is_in_position,
             pot_size=state.pot_size,
         )
         if not candidates:
@@ -246,6 +251,11 @@ def _is_in_position(
     aggressor_position: Position,
 ) -> bool:
     """判断当前行动方相对 aggressor 是否处于位置优势。"""
+
+    if actor_position == aggressor_position:
+        return False
+    if {actor_position, aggressor_position} <= {Position.SB, Position.BB}:
+        return actor_position == Position.SB and aggressor_position == Position.BB
 
     postflop_position_order: tuple[Position, ...] = (
         Position.SB,

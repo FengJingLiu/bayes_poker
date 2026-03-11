@@ -226,6 +226,11 @@ def _calculate_pot_size_distance(
 
 
 def _is_in_position(*, actor_position: Position, aggressor_position: Position) -> bool:
+    if actor_position == aggressor_position:
+        return False
+    if {actor_position, aggressor_position} <= {Position.SB, Position.BB}:
+        return actor_position == Position.SB and aggressor_position == Position.BB
+
     order = (
         Position.SB,
         Position.BB,

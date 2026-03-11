@@ -113,6 +113,7 @@ def _map_domain_action_to_metrics(action: DomainActionType) -> MetricsActionType
 def _is_in_position_on_flop(
     *,
     table_position: Position,
+    aggressor_position: Position | None,
     player_count: int,
 ) -> bool:
     """判断是否在翻后处于位置优势。
@@ -124,6 +125,25 @@ def _is_in_position_on_flop(
     Returns:
         是否翻后在位置。
     """
+    if aggressor_position is not None:
+        if table_position == aggressor_position:
+            return False
+        if {table_position, aggressor_position} <= {Position.SB, Position.BB}:
+            return table_position == Position.SB and aggressor_position == Position.BB
+        postflop_position_order: tuple[Position, ...] = (
+            Position.SB,
+            Position.BB,
+            Position.UTG,
+            Position.UTG1,
+            Position.MP,
+            Position.MP1,
+            Position.HJ,
+            Position.CO,
+            Position.BTN,
+        )
+        return postflop_position_order.index(
+            table_position
+        ) > postflop_position_order.index(aggressor_position)
     if player_count == 2:
         return table_position == Position.SB
     return table_position == Position.BTN
@@ -157,6 +177,7 @@ def _build_params_for_player_first_preflop_action(
     num_raises = 0
     num_callers = 0
     previous_player_action = MetricsActionType.FOLD
+    last_aggressor_position: Position | None = None
 
     for action in preflop_actions:
         if action.player_index == player.seat_index:
@@ -169,6 +190,7 @@ def _build_params_for_player_first_preflop_action(
                 previous_action=previous_player_action,
                 in_position_on_flop=_is_in_position_on_flop(
                     table_position=table_position,
+                    aggressor_position=last_aggressor_position,
                     player_count=table_state.player_count,
                 ),
             )
@@ -181,6 +203,10 @@ def _build_params_for_player_first_preflop_action(
         ):
             num_raises += 1
             num_callers = 0
+            last_aggressor_position = _resolve_table_position(
+                table_state.players[action.player_index],
+                table_state,
+            )
         elif mapped_action == MetricsActionType.CALL:
             num_callers += 1
 
@@ -206,9 +232,7 @@ def build_opponent_preflop_context(
         对手翻前上下文。
     """
     preflop_actions = [
-        action
-        for action in action_prefix
-        if action.street == Street.PREFLOP
+        action for action in action_prefix if action.street == Street.PREFLOP
     ]
     query_history = build_preflop_history(
         list(preflop_actions),

@@ -286,6 +286,11 @@ def _is_in_position(
         如果当前行动方翻后位置更靠后则返回 True。
     """
 
+    if actor_position == aggressor_position:
+        return False
+    if {actor_position, aggressor_position} <= {Position.SB, Position.BB}:
+        return actor_position == Position.SB and aggressor_position == Position.BB
+
     actor_index = _POSTFLOP_POSITION_ORDER.index(actor_position)
     aggressor_index = _POSTFLOP_POSITION_ORDER.index(aggressor_position)
     return actor_index > aggressor_index

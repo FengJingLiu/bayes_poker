@@ -223,7 +223,8 @@ class OpponentPipeline:
             state_for_player,
             table_type=self._config.table_type,
         )
-        stack_bb = max(1, int(round(player.get_stack_bb(observed_state.big_blind))))
+        # TODO: 6max gtow 策略只下载了 100BB 深度的，这里默认写死，后续添加策略后改逻辑
+        stack_bb = 100
         resolved_stack = self._repository_adapter.resolve_stack_bb(
             source_id=self._source_id,
             requested_stack_bb=stack_bb,
