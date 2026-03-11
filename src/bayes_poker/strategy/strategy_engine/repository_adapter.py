@@ -194,47 +194,38 @@ class StrategyRepositoryAdapter:
         if source_ids is None:
             raise ValueError("source_id 不能为空。")
 
-        candidates = []
         is_in_position = _derive_in_position(
             actor_position=node_context.actor_position,
             aggressor_position=node_context.aggressor_position,
         )
-        candidates.extend(
-            self._repo.list_candidates(
-                source_ids=source_ids,
-                stack_bb=stack_bb,
-                is_in_position=is_in_position,
-                raise_time=node_context.raise_time,
-                pot_size=node_context.pot_size,
-            )
+        candidates = self._repo.list_candidates(
+            source_ids=source_ids,
+            stack_bb=stack_bb,
+            is_in_position=is_in_position,
+            raise_time=node_context.raise_time,
+            pot_size=node_context.pot_size,
         )
-        return tuple(
-            StrategyNodeCandidate(
-                node_id=candidate.node_id,
-                source_id=candidate.source_id,
-                stack_bb=candidate.stack_bb,
-                history_full=candidate.history_full,
-                history_actions=candidate.history_actions,
-                history_token_count=candidate.history_token_count,
-                actor_position=(
-                    candidate.actor_position.value
-                    if candidate.actor_position is not None
-                    else None
-                ),
-                aggressor_position=(
-                    candidate.aggressor_position.value
-                    if candidate.aggressor_position is not None
-                    else None
-                ),
-                call_count=candidate.call_count,
-                limp_count=candidate.limp_count,
-                raise_time=candidate.raise_time,
-                pot_size=candidate.pot_size,
-                raise_size_bb=candidate.raise_size_bb,
-                is_in_position=candidate.is_in_position,
-            )
-            for candidate in candidates
+        return _to_strategy_candidates(candidates)
+
+    def load_limp_candidates(
+        self,
+        *,
+        source_id: int | Sequence[int],
+        stack_bb: int,
+        actor_position: Position,
+        pot_size: float,
+    ) -> tuple[StrategyNodeCandidate, ...]:
+        source_ids = _normalize_source_id_selector(source_id)
+        if source_ids is None:
+            raise ValueError("source_id 不能为空。")
+
+        candidates = self._repo.list_limp_candidates(
+            source_ids=source_ids,
+            stack_bb=stack_bb,
+            actor_position=actor_position,
+            pot_size=pot_size,
         )
+        return _to_strategy_candidates(candidates)
 
     def load_actions(
         self,
@@ -344,3 +335,33 @@ def _derive_in_position(
     return postflop_position_order.index(
         actor_position
     ) > postflop_position_order.index(aggressor_position)
+
+
+def _to_strategy_candidates(candidates) -> tuple[StrategyNodeCandidate, ...]:
+    return tuple(
+        StrategyNodeCandidate(
+            node_id=candidate.node_id,
+            source_id=candidate.source_id,
+            stack_bb=candidate.stack_bb,
+            history_full=candidate.history_full,
+            history_actions=candidate.history_actions,
+            history_token_count=candidate.history_token_count,
+            actor_position=(
+                candidate.actor_position.value
+                if candidate.actor_position is not None
+                else None
+            ),
+            aggressor_position=(
+                candidate.aggressor_position.value
+                if candidate.aggressor_position is not None
+                else None
+            ),
+            call_count=candidate.call_count,
+            limp_count=candidate.limp_count,
+            raise_time=candidate.raise_time,
+            pot_size=candidate.pot_size,
+            raise_size_bb=candidate.raise_size_bb,
+            is_in_position=candidate.is_in_position,
+        )
+        for candidate in candidates
+    )

@@ -565,6 +565,71 @@ class PreflopStrategyRepository:
         cursor.execute(query, tuple(params))
         return [_row_to_solver_node_record(row) for row in cursor.fetchall()]
 
+    def list_limp_candidates(
+        self,
+        *,
+        source_id: int | None = None,
+        source_ids: Sequence[int] | None = None,
+        stack_bb: int | None = None,
+        actor_position: Position,
+        pot_size: float | None,
+    ) -> list[SolverNodeRecord]:
+        cursor = self.conn.cursor()
+
+        query = """
+            SELECT
+                node_id,
+                source_id,
+                stack_bb,
+                history_full,
+                history_actions,
+                history_token_count,
+                acting_position,
+                source_file,
+                actor_position,
+                aggressor_position,
+                call_count,
+                limp_count,
+                raise_time,
+                pot_size,
+                raise_size_bb,
+                is_in_position
+            FROM solver_nodes
+            WHERE raise_time = 0
+              AND actor_position = ?
+        """
+        params: list[Any] = [actor_position.value]
+
+        if source_id is not None and source_ids is not None:
+            raise ValueError("source_id 和 source_ids 不能同时指定。")
+
+        if source_ids is not None:
+            normalized_source_ids = tuple(source_ids)
+            if not normalized_source_ids:
+                raise ValueError("source_ids 不能为空。")
+            placeholders = ",".join("?" for _ in normalized_source_ids)
+            query += f" AND source_id IN ({placeholders})"
+            params.extend(normalized_source_ids)
+        if source_id is not None:
+            query += " AND source_id = ?"
+            params.append(source_id)
+        if stack_bb is not None:
+            query += " AND stack_bb = ?"
+            params.append(stack_bb)
+
+        query += """
+            ORDER BY
+                CASE
+                    WHEN ? IS NULL THEN 0.0
+                    ELSE ABS(pot_size - ?)
+                END ASC,
+                node_id ASC
+        """
+        params.extend([pot_size, pot_size])
+
+        cursor.execute(query, tuple(params))
+        return [_row_to_solver_node_record(row) for row in cursor.fetchall()]
+
     def get_actions_for_nodes(
         self,
         node_ids: Sequence[int],

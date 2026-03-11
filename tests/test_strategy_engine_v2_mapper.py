@@ -322,6 +322,151 @@ def test_no_match_for_non_limp_raises_value_error(tmp_path: Path) -> None:
     adapter.close()
 
 
+def test_limp_filters_to_current_actor_raise_time_zero_nodes(tmp_path: Path) -> None:
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="TestStrategy",
+        source_dir="/tmp/TestStrategy",
+        format_version=2,
+    )
+    node_ids = repo.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            _make_node_record(
+                history_full="",
+                history_actions="",
+                acting_position=Position.UTG,
+                action_family=LegacyActionFamily.OPEN,
+                aggressor_position=None,
+                call_count=0,
+                limp_count=0,
+                raise_time=0,
+                pot_size=1.5,
+                raise_size_bb=None,
+                is_in_position=None,
+            ),
+        ),
+    )
+    repo.insert_actions(
+        node_id=node_ids[""],
+        action_records=(
+            _make_action_record(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                total_frequency=0.3,
+            ),
+            _make_action_record(
+                order_index=1,
+                action_code="R2.5",
+                action_type="RAISE",
+                bet_size_bb=2.5,
+                total_frequency=0.7,
+            ),
+        ),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+    mapper = StrategyNodeMapper(
+        repository_adapter=adapter,
+        source_id=source_id,
+        stack_bb=100,
+    )
+    mapped = mapper.map_node_context(
+        NodeContext(
+            actor_position=Position.CO,
+            aggressor_position=None,
+            call_count=0,
+            limp_count=1,
+            raise_time=0,
+            pot_size=2.5,
+            raise_size_bb=None,
+        )
+    )
+
+    assert mapped.synthetic_template_kind == SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3
+    assert mapped.matched_node_id is None
+
+    adapter.close()
+
+
+def test_limp_uses_actor_raise_time_zero_nodes_before_synthetic(tmp_path: Path) -> None:
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="TestStrategy",
+        source_dir="/tmp/TestStrategy",
+        format_version=2,
+    )
+    node_ids = repo.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            _make_node_record(
+                history_full="F-F",
+                history_actions="F-F",
+                acting_position=Position.CO,
+                action_family=LegacyActionFamily.OPEN,
+                aggressor_position=None,
+                call_count=0,
+                limp_count=0,
+                raise_time=0,
+                pot_size=1.5,
+                raise_size_bb=None,
+                is_in_position=None,
+            ),
+        ),
+    )
+    repo.insert_actions(
+        node_id=node_ids["F-F"],
+        action_records=(
+            _make_action_record(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                total_frequency=0.2,
+            ),
+            _make_action_record(
+                order_index=1,
+                action_code="R2.5",
+                action_type="RAISE",
+                bet_size_bb=2.5,
+                total_frequency=0.8,
+            ),
+        ),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+    mapper = StrategyNodeMapper(
+        repository_adapter=adapter,
+        source_id=source_id,
+        stack_bb=100,
+    )
+    mapped = mapper.map_node_context(
+        NodeContext(
+            actor_position=Position.CO,
+            aggressor_position=None,
+            call_count=0,
+            limp_count=1,
+            raise_time=0,
+            pot_size=2.5,
+            raise_size_bb=None,
+        )
+    )
+
+    assert mapped.synthetic_template_kind is None
+    assert mapped.matched_history == "F-F"
+    assert mapped.matched_node_id == node_ids["F-F"]
+
+    adapter.close()
+
+
 def test_mapper_supports_multiple_source_ids(tmp_path: Path) -> None:
     """验证 StrategyNodeMapper 可接收多个 source_id 并跨源匹配最近节点.
 

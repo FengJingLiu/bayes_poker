@@ -18,6 +18,14 @@ def _make_node_record(
     *,
     history_full: str = "R2-C",
     stack_bb: int = 100,
+    actor_position: Position = Position.CO,
+    aggressor_position: Position | None = Position.UTG,
+    call_count: int = 1,
+    limp_count: int = 0,
+    raise_time: int = 1,
+    pot_size: float = 5.5,
+    raise_size_bb: float | None = 2.0,
+    is_in_position: bool | None = True,
 ) -> ParsedStrategyNodeRecord:
     """构造最小可用的节点记录."""
 
@@ -26,17 +34,17 @@ def _make_node_record(
         history_full=history_full,
         history_actions="R-C",
         history_token_count=2,
-        acting_position="CO",
+        acting_position=actor_position.value,
         source_file="test.json",
         action_family=ActionFamily.CALL_VS_OPEN,
-        actor_position=Position.CO,
-        aggressor_position=Position.UTG,
-        call_count=1,
-        limp_count=0,
-        raise_time=1,
-        pot_size=5.5,
-        raise_size_bb=2.0,
-        is_in_position=True,
+        actor_position=actor_position,
+        aggressor_position=aggressor_position,
+        call_count=call_count,
+        limp_count=limp_count,
+        raise_time=raise_time,
+        pot_size=pot_size,
+        raise_size_bb=raise_size_bb,
+        is_in_position=is_in_position,
     )
 
 
@@ -195,4 +203,64 @@ def test_repository_list_candidates_supports_multi_source_selector(
         first_node_ids["R2-C"],
         second_node_ids["R2.2-C"],
     }
+    repo.close()
+
+
+def test_repository_list_limp_candidates_filters_actor_and_raise_time_zero(
+    tmp_path: Path,
+) -> None:
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=1,
+    )
+    node_ids = repo.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            _make_node_record(
+                history_full="CO_LIMP",
+                actor_position=Position.CO,
+                aggressor_position=None,
+                call_count=0,
+                limp_count=1,
+                raise_time=0,
+                pot_size=2.5,
+                raise_size_bb=None,
+                is_in_position=None,
+            ),
+            _make_node_record(
+                history_full="UTG_OPEN",
+                actor_position=Position.UTG,
+                aggressor_position=None,
+                call_count=0,
+                limp_count=0,
+                raise_time=0,
+                pot_size=1.5,
+                raise_size_bb=2.5,
+                is_in_position=None,
+            ),
+            _make_node_record(
+                history_full="CO_CALL_VS_OPEN",
+                actor_position=Position.CO,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=1,
+                pot_size=5.5,
+                raise_size_bb=2.5,
+                is_in_position=True,
+            ),
+        ),
+    )
+
+    candidates = repo.list_limp_candidates(
+        source_id=source_id,
+        stack_bb=100,
+        actor_position=Position.CO,
+        pot_size=2.5,
+    )
+
+    assert [candidate.node_id for candidate in candidates] == [node_ids["CO_LIMP"]]
     repo.close()

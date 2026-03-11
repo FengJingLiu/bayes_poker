@@ -72,11 +72,19 @@ class StrategyNodeMapper:
             最近节点匹配结果。
         """
 
-        candidates = self._repository_adapter.load_candidates(
-            source_id=self._source_ids,
-            stack_bb=self._stack_bb,
-            node_context=node_context,
-        )
+        if _is_limp_family_context(node_context):
+            candidates = self._repository_adapter.load_limp_candidates(
+                source_id=self._source_ids,
+                stack_bb=self._stack_bb,
+                actor_position=node_context.actor_position,
+                pot_size=node_context.pot_size,
+            )
+        else:
+            candidates = self._repository_adapter.load_candidates(
+                source_id=self._source_ids,
+                stack_bb=self._stack_bb,
+                node_context=node_context,
+            )
         if not candidates:
             if _is_limp_family_context(node_context):
                 return MappedNodeContext(
