@@ -39,7 +39,6 @@ class ObservedAction:
 class NodeContext:
     """用于 mapper/GTO 节点查找的中性上下文。"""
 
-    action_family: ActionFamily
     actor_position: Position
     aggressor_position: Position | None
     call_count: int
@@ -55,7 +54,6 @@ class PlayerNodeContext:
 
     actor_seat: int
     actor_position: Position
-    query_history: str
     node_context: NodeContext
     params: PreFlopParams
     action_order: tuple[int, ...]

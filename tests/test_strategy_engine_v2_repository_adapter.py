@@ -16,7 +16,7 @@ from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.strategy.strategy_engine.core_types import ActionFamily, NodeContext
+from bayes_poker.strategy.strategy_engine.core_types import NodeContext
 from bayes_poker.strategy.strategy_engine.repository_adapter import (
     StrategyRepositoryAdapter,
 )
@@ -94,7 +94,6 @@ def _make_node_context() -> NodeContext:
     """
 
     return NodeContext(
-        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.CO,
         aggressor_position=Position.UTG,
         call_count=1,

@@ -11,7 +11,7 @@ from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.strategy.strategy_engine.core_types import ActionFamily, NodeContext
+from bayes_poker.strategy.strategy_engine.core_types import NodeContext
 from bayes_poker.strategy.strategy_engine.gto_policy import GtoPriorBuilder
 from bayes_poker.strategy.strategy_engine.node_mapper import (
     StrategyNodeMapper,
@@ -227,7 +227,6 @@ def test_price_adjustment_and_gto_prior(tmp_path: Path) -> None:
     )
     mapped = mapper.map_node_context(
         NodeContext(
-            action_family=ActionFamily.CALL_VS_OPEN,
             actor_position=Position.CO,
             aggressor_position=Position.UTG,
             call_count=1,
@@ -256,7 +255,6 @@ def test_exact_match(tmp_path: Path) -> None:
     )
     mapped = mapper.map_node_context(
         NodeContext(
-            action_family=ActionFamily.CALL_VS_OPEN,
             actor_position=Position.CO,
             aggressor_position=Position.UTG,
             call_count=1,
@@ -283,7 +281,6 @@ def test_limp_without_candidates_uses_synthetic_template(tmp_path: Path) -> None
     )
     mapped = mapper.map_node_context(
         NodeContext(
-            action_family=ActionFamily.LIMP,
             actor_position=Position.CO,
             aggressor_position=None,
             call_count=0,
@@ -312,7 +309,6 @@ def test_no_match_for_non_limp_raises_value_error(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="solver 节点"):
         mapper.map_node_context(
             NodeContext(
-                action_family=ActionFamily.CALL_VS_OPEN,
                 actor_position=Position.CO,
                 aggressor_position=Position.UTG,
                 call_count=1,
@@ -322,5 +318,88 @@ def test_no_match_for_non_limp_raises_value_error(tmp_path: Path) -> None:
                 raise_size_bb=2.0,
             )
         )
+
+    adapter.close()
+
+
+def test_mapper_supports_multiple_source_ids(tmp_path: Path) -> None:
+    """验证 StrategyNodeMapper 可接收多个 source_id 并跨源匹配最近节点.
+
+    Args:
+        tmp_path: pytest 临时目录.
+    """
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    first_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=2,
+    )
+    second_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zAggressive",
+        source_dir="/tmp/Cash6m50zAggressive",
+        format_version=2,
+    )
+    repo.insert_nodes(
+        source_id=first_source_id,
+        node_records=(
+            _make_node_record(
+                history_full="R2-C",
+                history_actions="R-C",
+                acting_position=Position.CO,
+                action_family=LegacyActionFamily.CALL_VS_OPEN,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=1,
+                pot_size=7.5,
+                raise_size_bb=3.0,
+                is_in_position=True,
+            ),
+        ),
+    )
+    repo.insert_nodes(
+        source_id=second_source_id,
+        node_records=(
+            _make_node_record(
+                history_full="R2.2-C",
+                history_actions="R-C",
+                acting_position=Position.CO,
+                action_family=LegacyActionFamily.CALL_VS_OPEN,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=1,
+                pot_size=5.5,
+                raise_size_bb=2.2,
+                is_in_position=True,
+            ),
+        ),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+
+    mapper = StrategyNodeMapper(
+        repository_adapter=adapter,
+        source_id=[first_source_id, second_source_id],
+        stack_bb=100,
+    )
+    mapped = mapper.map_node_context(
+        NodeContext(
+            actor_position=Position.CO,
+            aggressor_position=Position.UTG,
+            call_count=1,
+            limp_count=0,
+            raise_time=1,
+            pot_size=5.5,
+            raise_size_bb=2.2,
+        )
+    )
+
+    assert mapped.matched_history == "R2.2-C"
+    assert set(mapped.candidate_histories) == {"R2-C", "R2.2-C"}
 
     adapter.close()

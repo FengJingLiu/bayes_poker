@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import struct
+import pytest
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player, PlayerAction, Position
@@ -46,6 +47,25 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         aggressor_position=None,
         call_count=0,
         limp_count=0,
+        raise_time=0,
+        pot_size=1.5,
+        raise_size_bb=None,
+        is_in_position=None,
+    )
+    open_node_far = ParsedStrategyNodeRecord(
+        stack_bb=100,
+        history_full="X",
+        history_actions="X",
+        history_token_count=1,
+        acting_position="UTG",
+        source_file="test.json",
+        action_family=LegacyActionFamily.OPEN,
+        actor_position=Position.UTG,
+        aggressor_position=None,
+        call_count=0,
+        limp_count=0,
+        raise_time=0,
+        pot_size=8.0,
         raise_size_bb=None,
         is_in_position=None,
     )
@@ -61,11 +81,50 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         aggressor_position=Position.UTG,
         call_count=0,
         limp_count=0,
+        raise_time=1,
+        pot_size=4.0,
+        raise_size_bb=2.5,
+        is_in_position=False,
+    )
+    sb_prior_node = ParsedStrategyNodeRecord(
+        stack_bb=100,
+        history_full="R2.5-C-SB",
+        history_actions="R-C-C",
+        history_token_count=3,
+        acting_position="SB",
+        source_file="test.json",
+        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        actor_position=Position.SB,
+        aggressor_position=Position.UTG,
+        call_count=1,
+        limp_count=0,
+        raise_time=1,
+        pot_size=6.5,
+        raise_size_bb=2.5,
+        is_in_position=False,
+    )
+    bb_prior_node = ParsedStrategyNodeRecord(
+        stack_bb=100,
+        history_full="R2.5-C-BB",
+        history_actions="R-C-C",
+        history_token_count=3,
+        acting_position="BB",
+        source_file="test.json",
+        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        actor_position=Position.BB,
+        aggressor_position=Position.UTG,
+        call_count=1,
+        limp_count=0,
+        raise_time=1,
+        pot_size=6.5,
         raise_size_bb=2.5,
         is_in_position=False,
     )
     open_node_id = repo.insert_node(source_id=source_id, node_record=open_node)
+    open_node_far_id = repo.insert_node(source_id=source_id, node_record=open_node_far)
     node_id = repo.insert_node(source_id=source_id, node_record=node_record)
+    sb_prior_node_id = repo.insert_node(source_id=source_id, node_record=sb_prior_node)
+    bb_prior_node_id = repo.insert_node(source_id=source_id, node_record=bb_prior_node)
     repo.insert_actions(
         node_id=open_node_id,
         action_records=(
@@ -88,6 +147,35 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 bet_size_bb=2.5,
                 is_all_in=False,
                 total_frequency=0.9,
+                next_position="",
+                preflop_range=PreflopRange.zeros(),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+        ),
+    )
+    repo.insert_actions(
+        node_id=open_node_far_id,
+        action_records=(
+            ParsedStrategyActionRecord(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.6,
+                next_position="",
+                preflop_range=PreflopRange.zeros(),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+            ParsedStrategyActionRecord(
+                order_index=1,
+                action_code="R2.5",
+                action_type="RAISE",
+                bet_size_bb=2.5,
+                is_all_in=False,
+                total_frequency=0.4,
                 next_position="",
                 preflop_range=PreflopRange.zeros(),
                 total_ev=0.0,
@@ -129,6 +217,64 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 bet_size_bb=6.0,
                 is_all_in=False,
                 total_frequency=0.3,
+                next_position="",
+                preflop_range=PreflopRange.zeros(),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+        ),
+    )
+    repo.insert_actions(
+        node_id=sb_prior_node_id,
+        action_records=(
+            ParsedStrategyActionRecord(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.4,
+                next_position="",
+                preflop_range=PreflopRange.zeros(),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+            ParsedStrategyActionRecord(
+                order_index=1,
+                action_code="C",
+                action_type="CALL",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.6,
+                next_position="",
+                preflop_range=PreflopRange.zeros(),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+        ),
+    )
+    repo.insert_actions(
+        node_id=bb_prior_node_id,
+        action_records=(
+            ParsedStrategyActionRecord(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.5,
+                next_position="",
+                preflop_range=PreflopRange.zeros(),
+                total_ev=0.0,
+                total_combos=0.0,
+            ),
+            ParsedStrategyActionRecord(
+                order_index=1,
+                action_code="C",
+                action_type="CALL",
+                bet_size_bb=None,
+                is_all_in=False,
+                total_frequency=0.5,
                 next_position="",
                 preflop_range=PreflopRange.zeros(),
                 total_ev=0.0,
@@ -395,6 +541,51 @@ def test_missing_player_uses_population_fallback(tmp_path: Path) -> None:
     )
 
     assert context.player_summaries[4]["source_kind"] == "population"
+
+    stats_repo.close()
+    repository_adapter.close()
+
+
+def test_initial_prior_uses_nearest_strategy_node(tmp_path: Path) -> None:
+    repository_adapter, source_id = _make_strategy_repo(tmp_path)
+    stats_repo = _build_stats_repo(tmp_path)
+    pipeline = OpponentPipeline(
+        repository_adapter=repository_adapter,
+        stats_adapter=PlayerNodeStatsAdapter(stats_repo),
+        source_id=source_id,
+    )
+    state = _build_state(hand_id="h1")
+    player = state.players[3]
+
+    prior = pipeline._build_initial_prior_range(
+        player=player,
+        observed_state=state,
+        decision_prefix=[],
+    )
+
+    assert prior.strategy[0] == pytest.approx(0.9, abs=1e-6)
+
+    stats_repo.close()
+    repository_adapter.close()
+
+
+def test_initial_prior_without_matching_node_raises_error(tmp_path: Path) -> None:
+    repository_adapter, source_id = _make_strategy_repo(tmp_path)
+    stats_repo = _build_stats_repo(tmp_path)
+    pipeline = OpponentPipeline(
+        repository_adapter=repository_adapter,
+        stats_adapter=PlayerNodeStatsAdapter(stats_repo),
+        source_id=source_id,
+    )
+    state = _build_state(hand_id="h1")
+    player = state.players[2]
+
+    with pytest.raises(ValueError):
+        pipeline._build_initial_prior_range(
+            player=player,
+            observed_state=state,
+            decision_prefix=[],
+        )
 
     stats_repo.close()
     repository_adapter.close()

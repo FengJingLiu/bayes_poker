@@ -9,7 +9,7 @@ from bayes_poker.player_metrics.enums import Position as MetricsPosition
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.params import PreFlopParams
 from bayes_poker.strategy.preflop_parse.parser import _derive_mapper_fields
-from bayes_poker.strategy.strategy_engine import ActionFamily, build_player_node_context
+from bayes_poker.strategy.strategy_engine import build_player_node_context
 from bayes_poker.strategy.strategy_engine.context_builder import UnsupportedContextError
 from bayes_poker.table.observed_state import ObservedTableState
 
@@ -43,8 +43,6 @@ def test_supported_context_open() -> None:
 
     context = build_player_node_context(observed_state)
 
-    assert context.query_history == ""
-    assert context.node_context.action_family == ActionFamily.OPEN
     assert context.node_context.actor_position == Position.UTG
     assert context.node_context.aggressor_position is None
     assert context.node_context.raise_time == 0
@@ -81,8 +79,6 @@ def test_supported_context_call_vs_open() -> None:
 
     context = build_player_node_context(observed_state)
 
-    assert context.query_history == "R2.5"
-    assert context.node_context.action_family == ActionFamily.CALL_VS_OPEN
     assert context.node_context.actor_position == Position.MP
     assert context.node_context.aggressor_position == Position.UTG
     assert context.node_context.call_count == 0
@@ -124,9 +120,7 @@ def test_supported_context_limp() -> None:
 
     context = build_player_node_context(observed_state)
 
-    assert context.query_history == "C-F"
     assert context.action_order == (3, 4)
-    assert context.node_context.action_family == ActionFamily.LIMP
     assert context.node_context.actor_position == Position.CO
     assert context.node_context.limp_count == 1
     assert context.node_context.raise_time == 0
@@ -165,7 +159,7 @@ def test_unsupported_context_non_preflop() -> None:
         build_player_node_context(observed_state)
 
 
-def test_unsupported_context_three_bet_plus() -> None:
+def test_supported_context_three_bet_plus_uses_last_aggressor() -> None:
     observed_state = ObservedTableState(
         table_id="t5",
         player_count=6,
@@ -184,8 +178,27 @@ def test_unsupported_context_three_bet_plus() -> None:
         state_version=1,
     )
 
-    with pytest.raises(UnsupportedContextError, match="多次加注"):
-        build_player_node_context(observed_state)
+    context = build_player_node_context(observed_state)
+
+    assert context.node_context.actor_position == Position.CO
+    assert context.node_context.aggressor_position == Position.MP
+    assert context.node_context.call_count == 0
+    assert context.node_context.limp_count == 0
+    assert context.node_context.raise_time == 2
+    assert context.node_context.pot_size == pytest.approx(12.0)
+    assert context.node_context.raise_size_bb == pytest.approx(8.0)
+    assert (
+        context.params.to_index()
+        == PreFlopParams(
+            table_type=TableType.SIX_MAX,
+            position=MetricsPosition.CO,
+            num_callers=0,
+            num_raises=2,
+            num_active_players=6,
+            previous_action=MetricsActionType.FOLD,
+            in_position_on_flop=False,
+        ).to_index()
+    )
 
 
 def test_unsupported_context_actor_already_acted() -> None:
@@ -243,6 +256,19 @@ def test_unsupported_context_actor_already_acted() -> None:
             1,
             0,
             2.5,
+        ),
+        (
+            "R2.5-R8",
+            Position.CO,
+            [
+                PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP),
+                PlayerAction(4, ActionType.RAISE, 8.0, Street.PREFLOP),
+            ],
+            Position.MP,
+            0,
+            0,
+            2,
+            12.0,
         ),
     ],
 )

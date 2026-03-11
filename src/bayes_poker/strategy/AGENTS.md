@@ -32,7 +32,7 @@ strategy/
 | 模块 | 职责 |
 |------|------|
 | `core_types.py` | `ActionFamily`、`NodeContext`、`PlayerNodeContext` |
-| `context_builder.py` | `ObservedTableState -> query_history + NodeContext + PreFlopParams` |
+| `context_builder.py` | `ObservedTableState -> NodeContext + PreFlopParams` |
 | `repository_adapter.py` | 封装 `PreflopStrategyRepository` 的 v2 中性读接口 |
 | `stats_adapter.py` | `PlayerStatsRepository.get(..., smooth_with_pool=True)` 节点概率适配 |
 | `node_mapper.py` | 最近节点匹配、距离评分、价格修正 |

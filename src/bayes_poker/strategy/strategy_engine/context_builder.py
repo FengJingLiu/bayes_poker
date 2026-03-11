@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from bayes_poker.comm.strategy_history import build_preflop_history
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import (
     Player,
@@ -17,7 +16,6 @@ from bayes_poker.player_metrics.enums import (
 )
 from bayes_poker.player_metrics.params import PreFlopParams
 from .core_types import (
-    ActionFamily,
     NodeContext,
     PlayerNodeContext,
 )
@@ -93,39 +91,33 @@ def _build_first_action_prefix(
     return prefix
 
 
-def _classify_action_family(
+def _build_base_node_context(
     prefix_actions: list[PlayerAction],
     *,
     small_blind: float,
     big_blind: float,
 ) -> NodeContext:
-    aggressive_actions = [
-        action
-        for action in prefix_actions
+    aggressive_indices = [
+        index
+        for index, action in enumerate(prefix_actions)
         if action.action_type in {ActionType.BET, ActionType.RAISE, ActionType.ALL_IN}
     ]
-    if len(aggressive_actions) >= 2:
-        raise UnsupportedContextError("当前最小实现暂不支持多次加注场景")
 
-    raise_time = len(aggressive_actions)
+    raise_time = len(aggressive_indices)
     pot_size = _calculate_prefix_pot_size(
         prefix_actions=prefix_actions,
         small_blind=small_blind,
         big_blind=big_blind,
     )
 
-    limp_count = 0
-    for action in prefix_actions:
-        if (
-            action.action_type in {ActionType.CHECK, ActionType.CALL}
-            and not aggressive_actions
-        ):
-            limp_count += 1
-
-    if not aggressive_actions:
+    if not aggressive_indices:
+        limp_count = sum(
+            1
+            for action in prefix_actions
+            if action.action_type in {ActionType.CHECK, ActionType.CALL}
+        )
         if limp_count == 0:
             return NodeContext(
-                action_family=ActionFamily.OPEN,
                 actor_position=Position.UTG,
                 aggressor_position=None,
                 call_count=0,
@@ -135,7 +127,6 @@ def _classify_action_family(
                 raise_size_bb=None,
             )
         return NodeContext(
-            action_family=ActionFamily.LIMP,
             actor_position=Position.UTG,
             aggressor_position=None,
             call_count=0,
@@ -145,24 +136,29 @@ def _classify_action_family(
             raise_size_bb=None,
         )
 
-    first_raise = aggressive_actions[0]
-    raise_index = prefix_actions.index(first_raise)
+    first_raise_index = aggressive_indices[0]
+    last_raise_index = aggressive_indices[-1]
+    last_raise = prefix_actions[last_raise_index]
+    limp_count = sum(
+        1
+        for action in prefix_actions[:first_raise_index]
+        if action.action_type in {ActionType.CHECK, ActionType.CALL}
+    )
     call_count = sum(
         1
-        for action in prefix_actions[raise_index + 1 :]
+        for action in prefix_actions[last_raise_index + 1 :]
         if action.action_type in {ActionType.CHECK, ActionType.CALL}
     )
     if limp_count > 0:
         raise UnsupportedContextError("当前最小实现暂不支持 limp 后加注场景")
     return NodeContext(
-        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.UTG,
-        aggressor_position=Position.UTG,
+        aggressor_position=None,
         call_count=call_count,
         limp_count=0,
         raise_time=raise_time,
         pot_size=pot_size,
-        raise_size_bb=first_raise.amount / big_blind if big_blind > 0 else None,
+        raise_size_bb=last_raise.amount / big_blind if big_blind > 0 else None,
     )
 
 
@@ -247,18 +243,14 @@ def build_player_node_context(
     preflop_actions = _filter_preflop_actions(observed_state.action_history)
     prefix_actions = _build_first_action_prefix(preflop_actions, actor_seat)
     action_order = tuple(action.player_index for action in prefix_actions)
-    query_history = build_preflop_history(
-        prefix_actions,
-        big_blind=observed_state.big_blind,
-    )
 
-    base_node_context = _classify_action_family(
+    base_node_context = _build_base_node_context(
         prefix_actions,
         small_blind=observed_state.small_blind,
         big_blind=observed_state.big_blind,
     )
     aggressor_position = None
-    if base_node_context.action_family == ActionFamily.CALL_VS_OPEN:
+    if base_node_context.raise_time > 0 and base_node_context.limp_count == 0:
         for action in prefix_actions:
             if action.action_type in {
                 ActionType.BET,
@@ -268,10 +260,8 @@ def build_player_node_context(
                 aggressor_position = _resolve_actor_position(
                     observed_state, action.player_index
                 )
-                break
 
     node_context = NodeContext(
-        action_family=base_node_context.action_family,
         actor_position=actor_position,
         aggressor_position=aggressor_position,
         call_count=base_node_context.call_count,
@@ -282,10 +272,9 @@ def build_player_node_context(
     )
 
     num_callers = base_node_context.limp_count
-    num_raises = 0
-    if node_context.action_family == ActionFamily.CALL_VS_OPEN:
+    num_raises = base_node_context.raise_time
+    if node_context.aggressor_position is not None and base_node_context.raise_time > 0:
         num_callers = base_node_context.call_count
-        num_raises = 1
 
     params = PreFlopParams(
         table_type=table_type,
@@ -302,7 +291,6 @@ def build_player_node_context(
     return PlayerNodeContext(
         actor_seat=actor_seat,
         actor_position=actor_position,
-        query_history=query_history,
         node_context=node_context,
         params=params,
         action_order=action_order,

@@ -58,7 +58,7 @@ class StrategyNodeMapper:
         """
 
         self._repository_adapter = repository_adapter
-        self._source_id = source_id
+        self._source_ids = _normalize_source_id_selector(source_id)
         self._stack_bb = stack_bb
         self._max_candidates = max_candidates
 
@@ -73,12 +73,12 @@ class StrategyNodeMapper:
         """
 
         candidates = self._repository_adapter.load_candidates(
-            source_id=self._source_id,
+            source_id=self._source_ids,
             stack_bb=self._stack_bb,
             node_context=node_context,
         )
         if not candidates:
-            if node_context.action_family.name == "LIMP":
+            if _is_limp_family_context(node_context):
                 return MappedNodeContext(
                     matched_level=3,
                     matched_node_id=None,
@@ -124,6 +124,30 @@ class StrategyNodeMapper:
             price_adjustment_applied=price_adjustment_applied,
             price_adjustment_factor=price_adjustment_factor,
         )
+
+
+def _normalize_source_id_selector(source_id: int | Sequence[int]) -> tuple[int, ...]:
+    """规范化策略源 ID 选择器.
+
+    Args:
+        source_id: 输入的策略源 ID 或 ID 序列.
+
+    Returns:
+        规范化后的策略源 ID 元组.
+
+    Raises:
+        ValueError: 当传入空序列或包含非 int 值时抛出.
+    """
+
+    if isinstance(source_id, int):
+        return (source_id,)
+
+    normalized = tuple(source_id)
+    if not normalized:
+        raise ValueError("source_id 不能为空。")
+    if any(not isinstance(current_source_id, int) for current_source_id in normalized):
+        raise ValueError("source_id 必须为 int 或 int 序列。")
+    return normalized
 
 
 def _apply_price_adjustment(
@@ -218,3 +242,12 @@ def _is_in_position(*, actor_position: Position, aggressor_position: Position) -
 
 def _position_value(position: Position | None) -> str | None:
     return position.value if position is not None else None
+
+
+def _is_limp_family_context(node_context: NodeContext) -> bool:
+    return (
+        node_context.raise_time == 0
+        and node_context.limp_count > 0
+        and node_context.aggressor_position is None
+        and node_context.call_count == 0
+    )

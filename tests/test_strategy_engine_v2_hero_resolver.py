@@ -43,6 +43,8 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         aggressor_position=None,
         call_count=0,
         limp_count=0,
+        raise_time=0,
+        pot_size=1.5,
         raise_size_bb=None,
         is_in_position=None,
     )
@@ -58,6 +60,8 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         aggressor_position=Position.UTG,
         call_count=1,
         limp_count=0,
+        raise_time=1,
+        pot_size=6.5,
         raise_size_bb=2.5,
         is_in_position=True,
     )

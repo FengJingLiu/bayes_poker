@@ -11,7 +11,6 @@ from bayes_poker.player_metrics.models import ActionStats, PlayerStats, StatValu
 from bayes_poker.player_metrics.params import PreFlopParams
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
 from bayes_poker.strategy.strategy_engine.core_types import (
-    ActionFamily,
     NodeContext,
     PlayerNodeContext,
 )
@@ -102,9 +101,7 @@ def _make_node_context() -> PlayerNodeContext:
     return PlayerNodeContext(
         actor_seat=5,
         actor_position=Position.CO,
-        query_history="C-F",
         node_context=NodeContext(
-            action_family=ActionFamily.LIMP,
             actor_position=Position.CO,
             aggressor_position=None,
             call_count=0,

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from bayes_poker.comm.session import SessionConfig
 from bayes_poker.domain.poker import ActionType, Street
-from bayes_poker.domain.table import Player, PlayerAction, Position
+from bayes_poker.domain.table import Player, PlayerAction
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.strategy.range import PreflopRange, RANGE_169_LENGTH
 from .calibrator import (
@@ -113,19 +113,29 @@ class OpponentPipeline:
             for player in live_opponents
             if player.seat_index not in acted_prefixes
         ]
+        preflop_prefix = [
+            action
+            for action in observed_state.action_history
+            if action.street == Street.PREFLOP
+        ]
 
         for player in acted_opponents:
             seat = player.seat_index
             action_index, prefix = acted_prefixes[seat]
             action = observed_state.action_history[action_index]
+            prior = context.player_ranges.get(seat)
+            if prior is None:
+                prior = self._build_initial_prior_range(
+                    player=player,
+                    observed_state=observed_state,
+                    decision_prefix=prefix,
+                )
             context.player_ranges[seat] = self._build_posterior_range(
                 player=player,
                 observed_state=observed_state,
                 action=action,
                 decision_prefix=prefix,
-                prior=context.player_ranges.get(
-                    seat, _build_initial_prior_range(player)
-                ),
+                prior=prior,
             )
             context.player_summaries[seat] = {
                 "status": "posterior",
@@ -134,7 +144,12 @@ class OpponentPipeline:
 
         for player in prior_only_opponents:
             seat = player.seat_index
-            context.player_ranges.setdefault(seat, _build_initial_prior_range(player))
+            if seat not in context.player_ranges:
+                context.player_ranges[seat] = self._build_initial_prior_range(
+                    player=player,
+                    observed_state=observed_state,
+                    decision_prefix=preflop_prefix,
+                )
             context.player_summaries[seat] = {"status": "prior_only"}
 
         context.last_action_fingerprint = fingerprint
@@ -149,23 +164,10 @@ class OpponentPipeline:
         decision_prefix: list[PlayerAction],
         prior: PreflopRange,
     ) -> PreflopRange:
-        state_for_player = ObservedTableState(
-            table_id=observed_state.table_id,
-            player_count=observed_state.player_count,
-            small_blind=observed_state.small_blind,
-            big_blind=observed_state.big_blind,
-            hand_id=observed_state.hand_id,
-            street=Street.PREFLOP,
-            pot=observed_state.pot,
-            btn_seat=observed_state.btn_seat,
-            actor_seat=player.seat_index,
-            hero_seat=observed_state.hero_seat,
-            hero_cards=observed_state.hero_cards,
-            board_cards=observed_state.board_cards,
-            players=observed_state.players,
-            action_history=decision_prefix,
-            state_version=observed_state.state_version,
-            timestamp=observed_state.timestamp,
+        state_for_player = self._build_state_for_player(
+            player=player,
+            observed_state=observed_state,
+            decision_prefix=decision_prefix,
         )
         node_context = build_player_node_context(
             state_for_player,
@@ -205,6 +207,77 @@ class OpponentPipeline:
         )
         return posterior.posterior_range
 
+    def _build_initial_prior_range(
+        self,
+        *,
+        player: Player,
+        observed_state: ObservedTableState,
+        decision_prefix: list[PlayerAction],
+    ) -> PreflopRange:
+        state_for_player = self._build_state_for_player(
+            player=player,
+            observed_state=observed_state,
+            decision_prefix=decision_prefix,
+        )
+        node_context = build_player_node_context(
+            state_for_player,
+            table_type=self._config.table_type,
+        )
+        stack_bb = max(1, int(round(player.get_stack_bb(observed_state.big_blind))))
+        resolved_stack = self._repository_adapter.resolve_stack_bb(
+            source_id=self._source_id,
+            requested_stack_bb=stack_bb,
+        )
+        mapped = StrategyNodeMapper(
+            repository_adapter=self._repository_adapter,
+            source_id=self._source_id,
+            stack_bb=resolved_stack,
+        ).map_node_context(node_context.node_context)
+        prior_policy = GtoPriorBuilder(
+            repository_adapter=self._repository_adapter,
+        ).build_policy(mapped)
+
+        total_frequency = sum(
+            max(0.0, action.blended_frequency) for action in prior_policy.actions
+        )
+        if total_frequency <= 0.0:
+            raise ValueError("初始 prior 动作频率总和无效。")
+
+        fold_frequency = sum(
+            max(0.0, action.blended_frequency)
+            for action in prior_policy.actions
+            if action.action_name.upper() == "F"
+        )
+        continue_frequency = (total_frequency - fold_frequency) / total_frequency
+        clipped = max(0.0, min(1.0, continue_frequency))
+        return PreflopRange(strategy=[clipped] * RANGE_169_LENGTH)
+
+    def _build_state_for_player(
+        self,
+        *,
+        player: Player,
+        observed_state: ObservedTableState,
+        decision_prefix: list[PlayerAction],
+    ) -> ObservedTableState:
+        return ObservedTableState(
+            table_id=observed_state.table_id,
+            player_count=observed_state.player_count,
+            small_blind=observed_state.small_blind,
+            big_blind=observed_state.big_blind,
+            hand_id=observed_state.hand_id,
+            street=Street.PREFLOP,
+            pot=observed_state.pot,
+            btn_seat=observed_state.btn_seat,
+            actor_seat=player.seat_index,
+            hero_seat=observed_state.hero_seat,
+            hero_cards=observed_state.hero_cards,
+            board_cards=observed_state.board_cards,
+            players=observed_state.players,
+            action_history=decision_prefix,
+            state_version=observed_state.state_version,
+            timestamp=observed_state.timestamp,
+        )
+
 
 def _collect_first_action_prefixes(
     observed_state: ObservedTableState,
@@ -218,26 +291,6 @@ def _collect_first_action_prefixes(
             prefixes[action.player_index] = (index, list(current_prefix))
         current_prefix.append(action)
     return prefixes
-
-
-def _build_initial_prior_range(player: Player) -> PreflopRange:
-    if player.player_id:
-        frequency = 0.25
-    else:
-        frequency = 0.20
-    if player.position == Position.BTN:
-        frequency = 0.40
-    elif player.position == Position.CO:
-        frequency = 0.25
-    elif player.position == Position.MP:
-        frequency = 0.18
-    elif player.position == Position.UTG:
-        frequency = 0.15
-    elif player.position == Position.SB:
-        frequency = 0.35
-    elif player.position == Position.BB:
-        frequency = 0.50
-    return PreflopRange(strategy=[frequency] * RANGE_169_LENGTH)
 
 
 def _calibrate_policy(
