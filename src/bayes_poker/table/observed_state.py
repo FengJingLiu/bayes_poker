@@ -262,7 +262,17 @@ class ObservedTableState:
             small_blind: 小盲注。
             big_blind: 大盲注。
         """
-        self.hand_id = str(uuid.uuid4())[:8]
+        import hashlib
+
+        hash_parts = []
+        for p in players:
+            if p.player_id:
+                original_stack = p.stack + p.bet
+                hash_parts.append(f"{p.player_id}:{original_stack:.2f}")
+
+        seed_string = ",".join(hash_parts)
+
+        self.hand_id = hashlib.md5(seed_string.encode("utf-8")).hexdigest()[:8]
         self.btn_seat = btn_seat
         self.street = Street.PREFLOP
         self.pot = 0.0

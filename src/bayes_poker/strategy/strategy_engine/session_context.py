@@ -13,16 +13,25 @@ from bayes_poker.strategy.range import PreflopRange
 class StrategySessionContext:
     """单个牌桌会话的策略上下文。"""
 
+    # 会话唯一标识符
     session_id: str
+    # 牌桌唯一标识符
     table_id: str
+    # 当前手牌标识符
     hand_id: str
+    # 状态版本号，用于追踪和比较状态是否发生更新
     state_version: int
+    # 玩家翻前范围字典，键为玩家座位号
     player_ranges: dict[int, PreflopRange] = field(default_factory=dict)
+    # 玩家统计数据摘要，键为玩家座位号，值为对应的统计指标字典
     player_summaries: dict[int, dict[str, str | float | int]] = field(
         default_factory=dict
     )
+    # 最后一次动作事件的特征指纹，用于防止重复处理相同动作
     last_action_fingerprint: str = ""
+    # 最近活跃的系统单调时间，用于清理过期会话
     last_seen_monotonic: float = field(default_factory=time.monotonic)
+    # 异步并发锁，用于保证并发环境下该上下文操作的安全同步
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
