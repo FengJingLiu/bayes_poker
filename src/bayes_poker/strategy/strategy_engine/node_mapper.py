@@ -46,7 +46,7 @@ class StrategyNodeMapper:
         repository_adapter: StrategyRepositoryAdapter,
         source_id: int | Sequence[int],
         stack_bb: int,
-        max_candidates: int = 2,
+        max_candidates: int = 30,
     ) -> None:
         """初始化节点匹配器.
 
@@ -90,7 +90,7 @@ class StrategyNodeMapper:
                 return MappedNodeContext(
                     matched_level=3,
                     matched_node_id=None,
-                    matched_history="",
+                    matched_history="synthetic:limp_family_level_3",
                     distance_score=0.0,
                     candidate_node_ids=(),
                     candidate_histories=(),
@@ -106,13 +106,7 @@ class StrategyNodeMapper:
             )
             for candidate in candidates
         ]
-        scored_candidates.sort(
-            key=lambda item: (
-                item[0],
-                item[1].history_token_count,
-                item[1].history_full,
-            )
-        )
+        scored_candidates.sort(key=lambda item: (item[0], item[1].history_token_count))
         selected = scored_candidates[: self._max_candidates]
         best_distance, best_candidate = selected[0]
         price_adjustment_applied, price_adjustment_factor = _apply_price_adjustment(

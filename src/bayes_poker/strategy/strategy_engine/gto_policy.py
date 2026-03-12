@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from bayes_poker.strategy.strategy_engine.node_mapper import (
@@ -41,19 +40,14 @@ class GtoPriorBuilder:
         self,
         *,
         repository_adapter: StrategyRepositoryAdapter,
-        distance_tau: float = 1.0,
     ) -> None:
         """初始化 GTO 先验构建器。
 
         Args:
             repository_adapter: sqlite 读取适配器。
-            distance_tau: 距离衰减温度。
         """
 
-        if distance_tau <= 0:
-            raise ValueError("distance_tau 必须大于 0。")
         self._repository_adapter = repository_adapter
-        self._distance_tau = distance_tau
 
     def build_policy(self, mapped_context: MappedNodeContext) -> GtoPriorPolicy:
         """根据最近节点匹配结果构建先验策略。"""
@@ -64,29 +58,19 @@ class GtoPriorBuilder:
                 price_adjustment_applied=mapped_context.price_adjustment_applied,
                 price_adjustment_factor=mapped_context.price_adjustment_factor,
             )
-        if len(mapped_context.candidate_node_ids) != len(
-            mapped_context.candidate_distances
-        ):
-            raise ValueError("候选节点与距离数量不一致。")
+        if mapped_context.matched_node_id is None:
+            raise ValueError("映射结果缺少最近节点 ID。")
 
         actions_by_node = self._repository_adapter.load_actions(
-            mapped_context.candidate_node_ids,
+            (mapped_context.matched_node_id,),
         )
+        actions = actions_by_node.get(mapped_context.matched_node_id, ())
         action_weights: dict[str, float] = {}
-        for node_id, distance in zip(
-            mapped_context.candidate_node_ids,
-            mapped_context.candidate_distances,
-            strict=True,
-        ):
-            actions = actions_by_node.get(node_id, ())
-            if not actions:
-                continue
-            candidate_weight = math.exp(-distance / self._distance_tau)
-            for action in actions:
-                action_weights[action.action_code] = action_weights.get(
-                    action.action_code,
-                    0.0,
-                ) + candidate_weight * _action_frequency(action)
+        for action in actions:
+            action_weights[action.action_code] = action_weights.get(
+                action.action_code,
+                0.0,
+            ) + _action_frequency(action)
         if not action_weights:
             raise ValueError("映射结果中没有可用的 solver 候选节点。")
 

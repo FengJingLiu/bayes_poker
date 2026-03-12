@@ -241,7 +241,9 @@ def test_price_adjustment_and_gto_prior(tmp_path: Path) -> None:
     assert mapped.matched_history == "R2.5-C"
     assert mapped.price_adjustment_applied is True
     assert mapped.price_adjustment_factor == 0.75
-    assert policy.action_names == ("F", "C", "R9.5")
+    assert policy.action_names == ("F", "R9.5")
+    assert policy.actions[0].blended_frequency == pytest.approx(0.90)
+    assert policy.actions[1].blended_frequency == pytest.approx(0.10)
 
     adapter.close()
 
@@ -546,5 +548,73 @@ def test_mapper_supports_multiple_source_ids(tmp_path: Path) -> None:
 
     assert mapped.matched_history == "R2.2-C"
     assert set(mapped.candidate_histories) == {"R2-C", "R2.2-C"}
+
+    adapter.close()
+
+
+def test_mapper_default_max_candidates_increased(tmp_path: Path) -> None:
+    """默认配置应返回超过 10 个候选节点。"""
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="TestStrategy",
+        source_dir="/tmp/TestStrategy",
+        format_version=2,
+    )
+    node_records: list[ParsedStrategyNodeRecord] = []
+    for index in range(12):
+        node_records.append(
+            _make_node_record(
+                history_full=f"R2-C-{index}",
+                history_actions="R-C",
+                acting_position=Position.CO,
+                action_family=LegacyActionFamily.CALL_VS_OPEN,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=1,
+                pot_size=5.0 + index * 0.1,
+                raise_size_bb=2.0,
+                is_in_position=True,
+            )
+        )
+    node_ids = repo.insert_nodes(source_id=source_id, node_records=tuple(node_records))
+    for history_full, node_id in node_ids.items():
+        repo.insert_actions(
+            node_id=node_id,
+            action_records=(
+                _make_action_record(
+                    order_index=0,
+                    action_code="F",
+                    action_type="FOLD",
+                    bet_size_bb=None,
+                    total_frequency=1.0,
+                ),
+            ),
+        )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+    mapper = StrategyNodeMapper(
+        repository_adapter=adapter,
+        source_id=source_id,
+        stack_bb=100,
+    )
+
+    mapped = mapper.map_node_context(
+        NodeContext(
+            actor_position=Position.CO,
+            aggressor_position=Position.UTG,
+            call_count=1,
+            limp_count=0,
+            raise_time=1,
+            pot_size=5.5,
+            raise_size_bb=2.0,
+        )
+    )
+
+    assert len(mapped.candidate_node_ids) == 12
 
     adapter.close()
