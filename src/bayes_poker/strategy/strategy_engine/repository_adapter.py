@@ -8,6 +8,7 @@ from pathlib import Path
 
 from bayes_poker.domain.table import Position
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
+from bayes_poker.strategy.range import PreflopRange
 from bayes_poker.strategy.strategy_engine.core_types import NodeContext
 
 
@@ -53,6 +54,7 @@ class StrategyActionOption:
     is_all_in: bool
     total_frequency: float
     next_position: str
+    preflop_range: PreflopRange
     total_ev: float
     total_combos: float
 
@@ -245,6 +247,10 @@ class StrategyRepositoryAdapter:
                     is_all_in=action.is_all_in,
                     total_frequency=action.total_frequency,
                     next_position=action.next_position,
+                    preflop_range=PreflopRange(
+                        strategy=list(action.preflop_range.strategy),
+                        evs=list(action.preflop_range.evs),
+                    ),
                     total_ev=action.total_ev,
                     total_combos=action.total_combos,
                 )
