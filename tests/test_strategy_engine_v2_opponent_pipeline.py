@@ -18,13 +18,33 @@ from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.range import PreflopRange
-from bayes_poker.strategy.strategy_engine.opponent_pipeline import OpponentPipeline
+from bayes_poker.strategy.strategy_engine.gto_policy import (
+    GtoPriorAction,
+    GtoPriorPolicy,
+)
+from bayes_poker.strategy.strategy_engine.opponent_pipeline import (
+    OpponentPipeline,
+    _calibrate_policy,
+    _build_initial_prior_from_policy,
+)
 from bayes_poker.strategy.strategy_engine.repository_adapter import (
     StrategyRepositoryAdapter,
 )
-from bayes_poker.strategy.strategy_engine.stats_adapter import PlayerNodeStatsAdapter
+from bayes_poker.strategy.strategy_engine.stats_adapter import (
+    PlayerNodeStats,
+    PlayerNodeStatsAdapter,
+)
 from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
 from bayes_poker.table.observed_state import ObservedTableState
+
+
+def _constant_range(probability: float, ev: float) -> PreflopRange:
+    """构造固定概率与固定 EV 的 169 手范围。"""
+
+    return PreflopRange(
+        strategy=[probability] * 169,
+        evs=[ev] * 169,
+    )
 
 
 def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]:
@@ -593,3 +613,74 @@ def test_initial_prior_without_matching_node_raises_error(tmp_path: Path) -> Non
 
     stats_repo.close()
     repository_adapter.close()
+
+
+def test_build_initial_prior_from_policy_returns_hand_level_evs() -> None:
+    """初始先验应携带每手牌的信念 EV。"""
+
+    policy = GtoPriorPolicy(
+        action_names=("F", "C", "R6"),
+        actions=(
+            GtoPriorAction(
+                action_name="F",
+                blended_frequency=0.30,
+                belief_range=_constant_range(0.30, -0.20),
+            ),
+            GtoPriorAction(
+                action_name="C",
+                blended_frequency=0.30,
+                belief_range=_constant_range(0.30, 0.40),
+            ),
+            GtoPriorAction(
+                action_name="R6",
+                blended_frequency=0.40,
+                belief_range=_constant_range(0.40, 1.60),
+            ),
+        ),
+    )
+
+    prior = _build_initial_prior_from_policy(policy)
+
+    expected_ev = (0.30 * 0.40 + 0.40 * 1.60) / 0.70
+    assert prior.strategy[0] == pytest.approx(0.70)
+    assert prior.evs[0] == pytest.approx(expected_ev)
+
+
+def test_calibrate_policy_preserves_hand_level_belief_evs() -> None:
+    """校准策略时应保留先验动作中的 hand-level EV。"""
+
+    prior_policy = GtoPriorPolicy(
+        action_names=("C", "R6"),
+        actions=(
+            GtoPriorAction(
+                action_name="C",
+                blended_frequency=0.50,
+                belief_range=_constant_range(0.50, 0.30),
+            ),
+            GtoPriorAction(
+                action_name="R6",
+                blended_frequency=0.50,
+                belief_range=_constant_range(0.50, 1.80),
+            ),
+        ),
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.50,
+        call_probability=0.50,
+        fold_probability=0.00,
+        bet_0_40_probability=0.00,
+        bet_40_80_probability=0.00,
+        bet_80_120_probability=1.00,
+        bet_over_120_probability=0.00,
+        confidence=1.00,
+        source_kind="test",
+    )
+
+    calibrated = _calibrate_policy(
+        prior_policy=prior_policy,
+        node_stats=node_stats,
+    )
+    action_by_name = {action.action_name: action for action in calibrated.actions}
+
+    assert action_by_name["C"].range.evs[0] == pytest.approx(0.30)
+    assert action_by_name["R6"].range.evs[0] == pytest.approx(1.80)

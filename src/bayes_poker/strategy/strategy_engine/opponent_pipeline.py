@@ -19,6 +19,7 @@ from .calibrator import (
 )
 from .context_builder import build_player_node_context
 from .gto_policy import (
+    GtoPriorAction,
     GtoPriorBuilder,
     GtoPriorPolicy,
 )
@@ -237,21 +238,7 @@ class OpponentPipeline:
         prior_policy = GtoPriorBuilder(
             repository_adapter=self._repository_adapter,
         ).build_policy(mapped)
-
-        total_frequency = sum(
-            max(0.0, action.blended_frequency) for action in prior_policy.actions
-        )
-        if total_frequency <= 0.0:
-            raise ValueError("初始 prior 动作频率总和无效。")
-
-        fold_frequency = sum(
-            max(0.0, action.blended_frequency)
-            for action in prior_policy.actions
-            if action.action_name.upper() == "F"
-        )
-        continue_frequency = (total_frequency - fold_frequency) / total_frequency
-        clipped = max(0.0, min(1.0, continue_frequency))
-        return PreflopRange(strategy=[clipped] * RANGE_169_LENGTH)
+        return _build_initial_prior_from_policy(prior_policy)
 
     def _build_state_for_player(
         self,
@@ -302,7 +289,7 @@ def _calibrate_policy(
     actions = tuple(
         ActionPolicyAction(
             action_name=action.action_name,
-            range=PreflopRange(strategy=[action.blended_frequency] * RANGE_169_LENGTH),
+            range=_resolve_action_prior_range(action),
         )
         for action in prior_policy.actions
     )
@@ -350,6 +337,97 @@ def _build_size_weights(
         bucket_index = min(index, len(ordered_weights) - 1)
         weights[action_name] = ordered_weights[bucket_index]
     return weights
+
+
+def _build_initial_prior_from_policy(prior_policy: GtoPriorPolicy) -> PreflopRange:
+    """从 GTO 先验策略构建对手初始范围。
+
+    Args:
+        prior_policy: GTO 先验策略。
+
+    Returns:
+        带 hand-level 策略与 EV 的初始范围。
+    """
+
+    action_ranges = [
+        action.belief_range
+        for action in prior_policy.actions
+        if action.action_name.upper() != "F" and action.belief_range is not None
+    ]
+    if not action_ranges:
+        return _build_uniform_continue_prior_range(prior_policy)
+
+    strategy = [0.0] * RANGE_169_LENGTH
+    evs = [0.0] * RANGE_169_LENGTH
+    has_non_zero_strategy = False
+    for index in range(RANGE_169_LENGTH):
+        continue_probability = 0.0
+        weighted_ev_numerator = 0.0
+        for action_range in action_ranges:
+            action_probability = max(0.0, action_range.strategy[index])
+            continue_probability += action_probability
+            weighted_ev_numerator += action_probability * action_range.evs[index]
+        clipped_probability = max(0.0, min(1.0, continue_probability))
+        strategy[index] = clipped_probability
+        if continue_probability > 0.0:
+            evs[index] = weighted_ev_numerator / continue_probability
+            has_non_zero_strategy = True
+
+    if not has_non_zero_strategy:
+        return _build_uniform_continue_prior_range(prior_policy)
+    return PreflopRange(strategy=strategy, evs=evs)
+
+
+def _build_uniform_continue_prior_range(prior_policy: GtoPriorPolicy) -> PreflopRange:
+    """按动作总频率构建均匀 continue 先验范围。
+
+    Args:
+        prior_policy: GTO 先验策略。
+
+    Returns:
+        每手牌概率相同的 continue 先验范围。
+    """
+
+    total_frequency = sum(
+        max(0.0, action.blended_frequency) for action in prior_policy.actions
+    )
+    if total_frequency <= 0.0:
+        raise ValueError("初始 prior 动作频率总和无效。")
+
+    fold_frequency = sum(
+        max(0.0, action.blended_frequency)
+        for action in prior_policy.actions
+        if action.action_name.upper() == "F"
+    )
+    continue_frequency = (total_frequency - fold_frequency) / total_frequency
+    clipped = max(0.0, min(1.0, continue_frequency))
+    return PreflopRange(strategy=[clipped] * RANGE_169_LENGTH)
+
+
+def _resolve_action_prior_range(
+    action: GtoPriorAction,
+) -> PreflopRange:
+    """解析动作对应的校准输入范围。
+
+    Args:
+        action: 先验动作。
+
+    Returns:
+        包含 hand-level strategy/EV 的范围；缺失时回退为均匀频率范围。
+    """
+
+    belief_range = getattr(action, "belief_range", None)
+    blended_frequency = float(getattr(action, "blended_frequency", 0.0))
+    if belief_range is None:
+        return PreflopRange(strategy=[blended_frequency] * RANGE_169_LENGTH)
+
+    if max((max(0.0, value) for value in belief_range.strategy), default=0.0) <= 0.0:
+        return PreflopRange(strategy=[blended_frequency] * RANGE_169_LENGTH)
+
+    return PreflopRange(
+        strategy=list(belief_range.strategy),
+        evs=list(belief_range.evs),
+    )
 
 
 def _resolve_action_name(
