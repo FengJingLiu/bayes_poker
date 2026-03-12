@@ -26,6 +26,7 @@ class MappedNodeContext:
     """最近节点匹配结果。"""
 
     matched_level: int
+    matched_source_id: int | None
     matched_node_id: int | None
     matched_history: str
     distance_score: float
@@ -89,6 +90,7 @@ class StrategyNodeMapper:
             if _is_limp_family_context(node_context):
                 return MappedNodeContext(
                     matched_level=3,
+                    matched_source_id=None,
                     matched_node_id=None,
                     matched_history="synthetic:limp_family_level_3",
                     distance_score=0.0,
@@ -115,6 +117,7 @@ class StrategyNodeMapper:
         )
         return MappedNodeContext(
             matched_level=2,
+            matched_source_id=best_candidate.source_id,
             matched_node_id=best_candidate.node_id,
             matched_history=best_candidate.history_full,
             distance_score=best_distance,

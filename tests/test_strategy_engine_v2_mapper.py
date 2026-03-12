@@ -244,6 +244,92 @@ def test_price_adjustment_and_gto_prior(tmp_path: Path) -> None:
     assert policy.action_names == ("F", "R9.5")
     assert policy.actions[0].blended_frequency == pytest.approx(0.90)
     assert policy.actions[1].blended_frequency == pytest.approx(0.10)
+    assert policy.actions[0].source_id == source_id
+    assert policy.actions[1].source_id == source_id
+    assert mapped.matched_node_id is not None
+    assert policy.actions[0].node_id == mapped.matched_node_id
+    assert policy.actions[1].node_id == mapped.matched_node_id
+
+    adapter.close()
+
+
+def test_gto_prior_builder_duplicate_action_code_raises(tmp_path: Path) -> None:
+    """同一节点存在重复动作编码时应抛出异常。"""
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="TestStrategy",
+        source_dir="/tmp/TestStrategy",
+        format_version=2,
+    )
+    node_ids = repo.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            _make_node_record(
+                history_full="R2-C",
+                history_actions="R-C",
+                acting_position=Position.CO,
+                action_family=LegacyActionFamily.CALL_VS_OPEN,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=1,
+                pot_size=5.5,
+                raise_size_bb=2.0,
+                is_in_position=True,
+            ),
+        ),
+    )
+    repo.insert_actions(
+        node_id=node_ids["R2-C"],
+        action_records=(
+            _make_action_record(
+                order_index=0,
+                action_code="F",
+                action_type="FOLD",
+                bet_size_bb=None,
+                total_frequency=0.20,
+            ),
+            _make_action_record(
+                order_index=1,
+                action_code="C",
+                action_type="CALL",
+                bet_size_bb=None,
+                total_frequency=0.40,
+            ),
+            _make_action_record(
+                order_index=2,
+                action_code="C",
+                action_type="CALL",
+                bet_size_bb=None,
+                total_frequency=0.40,
+            ),
+        ),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+    mapper = StrategyNodeMapper(
+        repository_adapter=adapter,
+        source_id=source_id,
+        stack_bb=100,
+    )
+    mapped = mapper.map_node_context(
+        NodeContext(
+            actor_position=Position.CO,
+            aggressor_position=Position.UTG,
+            call_count=1,
+            limp_count=0,
+            raise_time=1,
+            pot_size=5.5,
+            raise_size_bb=2.0,
+        )
+    )
+
+    with pytest.raises(ValueError, match="重复动作编码"):
+        GtoPriorBuilder(repository_adapter=adapter).build_policy(mapped)
 
     adapter.close()
 

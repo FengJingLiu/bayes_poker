@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bayes_poker.strategy.range import PreflopRange
 from bayes_poker.strategy.strategy_engine.node_mapper import (
     MappedNodeContext,
     SyntheticTemplateKind,
@@ -20,6 +21,15 @@ class GtoPriorAction:
 
     action_name: str
     blended_frequency: float
+    source_id: int | None = None
+    node_id: int | None = None
+    action_type: str | None = None
+    bet_size_bb: float | None = None
+    is_all_in: bool = False
+    next_position: str | None = None
+    belief_range: PreflopRange | None = None
+    total_ev: float | None = None
+    total_combos: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,38 +70,59 @@ class GtoPriorBuilder:
             )
         if mapped_context.matched_node_id is None:
             raise ValueError("映射结果缺少最近节点 ID。")
+        if mapped_context.matched_source_id is None:
+            raise ValueError("映射结果缺少最近节点 source_id。")
 
         actions_by_node = self._repository_adapter.load_actions(
             (mapped_context.matched_node_id,),
         )
-        actions = actions_by_node.get(mapped_context.matched_node_id, ())
-        action_weights: dict[str, float] = {}
-        for action in actions:
-            action_weights[action.action_code] = action_weights.get(
-                action.action_code,
-                0.0,
-            ) + _action_frequency(action)
-        if not action_weights:
+        action_options = actions_by_node.get(mapped_context.matched_node_id, ())
+        if not action_options:
             raise ValueError("映射结果中没有可用的 solver 候选节点。")
 
-        action_names = tuple(sorted(action_weights, key=_action_sort_key))
-        actions = tuple(
-            GtoPriorAction(
-                action_name=action_name,
-                blended_frequency=action_weights[action_name],
+        grouped_action_options: dict[str, StrategyActionOption] = {}
+        for action_option in action_options:
+            if action_option.action_code in grouped_action_options:
+                raise ValueError(
+                    f"同一节点存在重复动作编码: {action_option.action_code}"
+                )
+            grouped_action_options[action_option.action_code] = action_option
+
+        action_names = tuple(sorted(grouped_action_options, key=_action_sort_key))
+        prior_actions_list: list[GtoPriorAction] = []
+        for action_name in action_names:
+            action_option = grouped_action_options[action_name]
+            prior_actions_list.append(
+                GtoPriorAction(
+                    action_name=action_name,
+                    blended_frequency=action_option.total_frequency,
+                    source_id=mapped_context.matched_source_id,
+                    node_id=action_option.node_id,
+                    action_type=action_option.action_type,
+                    bet_size_bb=action_option.bet_size_bb,
+                    is_all_in=action_option.is_all_in,
+                    next_position=action_option.next_position,
+                    belief_range=_clone_preflop_range(action_option.preflop_range),
+                    total_ev=action_option.total_ev,
+                    total_combos=action_option.total_combos,
+                )
             )
-            for action_name in action_names
-        )
+        prior_actions = tuple(prior_actions_list)
         return GtoPriorPolicy(
             action_names=action_names,
-            actions=actions,
+            actions=prior_actions,
             price_adjustment_applied=mapped_context.price_adjustment_applied,
             price_adjustment_factor=mapped_context.price_adjustment_factor,
         )
 
 
-def _action_frequency(action: StrategyActionOption) -> float:
-    return action.total_frequency
+def _clone_preflop_range(preflop_range: PreflopRange) -> PreflopRange:
+    """复制 `PreflopRange`，避免可变对象引用外泄。"""
+
+    return PreflopRange(
+        strategy=list(preflop_range.strategy),
+        evs=list(preflop_range.evs),
+    )
 
 
 def _action_sort_key(action_name: str) -> tuple[int, float, str]:
@@ -101,7 +132,7 @@ def _action_sort_key(action_name: str) -> tuple[int, float, str]:
     if normalized_name == "C":
         return (1, 0.0, action_name)
     if normalized_name == "RAI":
-        return (2, 1000.0, action_name)
+        return (2, 100.0, action_name)
     if normalized_name.startswith("R"):
         try:
             return (2, float(normalized_name[1:]), action_name)
