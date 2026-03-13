@@ -24,8 +24,12 @@ from bayes_poker.strategy.strategy_engine.gto_policy import (
 )
 from bayes_poker.strategy.strategy_engine.opponent_pipeline import (
     OpponentPipeline,
+    _adjust_belief_with_stats_and_ev,
     _calibrate_policy,
-    _build_initial_prior_from_policy,
+    _build_prior_only_range_from_policy,
+    _build_prior_range_from_policy,
+    _resolve_action_prior_range,
+    _select_matching_prior_action,
 )
 from bayes_poker.strategy.strategy_engine.repository_adapter import (
     StrategyRepositoryAdapter,
@@ -156,7 +160,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.1,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.1, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -168,7 +172,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.9,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.9, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -185,7 +189,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.6,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.6, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -197,7 +201,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.4,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.4, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -214,7 +218,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.2,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.2, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -226,7 +230,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.5,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.5, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -238,7 +242,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.3,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.3, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -255,7 +259,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.4,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.4, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -267,7 +271,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.6,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.6, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -284,7 +288,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.5,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.5, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -296,7 +300,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
                 is_all_in=False,
                 total_frequency=0.5,
                 next_position="",
-                preflop_range=PreflopRange.zeros(),
+                preflop_range=_constant_range(0.5, 0.0),
                 total_ev=0.0,
                 total_combos=0.0,
             ),
@@ -495,11 +499,11 @@ def test_sequential_update_and_prior_only(tmp_path: Path) -> None:
     assert context.player_summaries[3]["status"] == "posterior"
     assert context.player_summaries[4]["status"] == "posterior"
     assert context.player_summaries[1]["status"] == "prior_only"
-    assert (
-        3 in context.player_ranges
-        and 4 in context.player_ranges
-        and 1 in context.player_ranges
-    )
+    assert 3 in context.player_ranges and 4 in context.player_ranges
+    assert 1 not in context.player_ranges
+    assert "stats_raise_probability" in context.player_summaries[1]
+    assert "gto_raise_probability" in context.player_summaries[1]
+    assert "raise_delta_probability" in context.player_summaries[1]
 
     stats_repo.close()
     repository_adapter.close()
@@ -577,11 +581,12 @@ def test_initial_prior_uses_nearest_strategy_node(tmp_path: Path) -> None:
     state = _build_state(hand_id="h1")
     player = state.players[3]
 
-    prior = pipeline._build_initial_prior_range(
+    prior_policy = pipeline._build_initial_prior_range(
         player=player,
         observed_state=state,
         decision_prefix=[],
     )
+    prior = _build_prior_range_from_policy(prior_policy, action_name="R2.5")
 
     assert prior.strategy[0] == pytest.approx(0.9, abs=1e-6)
 
@@ -615,8 +620,8 @@ def test_initial_prior_without_matching_node_raises_error(tmp_path: Path) -> Non
     repository_adapter.close()
 
 
-def test_build_initial_prior_from_policy_returns_hand_level_evs() -> None:
-    """初始先验应携带每手牌的信念 EV。"""
+def test_build_prior_range_from_policy_returns_selected_action_range() -> None:
+    """应返回目标动作对应的 hand-level 范围。"""
 
     policy = GtoPriorPolicy(
         action_names=("F", "C", "R6"),
@@ -639,9 +644,209 @@ def test_build_initial_prior_from_policy_returns_hand_level_evs() -> None:
         ),
     )
 
-    prior = _build_initial_prior_from_policy(policy)
+    prior = _build_prior_range_from_policy(policy, action_name="R6")
 
+    assert prior.strategy[0] == pytest.approx(0.40)
+    assert prior.evs[0] == pytest.approx(1.60)
+
+
+def test_build_prior_range_from_policy_missing_action_raises() -> None:
+    """目标动作不存在时应抛出异常。"""
+
+    policy = GtoPriorPolicy(
+        action_names=("F", "C"),
+        actions=(
+            GtoPriorAction(
+                action_name="F",
+                blended_frequency=0.30,
+                belief_range=_constant_range(0.30, -0.20),
+            ),
+            GtoPriorAction(
+                action_name="C",
+                blended_frequency=0.70,
+                belief_range=_constant_range(0.70, 0.40),
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="不存在目标动作"):
+        _build_prior_range_from_policy(policy, action_name="R6")
+
+
+def test_resolve_action_prior_range_missing_belief_raises() -> None:
+    """动作缺失 belief_range 时应抛出异常。"""
+
+    action = GtoPriorAction(
+        action_name="C",
+        blended_frequency=1.0,
+        belief_range=None,
+    )
+
+    with pytest.raises(ValueError, match="缺少 belief_range"):
+        _resolve_action_prior_range(action)
+
+
+def test_select_matching_prior_action_requires_type_match() -> None:
+    """真实动作类型找不到匹配先验动作时应抛异常。"""
+
+    prior_policy = GtoPriorPolicy(
+        action_names=("C",),
+        actions=(
+            GtoPriorAction(
+                action_name="C",
+                action_type="CALL",
+                blended_frequency=1.0,
+                belief_range=_constant_range(1.0, 0.1),
+            ),
+        ),
+    )
+    observed_action = PlayerAction(
+        player_index=3,
+        action_type=ActionType.RAISE,
+        amount=6.0,
+        street=Street.PREFLOP,
+    )
+
+    with pytest.raises(ValueError, match="类型匹配"):
+        _select_matching_prior_action(
+            prior_policy=prior_policy,
+            action=observed_action,
+            big_blind=1.0,
+        )
+
+
+def test_select_matching_prior_action_chooses_nearest_size() -> None:
+    """同类型多动作时应选择尺度最接近者。"""
+
+    prior_policy = GtoPriorPolicy(
+        action_names=("R4", "R8"),
+        actions=(
+            GtoPriorAction(
+                action_name="R4",
+                action_type="RAISE",
+                bet_size_bb=4.0,
+                blended_frequency=0.5,
+                belief_range=_constant_range(0.5, 0.1),
+            ),
+            GtoPriorAction(
+                action_name="R8",
+                action_type="RAISE",
+                bet_size_bb=8.0,
+                blended_frequency=0.5,
+                belief_range=_constant_range(0.5, 0.2),
+            ),
+        ),
+    )
+    observed_action = PlayerAction(
+        player_index=3,
+        action_type=ActionType.RAISE,
+        amount=7.2,
+        street=Street.PREFLOP,
+    )
+
+    matched = _select_matching_prior_action(
+        prior_policy=prior_policy,
+        action=observed_action,
+        big_blind=1.0,
+    )
+
+    assert matched.action_name == "R8"
+
+
+def test_adjust_belief_with_stats_and_ev_biases_high_ev() -> None:
+    """当 stats 频率高于 GTO 时应更偏向高 EV 手牌。"""
+
+    prior_range = PreflopRange(
+        strategy=[0.2, 0.2] + [0.0] * 167,
+        evs=[2.0, -2.0] + [0.0] * 167,
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.60,
+        call_probability=0.20,
+        fold_probability=0.20,
+        bet_0_40_probability=0.0,
+        bet_40_80_probability=0.0,
+        bet_80_120_probability=1.0,
+        bet_over_120_probability=0.0,
+        confidence=1.0,
+        source_kind="test",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=ActionType.RAISE,
+        node_stats=node_stats,
+    )
+
+    assert posterior.strategy[0] > posterior.strategy[1]
+    assert posterior.total_frequency() == pytest.approx(0.60, abs=1e-6)
+
+
+def test_adjust_belief_with_stats_and_ev_uses_next_ev_bucket_when_top_saturated() -> (
+    None
+):
+    """高 EV 顶端已饱和时应继续调整后续 EV 组合。"""
+
+    prior_range = PreflopRange(
+        strategy=[1.0, 1.0, 0.0] + [0.0] * 166,
+        evs=[3.0, 2.5, 2.0] + [0.0] * 166,
+    )
+    current_frequency = prior_range.total_frequency()
+    target_raise_frequency = min(current_frequency + 0.003, 1.0)
+    node_stats = PlayerNodeStats(
+        raise_probability=target_raise_frequency,
+        call_probability=0.200,
+        fold_probability=1.0 - target_raise_frequency - 0.200,
+        bet_0_40_probability=0.0,
+        bet_40_80_probability=0.0,
+        bet_80_120_probability=1.0,
+        bet_over_120_probability=0.0,
+        confidence=1.0,
+        source_kind="test",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=ActionType.RAISE,
+        node_stats=node_stats,
+    )
+
+    assert posterior.strategy[0] == pytest.approx(1.0)
+    assert posterior.strategy[1] == pytest.approx(1.0)
+    assert posterior.strategy[2] > 0.0
+    assert posterior.total_frequency() == pytest.approx(
+        target_raise_frequency,
+        abs=1e-6,
+    )
+
+
+def test_build_prior_only_range_from_policy_aggregates_continue_actions() -> None:
+    """prior-only 场景应聚合非弃牌动作。"""
+
+    policy = GtoPriorPolicy(
+        action_names=("F", "C", "R6"),
+        actions=(
+            GtoPriorAction(
+                action_name="F",
+                blended_frequency=0.30,
+                belief_range=_constant_range(0.30, -0.20),
+            ),
+            GtoPriorAction(
+                action_name="C",
+                blended_frequency=0.30,
+                belief_range=_constant_range(0.30, 0.40),
+            ),
+            GtoPriorAction(
+                action_name="R6",
+                blended_frequency=0.40,
+                belief_range=_constant_range(0.40, 1.60),
+            ),
+        ),
+    )
+
+    prior = _build_prior_only_range_from_policy(policy)
     expected_ev = (0.30 * 0.40 + 0.40 * 1.60) / 0.70
+
     assert prior.strategy[0] == pytest.approx(0.70)
     assert prior.evs[0] == pytest.approx(expected_ev)
 

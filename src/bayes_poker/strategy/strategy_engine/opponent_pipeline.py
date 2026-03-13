@@ -10,7 +10,13 @@ from bayes_poker.comm.session import SessionConfig
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player, PlayerAction
 from bayes_poker.player_metrics.enums import TableType
-from bayes_poker.strategy.range import PreflopRange, RANGE_169_LENGTH
+from bayes_poker.strategy.range import (
+    PreflopRange,
+    RANGE_1326_LENGTH,
+    RANGE_169_LENGTH,
+    RANGE_169_ORDER,
+    combos_per_hand,
+)
 from .calibrator import (
     ActionPolicy,
     ActionPolicyAction,
@@ -24,7 +30,6 @@ from .gto_policy import (
     GtoPriorPolicy,
 )
 from .node_mapper import StrategyNodeMapper
-from .posterior import update_posterior
 from .repository_adapter import (
     StrategyRepositoryAdapter,
 )
@@ -37,6 +42,8 @@ from .stats_adapter import (
     PlayerNodeStatsAdapter,
 )
 from bayes_poker.table.observed_state import ObservedTableState
+
+_BELIEF_LOW_MASS_THRESHOLD = 1e-9
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,19 +131,17 @@ class OpponentPipeline:
             seat = player.seat_index
             action_index, prefix = acted_prefixes[seat]
             action = observed_state.action_history[action_index]
-            prior = context.player_ranges.get(seat)
-            if prior is None:
-                prior = self._build_initial_prior_range(
-                    player=player,
-                    observed_state=observed_state,
-                    decision_prefix=prefix,
-                )
+            prior_policy = self._build_initial_prior_range(
+                player=player,
+                observed_state=observed_state,
+                decision_prefix=prefix,
+            )
             context.player_ranges[seat] = self._build_posterior_range(
                 player=player,
                 observed_state=observed_state,
                 action=action,
                 decision_prefix=prefix,
-                prior=prior,
+                prior_policy=prior_policy,
             )
             context.player_summaries[seat] = {
                 "status": "posterior",
@@ -145,13 +150,12 @@ class OpponentPipeline:
 
         for player in prior_only_opponents:
             seat = player.seat_index
-            if seat not in context.player_ranges:
-                context.player_ranges[seat] = self._build_initial_prior_range(
-                    player=player,
-                    observed_state=observed_state,
-                    decision_prefix=preflop_prefix,
-                )
-            context.player_summaries[seat] = {"status": "prior_only"}
+            context.player_ranges.pop(seat, None)
+            context.player_summaries[seat] = self._build_prior_only_summary(
+                player=player,
+                observed_state=observed_state,
+                decision_prefix=preflop_prefix,
+            )
 
         context.last_action_fingerprint = fingerprint
         return context
@@ -163,7 +167,7 @@ class OpponentPipeline:
         observed_state: ObservedTableState,
         action: PlayerAction,
         decision_prefix: list[PlayerAction],
-        prior: PreflopRange,
+        prior_policy: GtoPriorPolicy,
     ) -> PreflopRange:
         state_for_player = self._build_state_for_player(
             player=player,
@@ -181,32 +185,17 @@ class OpponentPipeline:
         )
         self._last_source_kind = node_stats.source_kind
 
-        stack_bb = max(1, int(round(player.get_stack_bb(observed_state.big_blind))))
-        resolved_stack = self._repository_adapter.resolve_stack_bb(
-            source_id=self._source_id,
-            requested_stack_bb=stack_bb,
+        matched_action = _select_matching_prior_action(
+            prior_policy=prior_policy,
+            action=action,
+            big_blind=observed_state.big_blind,
         )
-        mapper = StrategyNodeMapper(
-            repository_adapter=self._repository_adapter,
-            source_id=self._source_id,
-            stack_bb=resolved_stack,
-        )
-        mapped = mapper.map_node_context(node_context.node_context)
-        prior_policy = GtoPriorBuilder(
-            repository_adapter=self._repository_adapter,
-        ).build_policy(mapped)
-        calibrated_policy = _calibrate_policy(
-            prior_policy=prior_policy, node_stats=node_stats
-        )
-        action_name = _resolve_action_name(
-            prior_policy=prior_policy, action=action, big_blind=observed_state.big_blind
-        )
-        posterior = update_posterior(
+        prior = _resolve_action_prior_range(matched_action)
+        return _adjust_belief_with_stats_and_ev(
             prior=prior,
-            calibrated_policy=calibrated_policy,
-            action_name=action_name,
+            observed_action_type=action.action_type,
+            node_stats=node_stats,
         )
-        return posterior.posterior_range
 
     def _build_initial_prior_range(
         self,
@@ -214,7 +203,7 @@ class OpponentPipeline:
         player: Player,
         observed_state: ObservedTableState,
         decision_prefix: list[PlayerAction],
-    ) -> PreflopRange:
+    ) -> GtoPriorPolicy:
         state_for_player = self._build_state_for_player(
             player=player,
             observed_state=observed_state,
@@ -235,10 +224,9 @@ class OpponentPipeline:
             source_id=self._source_id,
             stack_bb=resolved_stack,
         ).map_node_context(node_context.node_context)
-        prior_policy = GtoPriorBuilder(
+        return GtoPriorBuilder(
             repository_adapter=self._repository_adapter,
         ).build_policy(mapped)
-        return _build_initial_prior_from_policy(prior_policy)
 
     def _build_state_for_player(
         self,
@@ -264,6 +252,107 @@ class OpponentPipeline:
             action_history=decision_prefix,
             state_version=observed_state.state_version,
             timestamp=observed_state.timestamp,
+        )
+
+    def _build_prior_only_summary(
+        self,
+        *,
+        player: Player,
+        observed_state: ObservedTableState,
+        decision_prefix: list[PlayerAction],
+    ) -> dict[str, str | float | int]:
+        """构建未行动对手的启发式摘要。
+
+        Args:
+            player: 目标对手玩家。
+            observed_state: 当前牌桌观察状态。
+            decision_prefix: 该玩家视角下的历史前缀。
+
+        Returns:
+            未行动玩家的 stats-vs-gto 差异摘要。
+        """
+
+        state_for_player = self._build_state_for_player(
+            player=player,
+            observed_state=observed_state,
+            decision_prefix=decision_prefix,
+        )
+        node_context = build_player_node_context(
+            state_for_player,
+            table_type=self._config.table_type,
+        )
+        node_stats = self._stats_adapter.load(
+            player_name=player.player_id,
+            table_type=self._config.table_type,
+            node_context=node_context,
+        )
+        prior_policy = self._build_initial_prior_range(
+            player=player,
+            observed_state=observed_state,
+            decision_prefix=decision_prefix,
+        )
+        gto_fold_probability, gto_call_probability, gto_raise_probability = (
+            self._summarize_prior_policy_mix(prior_policy)
+        )
+        player_position = ""
+        if player.position is not None:
+            player_position = player.position.value
+        return {
+            "status": "prior_only",
+            "source_kind": node_stats.source_kind,
+            "player_name": player.player_id,
+            "player_position": player_position,
+            "stats_raise_probability": node_stats.raise_probability,
+            "stats_call_probability": node_stats.call_probability,
+            "stats_fold_probability": node_stats.fold_probability,
+            "gto_raise_probability": gto_raise_probability,
+            "gto_call_probability": gto_call_probability,
+            "gto_fold_probability": gto_fold_probability,
+            "raise_delta_probability": (
+                node_stats.raise_probability - gto_raise_probability
+            ),
+            "call_delta_probability": (
+                node_stats.call_probability - gto_call_probability
+            ),
+            "fold_delta_probability": (
+                node_stats.fold_probability - gto_fold_probability
+            ),
+        }
+
+    @staticmethod
+    def _summarize_prior_policy_mix(
+        prior_policy: GtoPriorPolicy,
+    ) -> tuple[float, float, float]:
+        """汇总先验策略的 fold/call/raise 概率。
+
+        Args:
+            prior_policy: GTO 先验策略。
+
+        Returns:
+            `(fold_probability, call_probability, raise_probability)`。
+        """
+
+        fold_probability = 0.0
+        call_probability = 0.0
+        raise_probability = 0.0
+        for action in prior_policy.actions:
+            probability = max(action.blended_frequency, 0.0)
+            normalized_type = _normalize_prior_action_type(action.action_type)
+            normalized_name = action.action_name.upper()
+            if normalized_type == "FOLD" or normalized_name == "F":
+                fold_probability += probability
+            elif normalized_type in {"CALL", "CHECK"} or normalized_name == "C":
+                call_probability += probability
+            else:
+                raise_probability += probability
+
+        total_probability = fold_probability + call_probability + raise_probability
+        if total_probability <= _BELIEF_LOW_MASS_THRESHOLD:
+            return (0.0, 0.0, 0.0)
+        return (
+            fold_probability / total_probability,
+            call_probability / total_probability,
+            raise_probability / total_probability,
         )
 
 
@@ -339,14 +428,204 @@ def _build_size_weights(
     return weights
 
 
-def _build_initial_prior_from_policy(prior_policy: GtoPriorPolicy) -> PreflopRange:
-    """从 GTO 先验策略构建对手初始范围。
+def _build_prior_range_from_policy(
+    prior_policy: GtoPriorPolicy,
+    *,
+    action_name: str,
+) -> PreflopRange:
+    """按指定动作从 GTO 先验策略构建范围。
+
+    Args:
+        prior_policy: GTO 先验策略。
+        action_name: 目标动作编码。
+
+    Returns:
+        目标动作对应的 hand-level 策略与 EV 范围。
+
+    Raises:
+        ValueError: 当先验策略不存在目标动作时抛出。
+    """
+
+    normalized_action_name = action_name.upper()
+    for action in prior_policy.actions:
+        if action.action_name.upper() != normalized_action_name:
+            continue
+        return _resolve_action_prior_range(action)
+    raise ValueError(f"先验策略不存在目标动作: {action_name}")
+
+
+def _select_matching_prior_action(
+    *,
+    prior_policy: GtoPriorPolicy,
+    action: PlayerAction,
+    big_blind: float,
+) -> GtoPriorAction:
+    """在先验策略中按真实动作匹配最接近动作。
+
+    Args:
+        prior_policy: 节点先验策略。
+        action: 真实观测动作。
+        big_blind: 大盲金额。
+
+    Returns:
+        与真实动作类型匹配, 且在同类型中尺度最接近的先验动作。
+
+    Raises:
+        ValueError: 当不存在动作类型匹配的先验动作时抛出。
+    """
+
+    expected_action_type = _expected_prior_action_type(action.action_type)
+    candidates = [
+        prior_action
+        for prior_action in prior_policy.actions
+        if _normalize_prior_action_type(prior_action.action_type)
+        == expected_action_type
+    ]
+    if not candidates:
+        raise ValueError(
+            f"先验策略缺少与真实动作类型匹配的行为: {expected_action_type}"
+        )
+
+    if expected_action_type in {"RAISE", "BET", "ALL_IN"}:
+        actual_size_bb = action.amount / big_blind if big_blind > 0 else 0.0
+        return min(
+            candidates,
+            key=lambda prior_action: abs(
+                _prior_action_size_bb(prior_action) - actual_size_bb
+            ),
+        )
+
+    return max(candidates, key=lambda prior_action: prior_action.blended_frequency)
+
+
+def _adjust_belief_with_stats_and_ev(
+    *,
+    prior: PreflopRange,
+    observed_action_type: ActionType,
+    node_stats: PlayerNodeStats,
+) -> PreflopRange:
+    """按 stats 目标频率与 EV 排序做约束式信念重分配。
+
+    Args:
+        prior: 该动作对应的先验范围。
+        observed_action_type: 真实观测动作类型。
+        node_stats: 平滑后的节点统计概率。
+
+    Returns:
+        调整后的后验范围。
+    """
+
+    adjusted_strategy = [min(max(value, 0.0), 1.0) for value in prior.strategy]
+    prior_evs = list(prior.evs)
+    combo_weights = [_combo_weight(index) for index in range(RANGE_169_LENGTH)]
+
+    stats_frequency = _stats_frequency_for_action_type(
+        observed_action_type=observed_action_type,
+        node_stats=node_stats,
+    )
+    target_frequency = min(max(stats_frequency, 0.0), 1.0)
+    current_frequency = sum(
+        probability * weight
+        for probability, weight in zip(adjusted_strategy, combo_weights, strict=True)
+    )
+    delta = target_frequency - current_frequency
+    if abs(delta) <= _BELIEF_LOW_MASS_THRESHOLD:
+        return PreflopRange(strategy=adjusted_strategy, evs=prior_evs)
+
+    if delta > 0.0:
+        sorted_indices = sorted(
+            range(RANGE_169_LENGTH),
+            key=lambda index: prior_evs[index],
+            reverse=True,
+        )
+        for index in sorted_indices:
+            if delta <= _BELIEF_LOW_MASS_THRESHOLD:
+                break
+            weight = combo_weights[index]
+            if weight <= 0.0:
+                continue
+            available_probability = 1.0 - adjusted_strategy[index]
+            if available_probability <= _BELIEF_LOW_MASS_THRESHOLD:
+                continue
+            max_mass = available_probability * weight
+            mass_to_add = min(delta, max_mass)
+            adjusted_strategy[index] += mass_to_add / weight
+            delta -= mass_to_add
+    else:
+        remaining_reduce = -delta
+        sorted_indices = sorted(
+            range(RANGE_169_LENGTH),
+            key=lambda index: prior_evs[index],
+        )
+        for index in sorted_indices:
+            if remaining_reduce <= _BELIEF_LOW_MASS_THRESHOLD:
+                break
+            weight = combo_weights[index]
+            if weight <= 0.0:
+                continue
+            available_probability = adjusted_strategy[index]
+            if available_probability <= _BELIEF_LOW_MASS_THRESHOLD:
+                continue
+            max_mass = available_probability * weight
+            mass_to_remove = min(remaining_reduce, max_mass)
+            adjusted_strategy[index] -= mass_to_remove / weight
+            remaining_reduce -= mass_to_remove
+
+    return PreflopRange(strategy=adjusted_strategy, evs=prior_evs)
+
+
+def _combo_weight(index: int) -> float:
+    """返回某 169 手牌在总频率中的权重。"""
+
+    return combos_per_hand(RANGE_169_ORDER[index]) / RANGE_1326_LENGTH
+
+
+def _stats_frequency_for_action_type(
+    *,
+    observed_action_type: ActionType,
+    node_stats: PlayerNodeStats,
+) -> float:
+    """读取观测动作类型对应的 stats 概率。"""
+
+    if observed_action_type == ActionType.FOLD:
+        return node_stats.fold_probability
+    if observed_action_type in {ActionType.CALL, ActionType.CHECK}:
+        return node_stats.call_probability
+    if observed_action_type in {ActionType.RAISE, ActionType.BET, ActionType.ALL_IN}:
+        return node_stats.raise_probability
+    return 0.0
+
+
+def _normalize_prior_action_type(action_type: str | None) -> str:
+    """标准化先验动作类型。"""
+
+    if action_type is None:
+        return ""
+    return action_type.strip().upper()
+
+
+def _expected_prior_action_type(observed_action_type: ActionType) -> str:
+    """将真实动作类型映射为先验动作类型。"""
+
+    return observed_action_type.value.upper()
+
+
+def _prior_action_size_bb(prior_action: GtoPriorAction) -> float:
+    """读取先验动作尺度（BB）。"""
+
+    if prior_action.bet_size_bb is not None:
+        return prior_action.bet_size_bb
+    return _raise_action_key(prior_action.action_name)
+
+
+def _build_prior_only_range_from_policy(prior_policy: GtoPriorPolicy) -> PreflopRange:
+    """为未行动对手构建 prior-only 范围。
 
     Args:
         prior_policy: GTO 先验策略。
 
     Returns:
-        带 hand-level 策略与 EV 的初始范围。
+        由非弃牌动作聚合得到的 continue 范围；若不可用则回退均匀范围。
     """
 
     action_ranges = [
@@ -413,44 +692,19 @@ def _resolve_action_prior_range(
         action: 先验动作。
 
     Returns:
-        包含 hand-level strategy/EV 的范围；缺失时回退为均匀频率范围。
+        包含 hand-level strategy/EV 的范围。
+
+    Raises:
+        ValueError: 当 belief_range 缺失时抛出。
     """
 
-    belief_range = getattr(action, "belief_range", None)
-    blended_frequency = float(getattr(action, "blended_frequency", 0.0))
+    belief_range = action.belief_range
     if belief_range is None:
-        return PreflopRange(strategy=[blended_frequency] * RANGE_169_LENGTH)
-
-    if max((max(0.0, value) for value in belief_range.strategy), default=0.0) <= 0.0:
-        return PreflopRange(strategy=[blended_frequency] * RANGE_169_LENGTH)
+        raise ValueError(f"动作缺少 belief_range: {action.action_name}")
 
     return PreflopRange(
         strategy=list(belief_range.strategy),
         evs=list(belief_range.evs),
-    )
-
-
-def _resolve_action_name(
-    *,
-    prior_policy: GtoPriorPolicy,
-    action: PlayerAction,
-    big_blind: float,
-) -> str:
-    if action.action_type == ActionType.FOLD:
-        return "F"
-    if action.action_type in {ActionType.CALL, ActionType.CHECK}:
-        return "C"
-    aggressive_actions = [
-        action_name
-        for action_name in prior_policy.action_names
-        if action_name.upper().startswith("R")
-    ]
-    if not aggressive_actions:
-        return "C"
-    actual_size_bb = action.amount / big_blind if big_blind > 0 else 0.0
-    return min(
-        aggressive_actions,
-        key=lambda action_name: abs(_raise_action_key(action_name) - actual_size_bb),
     )
 
 

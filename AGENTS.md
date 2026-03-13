@@ -68,6 +68,10 @@ src/bayes_poker/
   - `uv run python scripts/batch_parse_handhistory.py <input_path> -o data/outputs -w 4`
 - 构建玩家统计数据库（Rust 加速）:
   - `uv run python scripts/build_player_stats.py data/outputs -o data/database/player_stats.db`
+- 导出玩家核心统计 CSV（VPIP/PFR/WTP/AGG/总手数）:
+  - `uv run python scripts/export_player_core_stats_csv.py --db-path data/database/player_stats.db --output data/database/player_core_stats.csv`
+- 验证 UTG open 节点 EV 调整并导出 GTO+ 文件:
+  - `uv run python scripts/validate_utg_open_ev_adjustment.py --strategy-db data/database/preflop_strategy.sqlite3 --player-stats-db data/database/player_stats.db --player-csv data/database/player_core_stats.csv --output-dir data/database/utg_open_ev_validation --source-ids 1,2,3,4,5`
 
 提示: `scripts/batch_parse_handhistory.py` 和 `scripts/build_player_stats.py` 会把 `src/` 加入 `sys.path`, 未安装 editable 也可运行。
 

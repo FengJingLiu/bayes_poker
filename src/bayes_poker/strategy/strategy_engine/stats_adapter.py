@@ -80,6 +80,8 @@ class PlayerNodeStatsAdapter:
         if stats is None:
             source_kind = "population"
             stats = self._load_population_stats(table_type)
+        elif player_name and stats.player_name != player_name:
+            source_kind = "population"
 
         action_stats = stats.get_preflop_stats(node_context.params)
         total_samples = action_stats.total_samples()

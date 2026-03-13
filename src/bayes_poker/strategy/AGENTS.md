@@ -36,13 +36,14 @@ strategy/
 | `repository_adapter.py` | 封装 `PreflopStrategyRepository` 的 v2 中性读接口 |
 | `stats_adapter.py` | `PlayerStatsRepository.get(..., smooth_with_pool=True)` 节点概率适配 |
 | `node_mapper.py` | 最近节点匹配、距离评分、价格修正 |
-| `gto_policy.py` | 候选节点按距离衰减混合成 GTO 先验 |
+| `gto_policy.py` | 读取最近节点动作先验, 同名动作编码视为数据异常并抛错 |
 | `calibrator.py` | binary / multinomial 校准与尺寸质量再分配 |
 | `posterior.py` | `prior * likelihood` 后验更新与低质量回退 |
 | `session_context.py` | hero-turn 会话内存与幂等/新手牌重置 |
 | `opponent_pipeline.py` | 已行动对手 posterior, 未行动对手 prior_only |
 | `hero_resolver.py` | hero 当前节点的 GTO 推荐（v1 不做 hero posterior） |
 | `engine.py` / `handler.py` | facade 与 `create_strategy_handler()` |
+| `utg_open_ev_validation.py` | UTG open 节点 EV 调整验证、玩家筛选与 GTO+ 导出 |
 
 ### 核心调用链 (Call Logic)
 
@@ -53,22 +54,26 @@ strategy/
 
 2. **对手范围更新阶段 (`OpponentPipeline.process_hero_snapshot`)**
    - **会话与缓存管理**：从 `StrategySessionStore` 取出会话级缓存。若当前 Action Fingerprint 未变，直接返回缓存上下文，避免重复计算。
-   - **已行动对手 (Posterior 更新)**：
-     - `build_player_node_context`：构建对手历史的 NodeContext。
-     - `PlayerNodeStatsAdapter.load`：加载玩家历史群体统计概率。
-     - `StrategyNodeMapper.map_node_context`：把上下文映射到策略库中的最近 GTO 节点。
-     - `GtoPriorBuilder.build_policy`：计算该节点的 GTO 策略先验（Prior）。
-     - `_calibrate_policy`：利用玩家历史统计概率校准 GTO 先验分布。
-     - `update_posterior`：结合实际 Action，执行贝叶斯更新得到对手 Posterior Range。
-   - **未行动对手 (Prior 只有)**：
-     - 使用根据位置设定的固化频率初始 Prior Range。
-   - 返回 `StrategySessionContext` (包含各对手最新的 `player_ranges` 和分析摘要)。
+    - **已行动对手 (Posterior 更新)**：
+      - `build_player_node_context`：构建对手历史的 NodeContext。
+      - `PlayerNodeStatsAdapter.load`：加载玩家历史群体统计概率。
+      - `StrategyNodeMapper.map_node_context`：把上下文映射到策略库中的最近 GTO 节点。
+      - `GtoPriorBuilder.build_policy`：计算该节点的 GTO 策略先验（Prior）。
+      - `_select_matching_prior_action`：按真实动作类型严格匹配，并在同类型中按尺度选择最近动作。
+      - `_adjust_belief_with_stats_and_ev`：根据玩家平滑 stats 频率与 GTO 频率差异，按 EV 排序做约束式信念重分配。
+    - **未行动对手 (Heuristic 摘要)**：
+      - 不再对未行动玩家构建精细 `player_range`。
+      - 通过 `_build_prior_only_summary` 汇总 `stats vs gto` 差异（raise/call/fold 概率及 delta）写入 `player_summaries`。
+    - 返回 `StrategySessionContext`（已行动对手保留 posterior range；未行动对手仅保留摘要）。
 
 3. **Hero 推荐生成阶段 (`HeroGtoResolver.resolve`)**
    - 构建 Hero 当前状态的 NodeContext。
    - `StrategyNodeMapper.map_node_context` -> `GtoPriorBuilder.build_policy` 获取当前 Hero 节点的 GTO 策略环境。
-   - 选取最高频率（blended_frequency）的操作作为 `RecommendationDecision`。
-   - 将上一步 `OpponentPipeline` 生成的对手 `range_breakdown` 合并入 Decision 中返回。
+   - 基于未行动对手摘要执行启发式频率重分配：
+     - 盲位/未行动玩家 `raise_delta` 偏高 -> 收紧激进行为质量。
+     - 未行动玩家 `stats_call < gto_call` -> 适度提高 steal 质量。
+   - 用启发式后的动作频率选取 `RecommendationDecision`。
+   - `range_breakdown` 仅包含已计算 posterior 的对手范围。
 
 ## 顶层导出 API
 
@@ -103,6 +108,7 @@ OpponentRangePredictor, create_opponent_range_predictor
 - `preflop_parse` 仅保留 SQLite ingest/build 路径, 不再是运行时主查询路径
 - `table context` 只保存在 `strategy_engine` 会话内存中
 - `PlayerStatsRepository` 节点概率统一通过 `PreFlopParams.to_index()` 映射
+- `_build_prior_range_from_policy` 与 `_resolve_action_prior_range` 为强校验路径: 缺动作/缺 belief_range 时直接抛错, 不做隐式兜底
 
 ## 测试
 

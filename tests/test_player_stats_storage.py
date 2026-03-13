@@ -290,16 +290,22 @@ class TestPoolSmoothedGet:
 
         assert raw_stats is not None
         assert smoothed_stats is not None
-        assert raw_stats.preflop_stats[params.to_index()].raise_samples == pytest.approx(3.0)
-        assert raw_stats.preflop_stats[params.to_index()].fold_samples == pytest.approx(7.0)
-        assert smoothed_stats.preflop_stats[params.to_index()].raise_samples == pytest.approx(
-            13.0
+        assert raw_stats.preflop_stats[
+            params.to_index()
+        ].raise_samples == pytest.approx(3.0)
+        assert raw_stats.preflop_stats[params.to_index()].fold_samples == pytest.approx(
+            7.0
         )
-        assert smoothed_stats.preflop_stats[params.to_index()].fold_samples == pytest.approx(
-            17.0
-        )
+        assert smoothed_stats.preflop_stats[
+            params.to_index()
+        ].raise_samples == pytest.approx(13.0)
+        assert smoothed_stats.preflop_stats[
+            params.to_index()
+        ].fold_samples == pytest.approx(17.0)
 
-    def test_get_can_return_pool_smoothed_multinomial_stats(self, db_path: Path) -> None:
+    def test_get_can_return_pool_smoothed_multinomial_stats(
+        self, db_path: Path
+    ) -> None:
         """三元节点应按 Dirichlet 公式返回平滑后的 pseudo-count。"""
 
         params = PreFlopParams(
@@ -386,7 +392,9 @@ class TestPoolSmoothedGet:
         assert target.check_call_samples == pytest.approx(5.0)
         assert target.raise_samples == pytest.approx(2.0)
 
-    def test_get_smoothed_stats_returns_raw_when_pool_missing(self, db_path: Path) -> None:
+    def test_get_smoothed_stats_returns_raw_when_pool_missing(
+        self, db_path: Path
+    ) -> None:
         """缺少玩家池统计时应直接回退 raw 结果。"""
 
         params = PreFlopParams.get_all_params(TableType.SIX_MAX)[4]
@@ -412,10 +420,14 @@ class TestPoolSmoothedGet:
 
         assert raw_stats is not None
         assert smoothed_stats is not None
-        assert smoothed_stats.preflop_stats[params.to_index()].raise_samples == pytest.approx(
+        assert smoothed_stats.preflop_stats[
+            params.to_index()
+        ].raise_samples == pytest.approx(
             raw_stats.preflop_stats[params.to_index()].raise_samples
         )
-        assert smoothed_stats.preflop_stats[params.to_index()].fold_samples == pytest.approx(
+        assert smoothed_stats.preflop_stats[
+            params.to_index()
+        ].fold_samples == pytest.approx(
             raw_stats.preflop_stats[params.to_index()].fold_samples
         )
 
@@ -618,7 +630,9 @@ class TestPoolSmoothedReads:
         assert smoothed_stats.preflop_stats[0].fold_samples == pytest.approx(19.0)
         assert smoothed_stats.preflop_stats[0].check_call_samples == pytest.approx(0.0)
         assert smoothed_stats.postflop_stats[0].raise_samples == pytest.approx(10.0)
-        assert smoothed_stats.postflop_stats[0].check_call_samples == pytest.approx(20.0)
+        assert smoothed_stats.postflop_stats[0].check_call_samples == pytest.approx(
+            20.0
+        )
         assert smoothed_stats.postflop_stats[0].fold_samples == pytest.approx(0.0)
 
     def test_get_returns_raw_stats_when_pool_is_missing(self) -> None:
@@ -645,3 +659,32 @@ class TestPoolSmoothedReads:
         )
 
         assert smoothed_stats is hero_stats
+
+    @pytest.mark.parametrize("smooth_with_pool", [False, True])
+    def test_get_returns_pool_stats_when_player_missing(
+        self,
+        smooth_with_pool: bool,
+    ) -> None:
+        """目标玩家不存在时应回退返回桌型聚合玩家统计。"""
+
+        aggregated_stats = _build_stats(
+            player_name="aggregated_sixmax_100",
+            preflop_raise=40.0,
+            preflop_fold=60.0,
+            postflop_raise=20.0,
+            postflop_check_call=80.0,
+        )
+        repo = _StubPlayerStatsRepository(
+            {
+                ("aggregated_sixmax_100", TableType.SIX_MAX): aggregated_stats,
+            }
+        )
+
+        result = repo.get(
+            "MissingHero",
+            TableType.SIX_MAX,
+            smooth_with_pool=smooth_with_pool,
+            pool_prior_strength=20.0,
+        )
+
+        assert result is aggregated_stats

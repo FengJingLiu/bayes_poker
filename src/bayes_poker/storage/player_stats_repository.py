@@ -83,6 +83,7 @@ _BINARY_CHECK_RAISE_ACTION_SPACE = ActionSpaceSpec(
     positive_field=RAISE_FIELD,
 )
 
+
 class PlayerStatsRepository:
     """PlayerStats 的 SQLite 存储仓库（只读）。
 
@@ -164,7 +165,9 @@ class PlayerStatsRepository:
             )
             legacy = cursor.fetchone()
             if legacy is None:
-                cursor.execute("ALTER TABLE processed_hands RENAME TO processed_hands_legacy")
+                cursor.execute(
+                    "ALTER TABLE processed_hands RENAME TO processed_hands_legacy"
+                )
             else:
                 cursor.execute("DROP TABLE processed_hands")
 
@@ -264,13 +267,21 @@ class PlayerStatsRepository:
             pool_prior_strength: 玩家池先验强度。
 
         Returns:
-            PlayerStats 实例，如果不存在则返回 None。
+            PlayerStats 实例。
+            当目标玩家不存在且存在桌型聚合玩家时，返回聚合玩家统计。
+            两者都不存在时返回 None。
 
         Raises:
             ValueError: 当先验强度不为正时抛出。
         """
         raw_stats = self._get_raw(player_name, table_type)
-        if raw_stats is None or not smooth_with_pool:
+        if raw_stats is None:
+            pool_player_name = _POOL_PRIOR_PLAYER_NAMES.get(table_type)
+            if not pool_player_name or player_name == pool_player_name:
+                return None
+            return self._get_raw(pool_player_name, table_type)
+
+        if not smooth_with_pool:
             return raw_stats
 
         if pool_prior_strength <= 0.0:
@@ -511,8 +522,7 @@ class PlayerStatsRepository:
             positive_field = action_space.positive_field
             assert positive_field is not None
             total_count = sum(
-                raw_counts[field_name]
-                for field_name in action_space.total_fields
+                raw_counts[field_name] for field_name in action_space.total_fields
             )
             positive_count = raw_counts[positive_field]
             positive_index = action_space.total_fields.index(positive_field)
@@ -537,8 +547,7 @@ class PlayerStatsRepository:
                 prior_probabilities=prior_probabilities,
                 prior_strength=pool_prior_strength,
                 counts=tuple(
-                    raw_counts[field_name]
-                    for field_name in action_space.total_fields
+                    raw_counts[field_name] for field_name in action_space.total_fields
                 ),
             )
             smoothed_field_counts = {
@@ -583,7 +592,9 @@ class PlayerStatsRepository:
             uniform_probability = 1.0 / float(len(total_fields))
             return tuple(uniform_probability for _ in total_fields)
 
-        return tuple(field_counts[field_name] / total_count for field_name in total_fields)
+        return tuple(
+            field_counts[field_name] / total_count for field_name in total_fields
+        )
 
     def _build_action_stats_from_field_counts(
         self,
