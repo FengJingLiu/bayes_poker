@@ -151,11 +151,10 @@ class OpponentPipeline:
         for player in prior_only_opponents:
             seat = player.seat_index
             context.player_ranges.pop(seat, None)
-            context.player_summaries[seat] = self._build_prior_only_summary(
-                player=player,
-                observed_state=observed_state,
-                decision_prefix=preflop_prefix,
-            )
+            # TODO: 后续版本恢复未行动玩家的先验统计/摘要建模。
+            context.player_summaries[seat] = {
+                "status": "prior_only_deferred",
+            }
 
         context.last_action_fingerprint = fingerprint
         return context
@@ -252,107 +251,6 @@ class OpponentPipeline:
             action_history=decision_prefix,
             state_version=observed_state.state_version,
             timestamp=observed_state.timestamp,
-        )
-
-    def _build_prior_only_summary(
-        self,
-        *,
-        player: Player,
-        observed_state: ObservedTableState,
-        decision_prefix: list[PlayerAction],
-    ) -> dict[str, str | float | int]:
-        """构建未行动对手的启发式摘要。
-
-        Args:
-            player: 目标对手玩家。
-            observed_state: 当前牌桌观察状态。
-            decision_prefix: 该玩家视角下的历史前缀。
-
-        Returns:
-            未行动玩家的 stats-vs-gto 差异摘要。
-        """
-
-        state_for_player = self._build_state_for_player(
-            player=player,
-            observed_state=observed_state,
-            decision_prefix=decision_prefix,
-        )
-        node_context = build_player_node_context(
-            state_for_player,
-            table_type=self._config.table_type,
-        )
-        node_stats = self._stats_adapter.load(
-            player_name=player.player_id,
-            table_type=self._config.table_type,
-            node_context=node_context,
-        )
-        prior_policy = self._build_initial_prior_range(
-            player=player,
-            observed_state=observed_state,
-            decision_prefix=decision_prefix,
-        )
-        gto_fold_probability, gto_call_probability, gto_raise_probability = (
-            self._summarize_prior_policy_mix(prior_policy)
-        )
-        player_position = ""
-        if player.position is not None:
-            player_position = player.position.value
-        return {
-            "status": "prior_only",
-            "source_kind": node_stats.source_kind,
-            "player_name": player.player_id,
-            "player_position": player_position,
-            "stats_raise_probability": node_stats.raise_probability,
-            "stats_call_probability": node_stats.call_probability,
-            "stats_fold_probability": node_stats.fold_probability,
-            "gto_raise_probability": gto_raise_probability,
-            "gto_call_probability": gto_call_probability,
-            "gto_fold_probability": gto_fold_probability,
-            "raise_delta_probability": (
-                node_stats.raise_probability - gto_raise_probability
-            ),
-            "call_delta_probability": (
-                node_stats.call_probability - gto_call_probability
-            ),
-            "fold_delta_probability": (
-                node_stats.fold_probability - gto_fold_probability
-            ),
-        }
-
-    @staticmethod
-    def _summarize_prior_policy_mix(
-        prior_policy: GtoPriorPolicy,
-    ) -> tuple[float, float, float]:
-        """汇总先验策略的 fold/call/raise 概率。
-
-        Args:
-            prior_policy: GTO 先验策略。
-
-        Returns:
-            `(fold_probability, call_probability, raise_probability)`。
-        """
-
-        fold_probability = 0.0
-        call_probability = 0.0
-        raise_probability = 0.0
-        for action in prior_policy.actions:
-            probability = max(action.blended_frequency, 0.0)
-            normalized_type = _normalize_prior_action_type(action.action_type)
-            normalized_name = action.action_name.upper()
-            if normalized_type == "FOLD" or normalized_name == "F":
-                fold_probability += probability
-            elif normalized_type in {"CALL", "CHECK"} or normalized_name == "C":
-                call_probability += probability
-            else:
-                raise_probability += probability
-
-        total_probability = fold_probability + call_probability + raise_probability
-        if total_probability <= _BELIEF_LOW_MASS_THRESHOLD:
-            return (0.0, 0.0, 0.0)
-        return (
-            fold_probability / total_probability,
-            call_probability / total_probability,
-            raise_probability / total_probability,
         )
 
 

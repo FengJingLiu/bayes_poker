@@ -61,18 +61,16 @@ strategy/
       - `GtoPriorBuilder.build_policy`：计算该节点的 GTO 策略先验（Prior）。
       - `_select_matching_prior_action`：按真实动作类型严格匹配，并在同类型中按尺度选择最近动作。
       - `_adjust_belief_with_stats_and_ev`：根据玩家平滑 stats 频率与 GTO 频率差异，按 EV 排序做约束式信念重分配。
-    - **未行动对手 (Heuristic 摘要)**：
-      - 不再对未行动玩家构建精细 `player_range`。
-      - 通过 `_build_prior_only_summary` 汇总 `stats vs gto` 差异（raise/call/fold 概率及 delta）写入 `player_summaries`。
-    - 返回 `StrategySessionContext`（已行动对手保留 posterior range；未行动对手仅保留摘要）。
+    - **未行动对手 (暂缓建模)**：
+      - 当前版本不对未行动玩家构建精细 `player_range`，并在代码中保留 TODO 后续恢复。
+      - `player_summaries` 仅记录 `status=prior_only_deferred`。
+    - 返回 `StrategySessionContext`（已行动对手保留 posterior range；未行动对手暂不提供先验统计摘要）。
 
 3. **Hero 推荐生成阶段 (`HeroGtoResolver.resolve`)**
    - 构建 Hero 当前状态的 NodeContext。
    - `StrategyNodeMapper.map_node_context` -> `GtoPriorBuilder.build_policy` 获取当前 Hero 节点的 GTO 策略环境。
-   - 基于未行动对手摘要执行启发式频率重分配：
-     - 盲位/未行动玩家 `raise_delta` 偏高 -> 收紧激进行为质量。
-     - 未行动玩家 `stats_call < gto_call` -> 适度提高 steal 质量。
-   - 用启发式后的动作频率选取 `RecommendationDecision`。
+   - 当前版本仅基于 Hero 节点自身 GTO 先验选取 `RecommendationDecision`。
+   - TODO: 后续恢复未行动玩家 `stats vs gto` 启发式调节链路。
    - `range_breakdown` 仅包含已计算 posterior 的对手范围。
 
 ## 顶层导出 API

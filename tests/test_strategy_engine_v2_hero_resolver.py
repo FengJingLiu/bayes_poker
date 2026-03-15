@@ -14,14 +14,7 @@ from bayes_poker.strategy.strategy_engine.contracts import (
     RecommendationDecision,
     UnsupportedScenarioDecision,
 )
-from bayes_poker.strategy.strategy_engine.gto_policy import (
-    GtoPriorAction,
-    GtoPriorPolicy,
-)
-from bayes_poker.strategy.strategy_engine.hero_resolver import (
-    HeroGtoResolver,
-    _build_prior_only_heuristic_frequencies,
-)
+from bayes_poker.strategy.strategy_engine.hero_resolver import HeroGtoResolver
 from bayes_poker.strategy.strategy_engine.repository_adapter import (
     StrategyRepositoryAdapter,
 )
@@ -237,83 +230,3 @@ def test_hero_no_match_returns_unsupported(tmp_path: Path) -> None:
     assert isinstance(decision, UnsupportedScenarioDecision)
 
     adapter.close()
-
-
-def test_prior_only_heuristic_shrinks_open_when_blind_aggressive() -> None:
-    """未行动盲位激进行为偏高时应收紧 Hero 激进质量。"""
-
-    policy = GtoPriorPolicy(
-        action_names=("F", "R2.5"),
-        actions=(
-            GtoPriorAction(
-                action_name="F",
-                action_type="FOLD",
-                blended_frequency=0.40,
-            ),
-            GtoPriorAction(
-                action_name="R2.5",
-                action_type="RAISE",
-                blended_frequency=0.60,
-            ),
-        ),
-    )
-    session_context = StrategySessionContext(
-        session_id="s1",
-        table_id="t1",
-        hand_id="h1",
-        state_version=1,
-    )
-    session_context.player_summaries[1] = {
-        "status": "prior_only",
-        "raise_delta_probability": 0.18,
-        "gto_call_probability": 0.25,
-        "stats_call_probability": 0.20,
-    }
-
-    frequencies, note = _build_prior_only_heuristic_frequencies(
-        policy=policy,
-        session_context=session_context,
-    )
-
-    assert note is not None
-    assert frequencies["R2.5"] < 0.60
-
-
-def test_prior_only_heuristic_increases_steal_when_call_deficit_large() -> None:
-    """未行动盲位跟注防守偏低时应提高 Hero 偷盲频率。"""
-
-    policy = GtoPriorPolicy(
-        action_names=("F", "R2.5"),
-        actions=(
-            GtoPriorAction(
-                action_name="F",
-                action_type="FOLD",
-                blended_frequency=0.45,
-            ),
-            GtoPriorAction(
-                action_name="R2.5",
-                action_type="RAISE",
-                blended_frequency=0.55,
-            ),
-        ),
-    )
-    session_context = StrategySessionContext(
-        session_id="s1",
-        table_id="t1",
-        hand_id="h1",
-        state_version=1,
-    )
-    session_context.player_summaries[1] = {
-        "status": "prior_only",
-        "raise_delta_probability": -0.02,
-        "gto_call_probability": 0.35,
-        "stats_call_probability": 0.08,
-    }
-
-    frequencies, note = _build_prior_only_heuristic_frequencies(
-        policy=policy,
-        session_context=session_context,
-    )
-
-    assert note is not None
-    assert frequencies["R2.5"] > 0.55

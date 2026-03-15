@@ -498,12 +498,9 @@ def test_sequential_update_and_prior_only(tmp_path: Path) -> None:
     assert list(context.player_summaries)[:2] == [3, 4]
     assert context.player_summaries[3]["status"] == "posterior"
     assert context.player_summaries[4]["status"] == "posterior"
-    assert context.player_summaries[1]["status"] == "prior_only"
+    assert context.player_summaries[1]["status"] == "prior_only_deferred"
     assert 3 in context.player_ranges and 4 in context.player_ranges
     assert 1 not in context.player_ranges
-    assert "stats_raise_probability" in context.player_summaries[1]
-    assert "gto_raise_probability" in context.player_summaries[1]
-    assert "raise_delta_probability" in context.player_summaries[1]
 
     stats_repo.close()
     repository_adapter.close()
