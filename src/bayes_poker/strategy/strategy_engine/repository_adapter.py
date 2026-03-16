@@ -59,6 +59,23 @@ class StrategyActionOption:
     total_combos: float
 
 
+def _map_actor_position_for_db(position: Position) -> Position:
+    """将域模型 actor_position 映射为数据库中使用的位置名称。
+
+    6-max 中域模型的 ``Position.MP`` 对应数据库 ``actor_position`` 列存储的
+    ``HJ``, 因此查询前需转换为 ``Position.HJ``。
+
+    Args:
+        position: 域模型中的位置枚举。
+
+    Returns:
+        适配数据库 ``actor_position`` 列的位置枚举。
+    """
+    if position == Position.MP:
+        return Position.HJ
+    return position
+
+
 class StrategyRepositoryAdapter:
     """对 `PreflopStrategyRepository` 的中性读取封装。"""
 
@@ -188,10 +205,11 @@ class StrategyRepositoryAdapter:
             actor_position=node_context.actor_position,
             aggressor_position=node_context.aggressor_position,
         )
+        db_actor_position = _map_actor_position_for_db(node_context.actor_position)
         candidates = self._repo.list_candidates(
             source_ids=source_ids,
             stack_bb=stack_bb,
-            actor_position=node_context.actor_position,
+            actor_position=db_actor_position,
             aggressor_position=node_context.aggressor_position,
             is_in_position=is_in_position,
             raise_time=node_context.raise_time,
@@ -214,7 +232,7 @@ class StrategyRepositoryAdapter:
         candidates = self._repo.list_limp_candidates(
             source_ids=source_ids,
             stack_bb=stack_bb,
-            actor_position=actor_position,
+            actor_position=_map_actor_position_for_db(actor_position),
             pot_size=pot_size,
         )
         return _to_strategy_candidates(candidates)

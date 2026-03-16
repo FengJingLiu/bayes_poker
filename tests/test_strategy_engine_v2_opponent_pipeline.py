@@ -101,7 +101,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         acting_position="HJ",
         source_file="test.json",
         action_family=LegacyActionFamily.CALL_VS_OPEN,
-        actor_position=Position.MP,
+        actor_position=Position.HJ,
         aggressor_position=Position.UTG,
         call_count=0,
         limp_count=0,
