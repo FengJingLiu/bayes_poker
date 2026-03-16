@@ -136,6 +136,11 @@ class OpponentPipeline:
                 observed_state=observed_state,
                 decision_prefix=prefix,
             )
+            matched_prior_action = _select_matching_prior_action(
+                prior_policy=prior_policy,
+                action=action,
+                big_blind=observed_state.big_blind,
+            )
             context.player_ranges[seat] = self._build_posterior_range(
                 player=player,
                 observed_state=observed_state,
@@ -146,6 +151,8 @@ class OpponentPipeline:
             context.player_summaries[seat] = {
                 "status": "posterior",
                 "source_kind": self._last_source_kind,
+                "prior_frequency": matched_prior_action.blended_frequency,
+                "matched_action_type": action.action_type.value,
             }
 
         for player in prior_only_opponents:

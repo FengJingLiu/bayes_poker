@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import logging
 import math
 import random
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player
+from bayes_poker.strategy.range import (
+    PreflopRange,
+    RANGE_1326_LENGTH,
+    RANGE_169_LENGTH,
+    RANGE_169_ORDER,
+    combos_per_hand,
+)
 from .context_builder import build_player_node_context
 from .contracts import (
     RecommendationDecision,
@@ -22,6 +30,18 @@ from .repository_adapter import (
 )
 from .session_context import StrategySessionContext
 from bayes_poker.table.observed_state import ObservedTableState
+
+LOGGER = logging.getLogger(__name__)
+
+_HERO_ADJUST_LOW_MASS_THRESHOLD = 1e-9
+
+# 对手激进度比值的 clamp 上下界, 防止极端调整.
+_AGGRESSION_RATIO_MIN = 0.1
+_AGGRESSION_RATIO_MAX = 5.0
+
+# 幂阻尼指数: adjusted_ratio = raw_ratio ^ _DAMPING_EXPONENT.
+# 0.5 = 开方, 双向对称压缩极端值.
+_DAMPING_EXPONENT = 0.5
 
 
 class HeroGtoResolver:
@@ -107,10 +127,19 @@ class HeroGtoResolver:
             policy = GtoPriorBuilder(
                 repository_adapter=self._repository_adapter,
             ).build_policy(mapped_context)
-            action_distribution = _build_action_distribution(policy)
+            prior_action_distribution = _build_action_distribution(policy)
+            aggression_ratio, opponent_details = _compute_opponent_aggression_ratio(
+                session_context=session_context,
+                observed_state=observed_state,
+            )
+            adjusted_policy = _adjust_hero_policy(
+                policy=policy,
+                aggression_ratio=aggression_ratio,
+            )
+            action_distribution = _build_action_distribution(adjusted_policy)
             random_value = self._random.random()
             sampled_action = _sample_action(
-                policy=policy,
+                policy=adjusted_policy,
                 action_distribution=action_distribution,
                 random_value=random_value,
             )
@@ -122,13 +151,15 @@ class HeroGtoResolver:
                 ev=None,
                 notes=(
                     f"hero_posterior_deferred_v1; matched_history={mapped_context.matched_history}"
+                    f"; aggression_ratio={aggression_ratio:.4f}"
                 ),
                 action_evs={
                     action.action_name: action.total_ev
-                    for action in policy.actions
+                    for action in adjusted_policy.actions
                     if action.total_ev is not None
                 },
                 action_distribution=action_distribution,
+                prior_action_distribution=prior_action_distribution,
                 selected_node_id=mapped_context.matched_node_id,
                 selected_source_id=mapped_context.matched_source_id,
                 sampling_random=random_value,
@@ -136,6 +167,7 @@ class HeroGtoResolver:
                     f"seat_{seat}": player_range.total_frequency()
                     for seat, player_range in session_context.player_ranges.items()
                 },
+                opponent_aggression_details=opponent_details,
             )
         except ValueError as exc:
             return UnsupportedScenarioDecision(
@@ -403,3 +435,283 @@ def _extract_amount(action_name: str) -> float | None:
         except ValueError:
             return 0.0
     return 0.0
+
+
+def _is_aggressive_action(action_name: str) -> bool:
+    """判断动作编码是否属于激进动作 (Raise/Bet/All-in).
+
+    Args:
+        action_name: 动作编码, 如 'R2.5', 'RAI', 'F', 'C'.
+
+    Returns:
+        是否为激进动作.
+    """
+    normalized = action_name.upper()
+    return normalized.startswith("R") or normalized == "RAI"
+
+
+def _compute_opponent_aggression_ratio(
+    *,
+    session_context: StrategySessionContext,
+    observed_state: ObservedTableState,
+) -> tuple[float, list[dict[str, object]]]:
+    """计算所有已行动对手的聚合激进度比值(含幂阻尼), 并返回逐对手明细.
+
+    对每位后验状态对手, 读取 posterior_freq / prior_freq 比值,
+    然后应用幂阻尼 dampened = raw^_DAMPING_EXPONENT 压缩极端值.
+
+    多个对手的 dampened 比值取乘积后做 clamp.
+
+    Args:
+        session_context: 当前会话上下文, 包含对手后验范围与摘要.
+        observed_state: 当前观测状态.
+
+    Returns:
+        (clamped_ratio, details) 二元组.
+        - clamped_ratio: 聚合后的激进度调整系数 (>1 => hero 应更激进, <1 => hero 应更保守).
+        - details: 逐对手明细列表, 每项包含 seat / player_id / prior_freq / posterior_freq / ratio.
+    """
+    acted_seats = _collect_acted_live_opponent_seats(observed_state)
+    if not acted_seats:
+        return 1.0, []
+
+    combined_ratio = 1.0
+    details: list[dict[str, object]] = []
+    for seat in acted_seats:
+        summary = session_context.player_summaries.get(seat)
+        if summary is None or summary.get("status") != "posterior":
+            continue
+
+        prior_freq_raw = summary.get("prior_frequency")
+        if not isinstance(prior_freq_raw, (int, float)):
+            continue
+        prior_freq: float = float(prior_freq_raw)
+
+        player_range = session_context.player_ranges.get(seat)
+        if player_range is None:
+            continue
+
+        posterior_freq = player_range.total_frequency()
+        if prior_freq <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+            continue
+        if posterior_freq <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+            continue
+
+        raw_ratio = posterior_freq / prior_freq
+
+        player_id: str = ""
+        if seat < len(observed_state.players):
+            player_id = observed_state.players[seat].player_id
+
+        dampened_ratio = raw_ratio**_DAMPING_EXPONENT
+
+        details.append(
+            {
+                "seat": seat,
+                "player_id": player_id,
+                "prior_freq": prior_freq,
+                "posterior_freq": posterior_freq,
+                "ratio": raw_ratio,
+                "dampened_ratio": dampened_ratio,
+            }
+        )
+
+        combined_ratio *= dampened_ratio
+
+    clamped = max(_AGGRESSION_RATIO_MIN, min(combined_ratio, _AGGRESSION_RATIO_MAX))
+    LOGGER.debug(
+        "hero 激进度调整系数: raw=%.4f, clamped=%.4f",
+        combined_ratio,
+        clamped,
+    )
+    return clamped, details
+
+
+def _combo_weight(index: int) -> float:
+    """返回某 169 手牌在总频率中的权重."""
+    return combos_per_hand(RANGE_169_ORDER[index]) / RANGE_1326_LENGTH
+
+
+def _adjust_hero_belief_range(
+    *,
+    belief_range: PreflopRange,
+    target_frequency: float,
+) -> PreflopRange:
+    """按目标频率与 EV 排序做约束式信念重分配.
+
+    复用 opponent_pipeline 的 EV-ranked redistribution 算法:
+    - delta > 0: 按 EV 从高到低增加频率
+    - delta < 0: 按 EV 从低到高削减频率
+
+    Args:
+        belief_range: 原始 belief range (169 维).
+        target_frequency: 调整后的目标总频率.
+
+    Returns:
+        调整后的新 PreflopRange.
+    """
+    adjusted_strategy = [min(max(v, 0.0), 1.0) for v in belief_range.strategy]
+    evs = list(belief_range.evs)
+    combo_weights = [_combo_weight(i) for i in range(RANGE_169_LENGTH)]
+
+    current_freq = sum(
+        s * w for s, w in zip(adjusted_strategy, combo_weights, strict=True)
+    )
+    delta = target_frequency - current_freq
+    if abs(delta) <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+        return PreflopRange(strategy=adjusted_strategy, evs=evs)
+
+    if delta > 0.0:
+        sorted_indices = sorted(
+            range(RANGE_169_LENGTH),
+            key=lambda idx: evs[idx],
+            reverse=True,
+        )
+        for idx in sorted_indices:
+            if delta <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+                break
+            w = combo_weights[idx]
+            if w <= 0.0:
+                continue
+            available = 1.0 - adjusted_strategy[idx]
+            if available <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+                continue
+            max_mass = available * w
+            mass_to_add = min(delta, max_mass)
+            adjusted_strategy[idx] += mass_to_add / w
+            delta -= mass_to_add
+    else:
+        remaining = -delta
+        sorted_indices = sorted(
+            range(RANGE_169_LENGTH),
+            key=lambda idx: evs[idx],
+        )
+        for idx in sorted_indices:
+            if remaining <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+                break
+            w = combo_weights[idx]
+            if w <= 0.0:
+                continue
+            available = adjusted_strategy[idx]
+            if available <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+                continue
+            max_mass = available * w
+            mass_to_remove = min(remaining, max_mass)
+            adjusted_strategy[idx] -= mass_to_remove / w
+            remaining -= mass_to_remove
+
+    return PreflopRange(strategy=adjusted_strategy, evs=evs)
+
+
+def _adjust_hero_policy(
+    *,
+    policy: GtoPriorPolicy,
+    aggression_ratio: float,
+) -> GtoPriorPolicy:
+    """根据对手激进度比值调整 hero 策略.
+
+    激进动作 (R*) 的频率乘以 aggression_ratio, 被动动作 (F/C) 按剩余份额
+    等比重分配. 同时对激进动作的 belief_range 做 EV-ranked 重分配.
+
+    Args:
+        policy: 原始 GTO 先验策略 (frozen).
+        aggression_ratio: 激进度调整系数.
+
+    Returns:
+        调整后的新 GtoPriorPolicy.
+    """
+    if math.isclose(aggression_ratio, 1.0, rel_tol=1e-6):
+        return policy
+
+    aggressive_actions: list[GtoPriorAction] = []
+    passive_actions: list[GtoPriorAction] = []
+    for action in policy.actions:
+        if _is_aggressive_action(action.action_name):
+            aggressive_actions.append(action)
+        else:
+            passive_actions.append(action)
+
+    if not aggressive_actions or not passive_actions:
+        return policy
+
+    total_aggressive_freq = sum(a.blended_frequency for a in aggressive_actions)
+    total_passive_freq = sum(a.blended_frequency for a in passive_actions)
+    if total_aggressive_freq <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+        return policy
+
+    new_aggressive_total = min(
+        total_aggressive_freq * aggression_ratio,
+        1.0 - _HERO_ADJUST_LOW_MASS_THRESHOLD,
+    )
+    new_aggressive_total = max(new_aggressive_total, 0.0)
+    new_passive_total = 1.0 - new_aggressive_total
+
+    if new_passive_total <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+        return policy
+
+    agg_scale = (
+        new_aggressive_total / total_aggressive_freq
+        if total_aggressive_freq > _HERO_ADJUST_LOW_MASS_THRESHOLD
+        else 1.0
+    )
+    pass_scale = (
+        new_passive_total / total_passive_freq
+        if total_passive_freq > _HERO_ADJUST_LOW_MASS_THRESHOLD
+        else 1.0
+    )
+
+    adjusted_actions: list[GtoPriorAction] = []
+    for action in policy.actions:
+        if _is_aggressive_action(action.action_name):
+            new_freq = action.blended_frequency * agg_scale
+            new_belief = None
+            if action.belief_range is not None:
+                old_total = action.belief_range.total_frequency()
+                new_target = old_total * agg_scale
+                new_target = min(max(new_target, 0.0), 1.0)
+                new_belief = _adjust_hero_belief_range(
+                    belief_range=action.belief_range,
+                    target_frequency=new_target,
+                )
+            adjusted_actions.append(
+                GtoPriorAction(
+                    action_name=action.action_name,
+                    blended_frequency=new_freq,
+                    source_id=action.source_id,
+                    node_id=action.node_id,
+                    action_type=action.action_type,
+                    bet_size_bb=action.bet_size_bb,
+                    is_all_in=action.is_all_in,
+                    next_position=action.next_position,
+                    belief_range=new_belief
+                    if new_belief is not None
+                    else action.belief_range,
+                    total_ev=action.total_ev,
+                    total_combos=action.total_combos,
+                )
+            )
+        else:
+            new_freq = action.blended_frequency * pass_scale
+            adjusted_actions.append(
+                GtoPriorAction(
+                    action_name=action.action_name,
+                    blended_frequency=new_freq,
+                    source_id=action.source_id,
+                    node_id=action.node_id,
+                    action_type=action.action_type,
+                    bet_size_bb=action.bet_size_bb,
+                    is_all_in=action.is_all_in,
+                    next_position=action.next_position,
+                    belief_range=action.belief_range,
+                    total_ev=action.total_ev,
+                    total_combos=action.total_combos,
+                )
+            )
+
+    return GtoPriorPolicy(
+        action_names=policy.action_names,
+        actions=tuple(adjusted_actions),
+        price_adjustment_applied=policy.price_adjustment_applied,
+        price_adjustment_factor=policy.price_adjustment_factor,
+        synthetic_template_kind=policy.synthetic_template_kind,
+    )
