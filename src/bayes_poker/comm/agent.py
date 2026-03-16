@@ -94,12 +94,13 @@ class TableClientAgent:
         session_id = msg.session_id
         state_version = msg.payload.get("state_version", 0)
 
-        current_version = self._last_strategy_version.get(session_id, 0)
+        session_key = session_id or ""
+        current_version = self._last_strategy_version.get(session_key, 0)
         if state_version < current_version:
             LOGGER.debug("忽略过期策略响应: %d < %d", state_version, current_version)
             return
 
-        self._last_strategy_version[session_id or ""] = state_version
+        self._last_strategy_version[session_key] = state_version
 
         if self._strategy_callback:
             response = StrategyResponsePayload(
@@ -111,6 +112,10 @@ class TableClientAgent:
                 confidence=msg.payload.get("confidence", 0.0),
                 ev=msg.payload.get("ev", 0.0),
                 action_evs=msg.payload.get("action_evs", {}),
+                action_distribution=msg.payload.get("action_distribution", {}),
+                selected_node_id=msg.payload.get("selected_node_id"),
+                selected_source_id=msg.payload.get("selected_source_id"),
+                sampling_random=msg.payload.get("sampling_random"),
                 range_breakdown=msg.payload.get("range_breakdown", {}),
                 notes=msg.payload.get("notes", ""),
                 is_stale=msg.payload.get("is_stale", False),

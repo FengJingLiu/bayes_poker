@@ -495,6 +495,8 @@ class PreflopStrategyRepository:
         source_id: int | None = None,
         source_ids: Sequence[int] | None = None,
         stack_bb: int | None = None,
+        actor_position: Position | None = None,
+        aggressor_position: Position | None = None,
         is_in_position: bool | None,
         raise_time: int,
         pot_size: float | None,
@@ -522,15 +524,33 @@ class PreflopStrategyRepository:
             FROM solver_nodes
             WHERE raise_time = ?
               AND (
+                    (actor_position IS NULL AND ? IS NULL)
+                 OR actor_position = ?
+              )
+              AND (
+                    (aggressor_position IS NULL AND ? IS NULL)
+                 OR aggressor_position = ?
+              )
+              AND (
                     (is_in_position IS NULL AND ? IS NULL)
                  OR is_in_position = ?
               )
         """
+        actor_position_value = (
+            actor_position.value if actor_position is not None else None
+        )
+        aggressor_position_value = (
+            aggressor_position.value if aggressor_position is not None else None
+        )
         is_in_position_value = (
             int(is_in_position) if is_in_position is not None else None
         )
         params: list[Any] = [
             raise_time,
+            actor_position_value,
+            actor_position_value,
+            aggressor_position_value,
+            aggressor_position_value,
             is_in_position_value,
             is_in_position_value,
         ]

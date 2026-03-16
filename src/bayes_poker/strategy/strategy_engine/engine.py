@@ -111,7 +111,7 @@ def build_strategy_engine(config: StrategyEngineConfig) -> StrategyEngine:
     )
     hero_resolver = HeroGtoResolver(
         repository_adapter=repository_adapter,
-        source_id=source_ids,
+        source_id=5,
     )
     return StrategyEngine(
         opponent_pipeline=opponent_pipeline,

@@ -120,6 +120,8 @@ def test_repository_reads_candidates_and_actions_by_node_id(tmp_path: Path) -> N
     candidates = repo.list_candidates(
         source_id=source_id,
         stack_bb=100,
+        actor_position=Position.CO,
+        aggressor_position=Position.UTG,
         is_in_position=True,
         raise_time=1,
         pot_size=5.5,
@@ -190,6 +192,8 @@ def test_repository_list_candidates_supports_multi_source_selector(
     candidates = repo.list_candidates(
         source_ids=(first_source_id, second_source_id),
         stack_bb=100,
+        actor_position=Position.CO,
+        aggressor_position=Position.UTG,
         is_in_position=True,
         raise_time=1,
         pot_size=5.5,
@@ -203,6 +207,60 @@ def test_repository_list_candidates_supports_multi_source_selector(
         first_node_ids["R2-C"],
         second_node_ids["R2.2-C"],
     }
+    repo.close()
+
+
+def test_repository_list_candidates_filters_none_aggressor_position(
+    tmp_path: Path,
+) -> None:
+    """应支持按 `aggressor_position=None` 精确筛选节点."""
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=1,
+    )
+    node_ids = repo.insert_nodes(
+        source_id=source_id,
+        node_records=(
+            _make_node_record(
+                history_full="LIMP_NODE",
+                actor_position=Position.CO,
+                aggressor_position=None,
+                call_count=0,
+                limp_count=1,
+                raise_time=0,
+                pot_size=2.5,
+                raise_size_bb=None,
+                is_in_position=None,
+            ),
+            _make_node_record(
+                history_full="CALL_VS_OPEN_NODE",
+                actor_position=Position.CO,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=0,
+                pot_size=2.5,
+                raise_size_bb=None,
+                is_in_position=None,
+            ),
+        ),
+    )
+
+    candidates = repo.list_candidates(
+        source_id=source_id,
+        stack_bb=100,
+        actor_position=Position.CO,
+        aggressor_position=None,
+        is_in_position=None,
+        raise_time=0,
+        pot_size=2.5,
+    )
+
+    assert [candidate.node_id for candidate in candidates] == [node_ids["LIMP_NODE"]]
     repo.close()
 
 

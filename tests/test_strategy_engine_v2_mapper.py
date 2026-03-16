@@ -632,8 +632,89 @@ def test_mapper_supports_multiple_source_ids(tmp_path: Path) -> None:
         )
     )
 
-    assert mapped.matched_history == "R2.2-C"
+    assert mapped.matched_history == "R2-C"
+    assert mapped.matched_source_id == first_source_id
     assert set(mapped.candidate_histories) == {"R2-C", "R2.2-C"}
+
+    adapter.close()
+
+
+def test_mapper_prioritizes_source_order_before_distance(tmp_path: Path) -> None:
+    """当 source 顺序给定时, 应优先命中更高优先级 source。"""
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    first_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=2,
+    )
+    second_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zAggressive",
+        source_dir="/tmp/Cash6m50zAggressive",
+        format_version=2,
+    )
+    first_nodes = repo.insert_nodes(
+        source_id=first_source_id,
+        node_records=(
+            _make_node_record(
+                history_full="R2-C",
+                history_actions="R-C",
+                acting_position=Position.CO,
+                action_family=LegacyActionFamily.CALL_VS_OPEN,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=1,
+                pot_size=6.0,
+                raise_size_bb=2.5,
+                is_in_position=True,
+            ),
+        ),
+    )
+    second_nodes = repo.insert_nodes(
+        source_id=second_source_id,
+        node_records=(
+            _make_node_record(
+                history_full="R2.2-C",
+                history_actions="R-C",
+                acting_position=Position.CO,
+                action_family=LegacyActionFamily.CALL_VS_OPEN,
+                aggressor_position=Position.UTG,
+                call_count=1,
+                limp_count=0,
+                raise_time=1,
+                pot_size=5.5,
+                raise_size_bb=2.2,
+                is_in_position=True,
+            ),
+        ),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+    mapper = StrategyNodeMapper(
+        repository_adapter=adapter,
+        source_id=[first_source_id, second_source_id],
+        stack_bb=100,
+    )
+    mapped = mapper.map_node_context(
+        NodeContext(
+            actor_position=Position.CO,
+            aggressor_position=Position.UTG,
+            call_count=1,
+            limp_count=0,
+            raise_time=1,
+            pot_size=5.5,
+            raise_size_bb=2.2,
+        )
+    )
+
+    assert mapped.matched_source_id == first_source_id
+    assert mapped.matched_node_id == first_nodes["R2-C"]
+    assert mapped.candidate_node_ids[0] == first_nodes["R2-C"]
+    assert second_nodes["R2.2-C"] in mapped.candidate_node_ids
 
     adapter.close()
 

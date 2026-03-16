@@ -137,7 +137,7 @@ class StrategyRepositoryAdapter:
             requested_stack_bb: 期望的筹码深度（BB 数）.
 
         Returns:
-            与请求最接近的可用筹码深度.
+            按 source 优先级顺序命中的可用筹码深度.
 
         Raises:
             ValueError: 当指定策略源都没有可用 stack 时抛出.
@@ -147,7 +147,6 @@ class StrategyRepositoryAdapter:
         if source_ids is None:
             raise ValueError("source_id 不能为空。")
 
-        resolved_pairs: list[tuple[int, int]] = []
         for current_source_id in source_ids:
             try:
                 resolved_stack = self._repo.resolve_stack_bb(
@@ -156,20 +155,9 @@ class StrategyRepositoryAdapter:
                 )
             except ValueError:
                 continue
-            resolved_pairs.append((current_source_id, resolved_stack))
+            return resolved_stack
 
-        if not resolved_pairs:
-            raise ValueError("指定策略源没有可用的 stack 配置。")
-
-        _, best_stack = min(
-            resolved_pairs,
-            key=lambda item: (
-                abs(item[1] - requested_stack_bb),
-                item[1],
-                item[0],
-            ),
-        )
-        return best_stack
+        raise ValueError("指定策略源没有可用的 stack 配置。")
 
     def load_candidates(
         self,
@@ -203,6 +191,8 @@ class StrategyRepositoryAdapter:
         candidates = self._repo.list_candidates(
             source_ids=source_ids,
             stack_bb=stack_bb,
+            actor_position=node_context.actor_position,
+            aggressor_position=node_context.aggressor_position,
             is_in_position=is_in_position,
             raise_time=node_context.raise_time,
             pot_size=node_context.pot_size,

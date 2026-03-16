@@ -239,6 +239,42 @@ def test_repository_adapter_resolve_stack_bb_supports_multiple_sources(
         requested_stack_bb=94,
     )
 
+    assert resolved_stack == 80
+
+    adapter.close()
+
+
+def test_repository_adapter_resolve_stack_bb_fallbacks_to_next_source(
+    tmp_path: Path,
+) -> None:
+    """当高优先级 source 没有 stack 时应回退到下一个 source。"""
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy.db")
+    repo.connect()
+    first_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zGeneral",
+        source_dir="/tmp/Cash6m50zGeneral",
+        format_version=2,
+    )
+    second_source_id = repo.upsert_source(
+        strategy_name="Cash6m50zAggressive",
+        source_dir="/tmp/Cash6m50zAggressive",
+        format_version=2,
+    )
+    repo.insert_nodes(
+        source_id=second_source_id,
+        node_records=(_make_node_record(history_full="R2-C", stack_bb=100),),
+    )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy.db")
+    adapter.connect()
+
+    resolved_stack = adapter.resolve_stack_bb(
+        source_id=(first_source_id, second_source_id),
+        requested_stack_bb=94,
+    )
+
     assert resolved_stack == 100
 
     adapter.close()

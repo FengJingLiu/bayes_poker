@@ -31,6 +31,7 @@ class MappedNodeContext:
     matched_history: str
     distance_score: float
     candidate_node_ids: tuple[int, ...]
+    candidate_source_ids: tuple[int, ...]
     candidate_histories: tuple[str, ...]
     candidate_distances: tuple[float, ...]
     price_adjustment_applied: bool = False
@@ -60,14 +61,21 @@ class StrategyNodeMapper:
 
         self._repository_adapter = repository_adapter
         self._source_ids = _normalize_source_id_selector(source_id)
+        self._source_rank_by_id = _build_source_rank_by_id(self._source_ids)
         self._stack_bb = stack_bb
         self._max_candidates = max_candidates
 
-    def map_node_context(self, node_context: NodeContext) -> MappedNodeContext:
+    def map_node_context(
+        self,
+        node_context: NodeContext,
+        *,
+        preferred_history_actions: str | None = None,
+    ) -> MappedNodeContext:
         """映射中性节点上下文。
 
         Args:
             node_context: 待映射节点上下文。
+            preferred_history_actions: 可选的行动线签名, 例如 `R-C`。
 
         Returns:
             最近节点匹配结果。
@@ -95,6 +103,7 @@ class StrategyNodeMapper:
                     matched_history="synthetic:limp_family_level_3",
                     distance_score=0.0,
                     candidate_node_ids=(),
+                    candidate_source_ids=(),
                     candidate_histories=(),
                     candidate_distances=(),
                     synthetic_template_kind=SyntheticTemplateKind.LIMP_FAMILY_LEVEL_3,
@@ -108,7 +117,17 @@ class StrategyNodeMapper:
             )
             for candidate in candidates
         ]
-        scored_candidates.sort(key=lambda item: (item[0], item[1].history_token_count))
+        scored_candidates.sort(
+            key=lambda item: (
+                _history_action_mismatch_priority(
+                    candidate_history_actions=item[1].history_actions,
+                    preferred_history_actions=preferred_history_actions,
+                ),
+                self._source_rank_by_id.get(item[1].source_id, len(self._source_ids)),
+                item[0],
+                item[1].history_token_count,
+            )
+        )
         selected = scored_candidates[: self._max_candidates]
         best_distance, best_candidate = selected[0]
         price_adjustment_applied, price_adjustment_factor = _apply_price_adjustment(
@@ -122,6 +141,9 @@ class StrategyNodeMapper:
             matched_history=best_candidate.history_full,
             distance_score=best_distance,
             candidate_node_ids=tuple(candidate.node_id for _, candidate in selected),
+            candidate_source_ids=tuple(
+                candidate.source_id for _, candidate in selected
+            ),
             candidate_histories=tuple(
                 candidate.history_full for _, candidate in selected
             ),
@@ -153,6 +175,41 @@ def _normalize_source_id_selector(source_id: int | Sequence[int]) -> tuple[int, 
     if any(not isinstance(current_source_id, int) for current_source_id in normalized):
         raise ValueError("source_id 必须为 int 或 int 序列。")
     return normalized
+
+
+def _build_source_rank_by_id(source_ids: tuple[int, ...]) -> dict[int, int]:
+    """构建策略源优先级索引。
+
+    Args:
+        source_ids: 策略源优先级序列。
+
+    Returns:
+        `source_id -> rank` 映射, rank 越小优先级越高。
+    """
+
+    return {source_id: rank for rank, source_id in enumerate(source_ids)}
+
+
+def _history_action_mismatch_priority(
+    *,
+    candidate_history_actions: str,
+    preferred_history_actions: str | None,
+) -> int:
+    """计算行动线匹配优先级。
+
+    Args:
+        candidate_history_actions: 候选节点的行动线签名。
+        preferred_history_actions: 当前状态推导的目标行动线签名。
+
+    Returns:
+        匹配时返回 `0`, 不匹配时返回 `1`。
+    """
+
+    if preferred_history_actions is None:
+        return 0
+    if candidate_history_actions == preferred_history_actions:
+        return 0
+    return 1
 
 
 def _apply_price_adjustment(

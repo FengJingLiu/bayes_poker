@@ -20,6 +20,10 @@ class RecommendationDecision:
     ev: float | None
     notes: str
     action_evs: dict[str, float] = field(default_factory=dict)
+    action_distribution: dict[str, float] = field(default_factory=dict)
+    selected_node_id: int | None = None
+    selected_source_id: int | None = None
+    sampling_random: float | None = None
     range_breakdown: dict[str, float] = field(default_factory=dict)
     kind: Literal["recommendation"] = "recommendation"
 
