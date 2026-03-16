@@ -50,6 +50,12 @@ _PREFLOP_ACTION_ORDER_9MAX: tuple[Position, ...] = (
     Position.SB,
     Position.BB,
 )
+# GTOWizard 6-max JSON 中的 MP 位置实际标记为 HJ,
+# 以下映射用于将 HJ 统一回 6-max 行动顺序中的 MP。
+_6MAX_POSITION_ALIASES: dict[Position, Position] = {
+    Position.HJ: Position.MP,
+}
+
 _POSTFLOP_POSITION_ORDER: tuple[Position, ...] = (
     Position.SB,
     Position.BB,
@@ -224,8 +230,10 @@ def _resolve_action_positions(
         与历史 token 一一对应的位置序列；无法确定时返回 None。
     """
 
+    canonical = _6MAX_POSITION_ALIASES.get(actor_position, actor_position)
     for action_order in (_PREFLOP_ACTION_ORDER_6MAX, _PREFLOP_ACTION_ORDER_9MAX):
-        if actor_position not in action_order:
+        effective = canonical if canonical in action_order else actor_position
+        if effective not in action_order:
             continue
         simulated = _simulate_action_positions(
             action_order=action_order,
@@ -234,7 +242,7 @@ def _resolve_action_positions(
         if simulated is None:
             continue
         action_positions, next_actor_position = simulated
-        if next_actor_position == actor_position:
+        if next_actor_position == effective:
             return action_positions
     return None
 
