@@ -40,7 +40,7 @@ src/bayes_poker/
 │   ├── server.py            # 服务器
 │   ├── session.py           # 会话管理与重放
 │   └── agent.py             # TableParser 集成代理
-├── strategy/                # 策略引擎（翻前解析/运行时/对手范围）
+├── strategy/                # 策略引擎（strategy_engine/preflop_parse/range）
 ├── player_metrics/          # 玩家统计（Rust 加速接口）
 ├── storage/                 # SQLite 仓储
 ├── domain/                  # 领域模型
@@ -188,15 +188,6 @@ src/bayes_poker/
 - 使用 fixture 与 parametrize。
 - 日志断言优先使用 `caplog`。
 - 依赖外部数据的大样本测试默认跳过, 由环境变量开启。
-
-### 对手范围测试初始化约定
-
-- `tests/test_opponent_range.py` 中 `create_opponent_range_predictor(...)` 必须显式传入 `preflop_strategy` 与 `stats_repo`。
-- `preflop_strategy` 使用:
-  - `parse_strategy_directory(Path("/home/autumn/project/gg_handhistory/preflop_strategy/Cash6m50zSimple25Open_SimpleIP"))`
-- `stats_repo` 使用:
-  - `PlayerStatsRepository(Path("data/database/player_stats.db"))`
-- 测试中正确执行 `connect()` 与 `close()`。
 
 ## 开发者工具（编辑器配置）
 
