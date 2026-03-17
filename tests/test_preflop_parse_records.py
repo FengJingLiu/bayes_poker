@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from bayes_poker.domain.table import Position
-from bayes_poker.strategy.preflop_engine.state import ActionFamily
+from bayes_poker.strategy.strategy_engine.core_types import ActionFamily
 from bayes_poker.strategy.preflop_parse.parser import (
     _derive_mapper_fields,
     parse_strategy_node_records,

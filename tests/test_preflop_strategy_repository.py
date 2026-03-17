@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bayes_poker.strategy.preflop_engine.state import ActionFamily
+from bayes_poker.strategy.strategy_engine.core_types import ActionFamily
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
     ParsedStrategyNodeRecord,
