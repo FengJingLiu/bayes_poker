@@ -52,6 +52,7 @@ class OpponentPipelineConfig:
 
     table_type: TableType = TableType.SIX_MAX
     session_timeout: float = SessionConfig.session_timeout
+    enable_global_raise_blending: bool = True
 
 
 class OpponentPipeline:
@@ -201,6 +202,7 @@ class OpponentPipeline:
             prior=prior,
             observed_action_type=action.action_type,
             node_stats=node_stats,
+            enable_global_raise_blending=self._config.enable_global_raise_blending,
         )
 
     def _build_initial_prior_range(
@@ -408,6 +410,7 @@ def _adjust_belief_with_stats_and_ev(
     prior: PreflopRange,
     observed_action_type: ActionType,
     node_stats: PlayerNodeStats,
+    enable_global_raise_blending: bool = True,
 ) -> PreflopRange:
     """按 stats 目标频率与 EV 排序做约束式信念重分配。
 
@@ -415,6 +418,7 @@ def _adjust_belief_with_stats_and_ev(
         prior: 该动作对应的先验范围。
         observed_action_type: 真实观测动作类型。
         node_stats: 平滑后的节点统计概率。
+        enable_global_raise_blending: 是否在激进行为下混合全局 PFR 信号。
 
     Returns:
         调整后的后验范围。
@@ -428,7 +432,21 @@ def _adjust_belief_with_stats_and_ev(
         observed_action_type=observed_action_type,
         node_stats=node_stats,
     )
-    target_frequency = min(max(stats_frequency, 0.0), 1.0)
+    if (
+        enable_global_raise_blending
+        and observed_action_type
+        in {ActionType.RAISE, ActionType.BET, ActionType.ALL_IN}
+        and node_stats.total_hands > 0
+    ):
+        node_confidence = node_stats.confidence
+        global_signal = node_stats.global_pfr
+        target_frequency = (
+            node_confidence * stats_frequency + (1.0 - node_confidence) * global_signal
+        )
+    else:
+        target_frequency = stats_frequency
+
+    target_frequency = min(max(target_frequency, 0.0), 1.0)
     current_frequency = sum(
         probability * weight
         for probability, weight in zip(adjusted_strategy, combo_weights, strict=True)

@@ -13,7 +13,7 @@ import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Sequence, cast
 
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.models import ActionStats, PlayerStats
@@ -300,6 +300,52 @@ class PlayerStatsRepository:
             pool_stats=pool_stats,
             pool_prior_strength=pool_prior_strength,
         )
+
+    def get_with_raw(
+        self,
+        player_name: str,
+        table_type: TableType,
+        *,
+        pool_prior_strength: float = 20.0,
+    ) -> tuple[PlayerStats | None, PlayerStats | None]:
+        """一次读取, 同时返回 (raw_stats, smoothed_stats).
+
+        避免 stats_adapter 需要两次调用 get() 的性能问题.
+        内部复用 _get_raw() 和 _smooth_player_stats_with_pool().
+
+        Args:
+            player_name: 玩家名称.
+            table_type: 桌型.
+            pool_prior_strength: 平滑时使用的先验强度.
+
+        Returns:
+            元组 (raw_stats, smoothed_stats).
+            若玩家不存在则返回 (None, None).
+
+        Raises:
+            ValueError: 当先验强度不为正时抛出.
+        """
+        raw_stats = self._get_raw(player_name, table_type)
+        if raw_stats is None:
+            return None, None
+
+        if pool_prior_strength <= 0.0:
+            raise ValueError("pool_prior_strength 必须大于 0.")
+
+        pool_player_name = _POOL_PRIOR_PLAYER_NAMES.get(table_type)
+        if not pool_player_name or player_name == pool_player_name:
+            return raw_stats, raw_stats
+
+        pool_stats = self._get_raw(pool_player_name, table_type)
+        if pool_stats is None:
+            return raw_stats, raw_stats
+
+        smoothed = self._smooth_player_stats_with_pool(
+            raw_stats=raw_stats,
+            pool_stats=pool_stats,
+            pool_prior_strength=pool_prior_strength,
+        )
+        return raw_stats, smoothed
 
     def _get_raw(self, player_name: str, table_type: TableType) -> PlayerStats | None:
         """查询原始玩家统计。
@@ -604,13 +650,16 @@ class PlayerStatsRepository:
         """按平滑后的叶子动作字段回填 `ActionStats`。"""
 
         return ActionStats(
-            bet_0_40=smoothed_field_counts.get(BET_0_40_FIELD, 0.0),
-            bet_40_80=smoothed_field_counts.get(BET_40_80_FIELD, 0.0),
-            bet_80_120=smoothed_field_counts.get(BET_80_120_FIELD, 0.0),
-            bet_over_120=smoothed_field_counts.get(BET_OVER_120_FIELD, 0.0),
-            raise_samples=smoothed_field_counts.get(RAISE_FIELD, 0.0),
-            check_call_samples=smoothed_field_counts.get(CHECK_CALL_FIELD, 0.0),
-            fold_samples=smoothed_field_counts.get(FOLD_FIELD, 0.0),
+            bet_0_40=cast(int, smoothed_field_counts.get(BET_0_40_FIELD, 0.0)),
+            bet_40_80=cast(int, smoothed_field_counts.get(BET_40_80_FIELD, 0.0)),
+            bet_80_120=cast(int, smoothed_field_counts.get(BET_80_120_FIELD, 0.0)),
+            bet_over_120=cast(int, smoothed_field_counts.get(BET_OVER_120_FIELD, 0.0)),
+            raise_samples=cast(int, smoothed_field_counts.get(RAISE_FIELD, 0.0)),
+            check_call_samples=cast(
+                int,
+                smoothed_field_counts.get(CHECK_CALL_FIELD, 0.0),
+            ),
+            fold_samples=cast(int, smoothed_field_counts.get(FOLD_FIELD, 0.0)),
         )
 
     def get_all(self, table_type: TableType | None = None) -> list[PlayerStats]:

@@ -348,3 +348,146 @@ def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
         f"unique_nodes={len(unique_nodes)}/{len(node_ids)}, "
         f"unique_distributions={unique_distributions}/{len(distributions)}"
     )
+
+
+@pytest.mark.large_sample
+def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
+    real_scenario_engine: StrategyEngine,
+    selected_players: list[PlayerPfrRow],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """验证固定 3-Bet 位置下, 不同对手风格组合会改变 hero 策略。
+
+    固定位置组合为 ``UTG open -> MP 3bet -> hero BB``。对 ``selected_players``
+    做 ``opener x 3bettor`` 全排列 (3x3=9) 后逐一运行引擎, 验证:
+    1. hero 的 aggression_ratio 等于所有已行动对手 dampened_ratio 的乘积;
+    2. action_distribution 至少存在两种不同输出;
+    3. adjusted_belief_ranges 导出的 GTO+ 范围在不同对手组合下出现差异。
+
+    Args:
+        real_scenario_engine: 真实场景 StrategyEngine fixture。
+        selected_players: 按 PFR 差异采样的 3 名玩家。
+        capsys: pytest 输出捕获 fixture, 用于校验 changed_actions 打印结果。
+    """
+    assert len(selected_players) == 3, "该测试依赖 selected_players 固定返回 3 名玩家"
+
+    opener_position = Position.UTG
+    three_bettor_position = Position.MP
+    hero_position = Position.BB
+
+    snapshots: list[HeroStrategySnapshot] = []
+    state_version = 0
+
+    for opener_row in selected_players:
+        for three_bettor_row in selected_players:
+            state_version += 1
+            observed_state = build_3bet_state(
+                hero_position=hero_position,
+                opener_position=opener_position,
+                three_bettor_position=three_bettor_position,
+                opener_player_name=opener_row.player_name,
+                three_bettor_player_name=three_bettor_row.player_name,
+                state_version=state_version,
+            )
+
+            decision = asyncio.run(
+                real_scenario_engine(
+                    session_id=(
+                        "3bet_style_combo"
+                        f"_{opener_row.player_name}_{three_bettor_row.player_name}"
+                        f"_{state_version}"
+                    ),
+                    observed_state=observed_state,
+                )
+            )
+            rec = assert_valid_recommendation(
+                decision,
+                label=(
+                    f"{opener_position.value} open({opener_row.player_name})"
+                    f" -> {three_bettor_position.value} 3bet({three_bettor_row.player_name})"
+                    f" -> hero {hero_position.value}"
+                ),
+            )
+
+            details = rec.opponent_aggression_details
+            assert details, "应包含已行动对手的 aggression 明细"
+            product_ratio = 1.0
+            for detail in details:
+                raw_value = detail.get("dampened_ratio")
+                if not isinstance(raw_value, (int, float)):
+                    raw_value = detail.get("ratio")
+                assert isinstance(raw_value, (int, float)), (
+                    f"opponent_aggression_details 缺少数值 ratio: {detail}"
+                )
+                dampened_ratio = float(raw_value)
+                product_ratio *= dampened_ratio
+
+            assert "aggression_ratio=" in rec.notes, (
+                "notes 中应包含 aggression_ratio, 以便校验乘积逻辑"
+            )
+            ratio_text = rec.notes.split("aggression_ratio=", maxsplit=1)[1].split(";")[
+                0
+            ]
+            logged_ratio = float(ratio_text)
+            assert logged_ratio == pytest.approx(product_ratio, rel=1e-3, abs=1e-4), (
+                "hero aggression_ratio 应等于所有已行动对手 dampened_ratio 的乘积: "
+                f"logged={logged_ratio}, product={product_ratio}, details={details}"
+            )
+
+            combo_label = (
+                f"opener:{opener_row.player_name}(pfr={opener_row.pfr_pct:.2f})"
+                f"__3bettor:{three_bettor_row.player_name}(pfr={three_bettor_row.pfr_pct:.2f})"
+            )
+            snapshot_player = PlayerPfrRow(
+                player_name=combo_label,
+                total_hands=min(opener_row.total_hands, three_bettor_row.total_hands),
+                pfr_pct=(opener_row.pfr_pct + three_bettor_row.pfr_pct) / 2.0,
+            )
+            snapshot = build_snapshot_from_decision(
+                player_row=snapshot_player,
+                decision=rec,
+                engine=real_scenario_engine,
+            )
+            snapshots.append(snapshot)
+            print_snapshot(snapshot)
+
+    assert len(snapshots) == 9, f"期望生成 9 个风格组合快照, 实际={len(snapshots)}"
+
+    print_pairwise_range_comparison(snapshots)
+    captured_output = capsys.readouterr().out
+
+    unique_distributions = {
+        tuple(sorted(snapshot.action_distribution.items())) for snapshot in snapshots
+    }
+    assert len(unique_distributions) >= 2, (
+        "不同 opener/3bettor 风格组合下, hero action_distribution 不应全部相同"
+    )
+
+    changed_pair_count = 0
+    baseline_snapshot = snapshots[0]
+    for target_snapshot in snapshots[1:]:
+        changed_actions = [
+            action_code
+            for action_code in sorted(
+                set(baseline_snapshot.gtoplus_by_action)
+                | set(target_snapshot.gtoplus_by_action)
+            )
+            if baseline_snapshot.gtoplus_by_action.get(action_code)
+            != target_snapshot.gtoplus_by_action.get(action_code)
+        ]
+        if changed_actions:
+            changed_pair_count += 1
+    assert changed_pair_count >= 1, (
+        "不同 opener/3bettor 风格组合下, adjusted_belief_ranges 导出的 GTO+ 范围"
+        "至少应有一组对比出现变化"
+    )
+
+    changed_lines = [
+        line for line in captured_output.splitlines() if "changed_actions=" in line
+    ]
+    assert changed_lines, (
+        "print_pairwise_range_comparison 应输出 changed_actions 对比行"
+    )
+    assert any("changed_actions=[]" not in line for line in changed_lines), (
+        "当 opener 或 3bettor 变化时, changed_actions 至少应有一行非空"
+    )

@@ -766,6 +766,9 @@ def test_adjust_belief_with_stats_and_ev_biases_high_ev() -> None:
         bet_80_120_probability=1.0,
         bet_over_120_probability=0.0,
         confidence=1.0,
+        global_pfr=0.0,
+        global_vpip=0.0,
+        total_hands=0,
         source_kind="test",
     )
 
@@ -799,6 +802,9 @@ def test_adjust_belief_with_stats_and_ev_uses_next_ev_bucket_when_top_saturated(
         bet_80_120_probability=1.0,
         bet_over_120_probability=0.0,
         confidence=1.0,
+        global_pfr=0.0,
+        global_vpip=0.0,
+        total_hands=0,
         source_kind="test",
     )
 
@@ -815,6 +821,112 @@ def test_adjust_belief_with_stats_and_ev_uses_next_ev_bucket_when_top_saturated(
         target_raise_frequency,
         abs=1e-6,
     )
+
+
+def test_adjust_belief_blends_global_pfr_for_raise() -> None:
+    """aggressive action 应混合节点级 stats 和全局 PFR。
+
+    Returns:
+        None.
+    """
+
+    prior_range = PreflopRange(
+        strategy=[0.2] * 169,
+        evs=[1.0] * 169,
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.2,
+        call_probability=0.3,
+        fold_probability=0.5,
+        bet_0_40_probability=0.25,
+        bet_40_80_probability=0.25,
+        bet_80_120_probability=0.25,
+        bet_over_120_probability=0.25,
+        confidence=0.3,
+        global_pfr=0.5,
+        global_vpip=0.6,
+        total_hands=100,
+        source_kind="player",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=ActionType.RAISE,
+        node_stats=node_stats,
+    )
+
+    assert posterior.total_frequency() == pytest.approx(0.41, abs=0.01)
+
+
+def test_adjust_belief_no_blend_for_fold() -> None:
+    """fold action 不应混合全局信号, 继续用节点级。
+
+    Returns:
+        None.
+    """
+
+    prior_range = PreflopRange(
+        strategy=[0.5] * 169,
+        evs=[1.0] * 169,
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.2,
+        call_probability=0.3,
+        fold_probability=0.5,
+        bet_0_40_probability=0.25,
+        bet_40_80_probability=0.25,
+        bet_80_120_probability=0.25,
+        bet_over_120_probability=0.25,
+        confidence=0.3,
+        global_pfr=0.5,
+        global_vpip=0.6,
+        total_hands=100,
+        source_kind="player",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=ActionType.FOLD,
+        node_stats=node_stats,
+    )
+
+    assert posterior.total_frequency() == pytest.approx(0.5, abs=0.01)
+
+
+def test_feature_flag_disabled_no_blend() -> None:
+    """enable_global_raise_blending=False 时行为与旧逻辑一致。
+
+    Returns:
+        None.
+    """
+
+    prior_range = PreflopRange(
+        strategy=[0.2] * 169,
+        evs=[1.0] * 169,
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.2,
+        call_probability=0.3,
+        fold_probability=0.5,
+        bet_0_40_probability=0.25,
+        bet_40_80_probability=0.25,
+        bet_80_120_probability=0.25,
+        bet_over_120_probability=0.25,
+        confidence=0.3,
+        global_pfr=0.5,
+        global_vpip=0.6,
+        total_hands=100,
+        source_kind="player",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=ActionType.RAISE,
+        node_stats=node_stats,
+        enable_global_raise_blending=False,
+    )
+
+    assert posterior.total_frequency() == pytest.approx(0.2, abs=0.01)
 
 
 def test_build_prior_only_range_from_policy_aggregates_continue_actions() -> None:
@@ -875,6 +987,9 @@ def test_calibrate_policy_preserves_hand_level_belief_evs() -> None:
         bet_80_120_probability=1.00,
         bet_over_120_probability=0.00,
         confidence=1.00,
+        global_pfr=0.0,
+        global_vpip=0.0,
+        total_hands=0,
         source_kind="test",
     )
 
@@ -886,3 +1001,115 @@ def test_calibrate_policy_preserves_hand_level_belief_evs() -> None:
 
     assert action_by_name["C"].range.evs[0] == pytest.approx(0.30)
     assert action_by_name["R6"].range.evs[0] == pytest.approx(1.80)
+
+
+@pytest.mark.parametrize("action_type", [ActionType.BET, ActionType.ALL_IN])
+def test_adjust_belief_blends_global_pfr_for_bet_and_all_in(
+    action_type: ActionType,
+) -> None:
+    """BET 和 ALL_IN 类型应与 RAISE 一样触发全局 PFR 混合。
+
+    Args:
+        action_type: 参数化的动作类型 (BET 或 ALL_IN)。
+
+    Returns:
+        None.
+    """
+
+    prior_range = PreflopRange(
+        strategy=[0.2] * 169,
+        evs=[1.0] * 169,
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.2,
+        call_probability=0.3,
+        fold_probability=0.5,
+        bet_0_40_probability=0.25,
+        bet_40_80_probability=0.25,
+        bet_80_120_probability=0.25,
+        bet_over_120_probability=0.25,
+        confidence=0.3,
+        global_pfr=0.5,
+        global_vpip=0.6,
+        total_hands=100,
+        source_kind="player",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=action_type,
+        node_stats=node_stats,
+    )
+
+    assert posterior.total_frequency() == pytest.approx(0.41, abs=0.01)
+
+
+def test_adjust_belief_no_blend_when_total_hands_zero() -> None:
+    """total_hands == 0 时不应混合全局 PFR, 即使是激进动作。
+
+    Returns:
+        None.
+    """
+
+    prior_range = PreflopRange(
+        strategy=[0.2] * 169,
+        evs=[1.0] * 169,
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.2,
+        call_probability=0.3,
+        fold_probability=0.5,
+        bet_0_40_probability=0.25,
+        bet_40_80_probability=0.25,
+        bet_80_120_probability=0.25,
+        bet_over_120_probability=0.25,
+        confidence=0.3,
+        global_pfr=0.5,
+        global_vpip=0.6,
+        total_hands=0,
+        source_kind="player",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=ActionType.RAISE,
+        node_stats=node_stats,
+    )
+
+    assert posterior.total_frequency() == pytest.approx(0.2, abs=0.01)
+
+
+def test_adjust_belief_global_pfr_zero_fallback() -> None:
+    """global_pfr = 0.0 时混合不应出错, 频率应低于纯 stats_frequency。
+
+    Returns:
+        None.
+    """
+
+    prior_range = PreflopRange(
+        strategy=[0.2] * 169,
+        evs=[1.0] * 169,
+    )
+    node_stats = PlayerNodeStats(
+        raise_probability=0.2,
+        call_probability=0.3,
+        fold_probability=0.5,
+        bet_0_40_probability=0.25,
+        bet_40_80_probability=0.25,
+        bet_80_120_probability=0.25,
+        bet_over_120_probability=0.25,
+        confidence=0.3,
+        global_pfr=0.0,
+        global_vpip=0.6,
+        total_hands=100,
+        source_kind="player",
+    )
+
+    posterior = _adjust_belief_with_stats_and_ev(
+        prior=prior_range,
+        observed_action_type=ActionType.RAISE,
+        node_stats=node_stats,
+    )
+
+    # global_pfr = 0.0 将拉低混合后的频率至低于 stats_frequency (0.2)
+    assert posterior.total_frequency() == pytest.approx(0.06, abs=0.01)

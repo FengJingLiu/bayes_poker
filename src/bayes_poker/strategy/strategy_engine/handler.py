@@ -22,6 +22,7 @@ def create_strategy_handler(
     strategy_name: str | None = None,
     strategy_names: tuple[str, ...] | None = None,
     pool_prior_strength: float = 20.0,
+    enable_global_raise_blending: bool = True,
 ) -> StrategyHandler:
     """创建 strategy_engine v2 的公开 handler.
 
@@ -34,6 +35,7 @@ def create_strategy_handler(
         strategy_name: 单个策略源名称.
         strategy_names: 多个策略源名称.
         pool_prior_strength: 池化先验强度.
+        enable_global_raise_blending: 是否启用全局加注频率混合.
 
     Returns:
         可调用的策略处理器.
@@ -49,5 +51,6 @@ def create_strategy_handler(
             strategy_name=strategy_name,
             strategy_names=strategy_names,
             pool_prior_strength=pool_prior_strength,
+            enable_global_raise_blending=enable_global_raise_blending,
         )
     )

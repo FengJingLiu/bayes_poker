@@ -39,6 +39,7 @@ class StrategyEngineConfig:
     strategy_name: str | None = None
     strategy_names: tuple[str, ...] | None = None
     pool_prior_strength: float = 20.0
+    enable_global_raise_blending: bool = True
 
 
 class StrategyEngine:
@@ -107,7 +108,10 @@ def build_strategy_engine(config: StrategyEngineConfig) -> StrategyEngine:
         repository_adapter=repository_adapter,
         stats_adapter=stats_adapter,
         source_id=source_ids,
-        config=OpponentPipelineConfig(table_type=config.table_type),
+        config=OpponentPipelineConfig(
+            table_type=config.table_type,
+            enable_global_raise_blending=config.enable_global_raise_blending,
+        ),
     )
     hero_resolver = HeroGtoResolver(
         repository_adapter=repository_adapter,
