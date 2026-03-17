@@ -101,11 +101,9 @@ def test_top_level_strategy_exports_point_to_v2() -> None:
         StrategyHandler,
         StrategyEngine,
         create_strategy_handler,
-        create_preflop_strategy,
     )
 
     assert StrategyDecision is not None
     assert StrategyHandler is not None
     assert StrategyEngine is not None
     assert create_strategy_handler is not None
-    assert create_preflop_strategy is not None

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from bayes_poker.domain.table import Position
-from bayes_poker.strategy.preflop_engine.state import ActionFamily as LegacyActionFamily
+from bayes_poker.strategy.strategy_engine.core_types import ActionFamily
 from bayes_poker.strategy.preflop_parse.loader import (
     build_preflop_strategy_db,
     open_preflop_strategy_repository,
@@ -44,7 +44,7 @@ def _make_node_record(
         history_token_count=2,
         acting_position="CO",
         source_file="test.json",
-        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.CO,
         aggressor_position=Position.UTG,
         call_count=1,
