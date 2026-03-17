@@ -12,7 +12,7 @@ from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.models import PlayerStats, StatValue
 from bayes_poker.player_metrics.params import PreFlopParams
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
-from bayes_poker.strategy.preflop_engine.state import ActionFamily as LegacyActionFamily
+from bayes_poker.strategy.strategy_engine.core_types import ActionFamily
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
     ParsedStrategyNodeRecord,
@@ -66,7 +66,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         history_token_count=0,
         acting_position="UTG",
         source_file="test.json",
-        action_family=LegacyActionFamily.OPEN,
+        action_family=ActionFamily.OPEN,
         actor_position=Position.UTG,
         aggressor_position=None,
         call_count=0,
@@ -83,7 +83,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         history_token_count=1,
         acting_position="UTG",
         source_file="test.json",
-        action_family=LegacyActionFamily.OPEN,
+        action_family=ActionFamily.OPEN,
         actor_position=Position.UTG,
         aggressor_position=None,
         call_count=0,
@@ -100,7 +100,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         history_token_count=1,
         acting_position="HJ",
         source_file="test.json",
-        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.HJ,
         aggressor_position=Position.UTG,
         call_count=0,
@@ -117,7 +117,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         history_token_count=3,
         acting_position="SB",
         source_file="test.json",
-        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.SB,
         aggressor_position=Position.UTG,
         call_count=1,
@@ -134,7 +134,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         history_token_count=3,
         acting_position="BB",
         source_file="test.json",
-        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.BB,
         aggressor_position=Position.UTG,
         call_count=1,

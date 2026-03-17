@@ -8,7 +8,7 @@ import pytest
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player, PlayerAction, Position
-from bayes_poker.strategy.preflop_engine.state import ActionFamily as LegacyActionFamily
+from bayes_poker.strategy.strategy_engine.core_types import ActionFamily
 from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyActionRecord,
     ParsedStrategyNodeRecord,
@@ -53,7 +53,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         history_token_count=0,
         acting_position="UTG",
         source_file="test.json",
-        action_family=LegacyActionFamily.OPEN,
+        action_family=ActionFamily.OPEN,
         actor_position=Position.UTG,
         aggressor_position=None,
         call_count=0,
@@ -70,7 +70,7 @@ def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]
         history_token_count=2,
         acting_position="CO",
         source_file="test.json",
-        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.CO,
         aggressor_position=Position.UTG,
         call_count=1,
@@ -339,7 +339,7 @@ def test_hero_resolver_prefers_runtime_source_ids_order(tmp_path: Path) -> None:
         history_token_count=1,
         acting_position="UTG",
         source_file="test.json",
-        action_family=LegacyActionFamily.OPEN,
+        action_family=ActionFamily.OPEN,
         actor_position=Position.UTG,
         aggressor_position=None,
         call_count=0,
@@ -356,7 +356,7 @@ def test_hero_resolver_prefers_runtime_source_ids_order(tmp_path: Path) -> None:
         history_token_count=1,
         acting_position="UTG",
         source_file="test.json",
-        action_family=LegacyActionFamily.OPEN,
+        action_family=ActionFamily.OPEN,
         actor_position=Position.UTG,
         aggressor_position=None,
         call_count=0,
@@ -509,7 +509,7 @@ def test_hero_resolver_matches_acted_history_actions_first(tmp_path: Path) -> No
         history_token_count=2,
         acting_position="CO",
         source_file="test.json",
-        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.CO,
         aggressor_position=Position.UTG,
         call_count=1,
@@ -526,7 +526,7 @@ def test_hero_resolver_matches_acted_history_actions_first(tmp_path: Path) -> No
         history_token_count=2,
         acting_position="CO",
         source_file="test.json",
-        action_family=LegacyActionFamily.CALL_VS_OPEN,
+        action_family=ActionFamily.CALL_VS_OPEN,
         actor_position=Position.CO,
         aggressor_position=Position.UTG,
         call_count=1,
