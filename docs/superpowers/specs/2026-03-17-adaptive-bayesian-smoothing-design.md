@@ -49,8 +49,8 @@ confidence = total_samples / (total_samples + confidence_k)
   → opponent_pipeline(忽略confidence)
 
 修改后:
-  stats_adapter计算adaptive_k → repo.get(k=adaptive_k) → smoothed_stats
-  → stats_adapter(附加global_pfr/vpip) → node_stats(含confidence+全局信号)
+  stats_adapter计算adaptive_k → repo.get_with_raw(k=adaptive_k) → (raw_stats, smoothed_stats)
+  → stats_adapter(从raw提取confidence+附加global_pfr/vpip) → node_stats(含raw_confidence+全局信号)
   → opponent_pipeline(用confidence混合节点+全局信号)
 ```
 
@@ -66,7 +66,6 @@ def _compute_adaptive_prior_strength(
     player_stats: PlayerStats,
     base_strength: float = 20.0,
     min_strength: float = 2.0,
-    max_strength: float = 40.0,
     reference_hands: float = 200.0,
 ) -> float:
     """根据玩家全局手牌量自适应调整 pool_prior_strength.
@@ -78,7 +77,6 @@ def _compute_adaptive_prior_strength(
         player_stats: 玩家统计数据.
         base_strength: 基础先验强度, 默认 20.0.
         min_strength: 最小先验强度下界, 默认 2.0.
-        max_strength: 最大先验强度上界, 默认 40.0.
         reference_hands: 参考手牌数, 达到此数时 k 减半, 默认 200.
 
     Returns:
@@ -86,7 +84,7 @@ def _compute_adaptive_prior_strength(
     """
     total_hands = player_stats.vpip.total
     adaptive_k = base_strength / (1.0 + total_hands / reference_hands)
-    return max(min_strength, min(max_strength, adaptive_k))
+    return max(min_strength, adaptive_k)
 ```
 
 **参数行为**:
@@ -99,11 +97,51 @@ def _compute_adaptive_prior_strength(
 | 500         | 5.7       | 玩家数据占主导 |
 | 1000        | 3.3       | 接近最小值 |
 
-**修改流程**: `load()` 方法改为两步:
+以上为初始可调参数, 需实测验证后确定最优值。
 
-1. 先获取 raw `PlayerStats`(不平滑, `smooth_with_pool=False`)
-2. 计算 `adaptive_k = _compute_adaptive_prior_strength(raw_stats)`
-3. 再获取平滑后的 `PlayerStats`(使用 `pool_prior_strength=adaptive_k`)
+**修改流程**: `load()` 方法改为四步:
+
+1. 调用 `_load_player_stats(smooth_with_pool=False)` 获取 raw_stats (仅用于读取 `vpip.total`)
+2. 计算 `adaptive_k = _compute_adaptive_prior_strength(raw_stats)`, 基于全局手牌量
+3. 调用 `repo.get_with_raw(player_name, table_type, pool_prior_strength=adaptive_k)` 获取 (raw_stats, smoothed_stats)
+4. 从 raw_stats 提取 raw node `total_samples` 计算 `raw_confidence`; 用 smoothed stats 的概率 + raw confidence + 全局 PFR/VPIP 组装 `PlayerNodeStats`
+
+> 注: 步骤 1 和步骤 3 都会读取 raw_stats, 但步骤 1 仅为获取 `vpip.total` 计算 adaptive_k.
+> 优化: 可考虑让 `get_with_raw()` 内部先返回 raw_stats, 由调用方计算 adaptive_k 后再触发 smoothing.
+> 或者更简单地: 由于 `vpip.total` 无需 smoothing 即可获取, 步骤 1 可直接从缓存或轻量级查询获得.
+
+### 第 1.5 层: Repository 接口扩展
+
+**修改文件**: `src/bayes_poker/strategy/strategy_engine/stats_adapter.py` (使用端)
+和 `src/bayes_poker/player_metrics/player_stats_repository.py` (提供端)
+
+**新增方法**: `player_stats_repository.get_with_raw()`
+
+```python
+def get_with_raw(
+    self,
+    player_name: str,
+    table_type: TableType,
+    *,
+    pool_prior_strength: float = 20.0,
+) -> tuple[PlayerStats | None, PlayerStats | None]:
+    """一次读取, 同时返回 (raw_stats, smoothed_stats).
+    
+    避免 stats_adapter 需要两次调用 get() 的性能问题.
+    内部复用 _get_raw() 和 _smooth_player_stats_with_pool().
+    
+    Args:
+        player_name: 玩家名称.
+        table_type: 牌桌类型.
+        pool_prior_strength: 平滑时使用的先验强度.
+    
+    Returns:
+        元组 (raw_stats, smoothed_stats), 若玩家不存在则返回 (None, None).
+    """
+```
+
+通过此接口一次性获取 raw stats（用于 confidence 计算）和 smoothed stats（用于节点级概率）,
+避免重复数据库读取和反序列化。
 
 ### 第 2 层: 全局 PFR 补偿信号
 
@@ -127,7 +165,7 @@ class PlayerNodeStats:
 ```
 
 `stats_adapter.load()` 负责计算并填充这三个字段.
-`global_pfr` 通过 `builder.calculate_pfr(player_stats)` 获取.
+`global_pfr` 通过 `builder.calculate_pfr(raw_stats)` 获取 (positive, total) 元组后安全换算: pfr = positive / total if total > 0 else 0.0. 注意: 此值必须基于 raw stats 计算.
 `global_vpip` 通过 `player_stats.vpip.to_float()` 获取.
 
 #### 2b. opponent_pipeline 混合逻辑
@@ -136,24 +174,18 @@ class PlayerNodeStats:
 
 ```python
 # 原逻辑: target_frequency = stats_frequency (纯节点级)
-# 新逻辑: 用 confidence 混合节点级 + 全局信号
+# 新逻辑: 仅对 aggressive action 用 confidence 混合节点级 + 全局 PFR
 
-node_confidence = node_stats.confidence
-
-if action_type == "raise":
+if action_type in ("raise", "bet", "all_in"):
+    node_confidence = node_stats.confidence
     global_signal = node_stats.global_pfr
-elif action_type == "fold":
-    global_signal = 1.0 - node_stats.global_vpip
-else:  # call
-    global_signal = node_stats.global_vpip - node_stats.global_pfr
-
-# 确保 global_signal 非负
-global_signal = max(0.0, global_signal)
-
-target_frequency = (
-    node_confidence * stats_frequency
-    + (1.0 - node_confidence) * global_signal
-)
+    target_frequency = (
+        node_confidence * stats_frequency
+        + (1.0 - node_confidence) * global_signal
+    )
+else:
+    # v1: fold/call 继续用节点级统计, 不做全局补偿
+    target_frequency = stats_frequency
 ```
 
 **效果**:
@@ -163,14 +195,13 @@ target_frequency = (
 | bcsilva | 0.168 | 0.33 | 0.25 | 0.33×0.25 + 0.67×0.168 = 0.195 |
 | Ivan_87 | 0.546 | 0.37 | 0.27 | 0.37×0.27 + 0.63×0.546 = 0.444 |
 
-两者产生显著不同的 target_frequency, 问题解决.
+两者产生显著不同的 target_frequency, 问题解决. v1 仅补偿 aggressive action, 后续版本可扩展到 fold/call.
 
 ## 不修改的文件
 
 | 文件 | 原因 |
 |------|------|
 | `posterior.py` | 平滑算法本身正确, 问题在输入参数 |
-| `player_stats_repository.py` | 已支持动态 `pool_prior_strength` 参数 |
 | `hero_resolver.py` | 下游消费者, 上游修好后自然受益 |
 | `models.py` | `PlayerStats`/`ActionStats` 结构不变 |
 
@@ -185,8 +216,7 @@ class PlayerNodeStatsAdapterConfig:
     confidence_k: float = 20.0              # confidence 计算参数(现有)
     adaptive_reference_hands: float = 200.0  # 新增: 手牌参考量
     adaptive_min_strength: float = 2.0       # 新增: 最小先验强度
-    adaptive_max_strength: float = 40.0      # 新增: 最大先验强度
-    use_global_pfr_补偿: bool = True         # 新增: 是否启用全局PFR补偿
+    enable_global_raise_blending: bool = True  # 新增: 是否启用全局PFR补偿
 ```
 
 ## 测试策略
@@ -196,23 +226,26 @@ class PlayerNodeStatsAdapterConfig:
 1. `test_compute_adaptive_prior_strength`: 验证不同手牌量下返回正确的 k 值
 2. `test_player_node_stats_global_fields`: 验证新字段正确填充
 3. `test_global_pfr_blending`: 验证混合公式在各种 confidence 下的行为
+4. `test_confidence_uses_raw_not_smoothed_samples`: 验证 confidence 基于 raw node samples 而非 smoothed pseudo-counts
+5. `test_high_hands_sparse_node`: 高总手数(1000+)但目标节点稀疏(<5 samples)时的行为
+6. `test_global_pfr_zero_denominator`: total=0 时 pfr fallback 为 0.0
+7. `test_feature_flag_disabled_regression`: `enable_global_raise_blending=False` 时行为与旧逻辑完全一致
 
 ### 集成测试
 
-4. **修改现有测试**: `test_3bet_different_opponent_style_combos_produce_different_hero_strategy`
-   - 验证 bcsilva 和 Ivan_87 现在产生**不同**的 posterior range
-   - 验证不同 3bettor 风格确实影响 Hero 策略
+8. `test_3bet_different_opponent_style_combos_produce_different_hero_strategy`: 验证 bcsilva 和 Ivan_87 现在产生**不同**的 posterior range, 验证不同 3bettor 风格确实影响 Hero 策略
+9. `test_population_fallback_unchanged`: 无玩家数据时 population fallback 行为不变
 
 ### 回归测试
 
-5. 确保 0 手牌玩家(纯 pool 先验)行为不变
-6. 确保现有全部测试通过
+10. 确保 0 手牌玩家(纯 pool 先验)行为不变
+11. 确保现有全部测试通过
 
 ## 风险与缓解
 
 | 风险 | 缓解措施 |
 |------|---------|
-| 修改平滑强度影响所有玩家 posterior | 全量回归测试 + min/max 限制 |
+| 修改平滑强度影响所有玩家 posterior | 全量回归测试 + min 限制 |
 | reference_hands=200 可能不适合所有场景 | 参数化配置, 可通过 Config 调整 |
 | 全局 PFR 作为节点级代理不够精确 | 仅在 confidence 低时使用, confidence 高时节点数据主导 |
-| call 的全局信号 (VPIP-PFR) 可能为负 | 用 `max(0.0, ...)` 兜底 |
+| v1 仅补偿 aggressive action, 后续版本可扩展到 fold/call | 设计已明确 v1 范围, 后续迭代增加功能 |
