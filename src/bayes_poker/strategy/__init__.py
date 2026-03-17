@@ -14,13 +14,6 @@ _EXPORT_MODULES: dict[str, str] = {
     "StrategyEngine": "bayes_poker.strategy.strategy_engine",
     "StrategyEngineConfig": "bayes_poker.strategy.strategy_engine",
     "create_strategy_handler": "bayes_poker.strategy.strategy_engine",
-    "PreflopLayer": "bayes_poker.strategy.runtime",
-    "PreflopRuntimeConfig": "bayes_poker.strategy.runtime",
-    "create_preflop_strategy": "bayes_poker.strategy.runtime",
-    "create_preflop_strategy_from_directory": "bayes_poker.strategy.runtime",
-    "create_postflop_strategy": "bayes_poker.strategy.runtime",
-    "infer_preflop_layer": "bayes_poker.strategy.runtime",
-    "load_preflop_strategy_from_directory": "bayes_poker.strategy.runtime",
     "STRATEGY_VECTOR_LENGTH": "bayes_poker.strategy.preflop_parse",
     "PreflopStrategy": "bayes_poker.strategy.preflop_parse",
     "StrategyAction": "bayes_poker.strategy.preflop_parse",
@@ -33,8 +26,6 @@ _EXPORT_MODULES: dict[str, str] = {
     "parse_strategy_file": "bayes_poker.strategy.preflop_parse",
     "parse_strategy_node": "bayes_poker.strategy.preflop_parse",
     "split_history_tokens": "bayes_poker.strategy.preflop_parse",
-    "OpponentRangePredictor": "bayes_poker.strategy.opponent_range",
-    "create_opponent_range_predictor": "bayes_poker.strategy.opponent_range",
 }
 
 __all__ = list(_EXPORT_MODULES)
