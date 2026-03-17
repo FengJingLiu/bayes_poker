@@ -66,7 +66,8 @@ strategy/
 3. **Hero 推荐生成阶段 (`HeroGtoResolver.resolve`)**
    - 构建 Hero 当前状态的 NodeContext。
    - `StrategyNodeMapper.map_node_context` -> `GtoPriorBuilder.build_policy` 获取当前 Hero 节点的 GTO 策略环境。
-   - 当前版本仅基于 Hero 节点自身 GTO 先验选取 `RecommendationDecision`。
+   - 通过 `_adjust_hero_policy` 根据对手激进度统计做贝叶斯调整, 产出调整后策略。
+   - `_extract_adjusted_belief_ranges` 从调整后策略中提取 `action_code -> PreflopRange` 映射, 填充到 `RecommendationDecision.adjusted_belief_ranges` 字段。
    - TODO: 后续恢复未行动玩家 `stats vs gto` 启发式调节链路。
    - `range_breakdown` 仅包含已计算 posterior 的对手范围。
 

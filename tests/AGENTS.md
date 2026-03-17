@@ -77,8 +77,8 @@
     - 适用场景: `build_facing_3bet_state` 内部使用。
 
  9. `load_gtoplus_ranges_for_decision(engine, decision, min_strategy) -> dict[str, str]`
-   - 功能: 通过 `RecommendationDecision.selected_node_id` 回查节点动作, 导出 `action_code -> GTO+` 文本。
-   - 适用场景: 对比不同玩家画像下的动作范围差异。
+   - 功能: 导出 `action_code -> GTO+` 文本。优先使用 `decision.adjusted_belief_ranges` 中经贝叶斯调整后的 belief_range; 仅当该字段为空时回退到通过 `selected_node_id` 回查数据库原始范围。
+   - 适用场景: 对比不同玩家画像下的动作范围差异（调整后范围会随对手统计数据变化）。
 
 10. `write_gtoplus_exports(output_dir, snapshot) -> None`
     - 功能: 将单个快照中的各动作范围写出为 GTO+ 文本文件。
