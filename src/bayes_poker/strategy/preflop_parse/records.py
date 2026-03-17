@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from bayes_poker.domain.table import Position
-from bayes_poker.strategy.preflop_engine.state import ActionFamily
+from bayes_poker.strategy.strategy_engine.core_types import ActionFamily
 from bayes_poker.strategy.range import PreflopRange
 
 
