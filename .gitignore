@@ -28,3 +28,6 @@ all_py_files.txt
 tests/fixtures
 
 *.sqlite
+
+# Tools
+.sisyphus/
