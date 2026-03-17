@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 if TYPE_CHECKING:
+    from bayes_poker.strategy.range import PreflopRange
     from bayes_poker.table.observed_state import ObservedTableState
 
 
@@ -27,6 +28,12 @@ class RecommendationDecision:
     sampling_random: float | None = None
     range_breakdown: dict[str, float] = field(default_factory=dict)
     opponent_aggression_details: list[dict[str, object]] = field(default_factory=list)
+    adjusted_belief_ranges: dict[str, PreflopRange] = field(default_factory=dict)
+    """对手激进度调整后的 belief_range 映射, action_code -> PreflopRange.
+
+    由 ``_adjust_hero_policy`` 产出, 用于测试侧导出调整后的 GTO+ 范围.
+    当未经调整或字段为空时, 消费方应回退到数据库原始范围.
+    """
     kind: Literal["recommendation"] = "recommendation"
 
 

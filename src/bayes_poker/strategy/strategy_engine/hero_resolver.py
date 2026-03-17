@@ -143,6 +143,7 @@ class HeroGtoResolver:
                 action_distribution=action_distribution,
                 random_value=random_value,
             )
+            adjusted_belief_ranges = _extract_adjusted_belief_ranges(adjusted_policy)
             return RecommendationDecision(
                 state_version=observed_state.state_version,
                 action_code=sampled_action.action_name,
@@ -168,6 +169,7 @@ class HeroGtoResolver:
                     for seat, player_range in session_context.player_ranges.items()
                 },
                 opponent_aggression_details=opponent_details,
+                adjusted_belief_ranges=adjusted_belief_ranges,
             )
         except ValueError as exc:
             return UnsupportedScenarioDecision(
@@ -345,6 +347,24 @@ def _assert_acted_opponents_have_posterior(
             "hero 决策前存在未完成后验范围计算的已行动玩家: "
             + ",".join(str(seat) for seat in missing_seats)
         )
+
+
+def _extract_adjusted_belief_ranges(
+    policy: GtoPriorPolicy,
+) -> dict[str, PreflopRange]:
+    """从调整后策略中提取 belief_range 映射.
+
+    Args:
+        policy: 经 ``_adjust_hero_policy`` 调整后的 GTO 策略.
+
+    Returns:
+        ``action_code -> PreflopRange`` 映射; 只包含有 belief_range 的动作.
+    """
+    result: dict[str, PreflopRange] = {}
+    for action in policy.actions:
+        if action.belief_range is not None:
+            result[action.action_name] = action.belief_range
+    return result
 
 
 def _build_action_distribution(policy: GtoPriorPolicy) -> dict[str, float]:

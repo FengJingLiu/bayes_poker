@@ -1222,6 +1222,9 @@ def load_gtoplus_ranges_for_decision(
 ) -> dict[str, str]:
     """根据推荐结果读取节点动作范围并导出 GTO+ 文本。
 
+    优先使用 ``decision.adjusted_belief_ranges`` 中经对手激进度调整后的
+    belief_range; 仅当该字段为空或某动作缺少调整范围时, 回退到数据库原始范围.
+
     Args:
         engine: StrategyEngine 实例。
         decision: Hero 推荐决策。
@@ -1237,6 +1240,16 @@ def load_gtoplus_ranges_for_decision(
     if decision.selected_node_id is None:
         raise AssertionError("RecommendationDecision 缺少 selected_node_id。")
 
+    adjusted = decision.adjusted_belief_ranges
+
+    if adjusted:
+        gtoplus_by_action: dict[str, str] = {}
+        for action_code, preflop_range in adjusted.items():
+            gtoplus_by_action[action_code] = preflop_range.to_gtoplus(
+                min_strategy=min_strategy,
+            )
+        return gtoplus_by_action
+
     actions_by_node = engine._hero_resolver._repository_adapter.load_actions(
         (decision.selected_node_id,)
     )
@@ -1246,7 +1259,7 @@ def load_gtoplus_ranges_for_decision(
             f"节点动作为空, 无法导出 GTO+。node_id={decision.selected_node_id}"
         )
 
-    gtoplus_by_action: dict[str, str] = {}
+    gtoplus_by_action = {}
     for action_option in action_options:
         gtoplus_by_action[action_option.action_code] = (
             action_option.preflop_range.to_gtoplus(min_strategy=min_strategy)
