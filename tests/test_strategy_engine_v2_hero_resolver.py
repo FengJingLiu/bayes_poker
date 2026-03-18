@@ -132,6 +132,121 @@ def _build_players_for_call() -> list[Player]:
     ]
 
 
+def _build_players_for_facing_3bet_reentry() -> list[Player]:
+    """构造 Hero open 后 facing 3-bet 再次决策的玩家列表。"""
+
+    return [
+        Player(0, "btn", 100.0, 0.0, Position.BTN, is_folded=True),
+        Player(1, "sb", 99.5, 0.5, Position.SB, is_folded=True),
+        Player(2, "bb", 99.0, 1.0, Position.BB, is_folded=True),
+        Player(3, "hero", 97.5, 2.5, Position.UTG),
+        Player(4, "villain", 92.0, 8.0, Position.MP),
+        Player(5, "co", 100.0, 0.0, Position.CO, is_folded=True),
+    ]
+
+
+def _build_hero_open_facing_3bet_state() -> ObservedTableState:
+    """构造 Hero open 后遭遇 3-bet 并重新轮到 Hero 的状态。"""
+
+    return ObservedTableState(
+        table_id="t-reentry",
+        player_count=6,
+        small_blind=0.5,
+        big_blind=1.0,
+        hand_id="h-reentry",
+        street=Street.PREFLOP,
+        btn_seat=0,
+        actor_seat=3,
+        hero_seat=3,
+        players=_build_players_for_facing_3bet_reentry(),
+        action_history=[
+            PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP),
+            PlayerAction(4, ActionType.RAISE, 8.0, Street.PREFLOP),
+            PlayerAction(5, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(0, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(1, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(2, ActionType.FOLD, 0.0, Street.PREFLOP),
+        ],
+        state_version=1,
+    )
+
+
+def _make_strategy_repo_with_facing_3bet_node(
+    tmp_path: Path,
+) -> tuple[StrategyRepositoryAdapter, int]:
+    """构造包含 facing 3-bet reentry 节点的最小策略仓库。"""
+
+    repo = PreflopStrategyRepository(tmp_path / "preflop_strategy_reentry.db")
+    repo.connect()
+    source_id = repo.upsert_source(
+        strategy_name="HeroFacing3Bet",
+        source_dir="/tmp/HeroFacing3Bet",
+        format_version=2,
+    )
+    matched_node = ParsedStrategyNodeRecord(
+        stack_bb=100,
+        history_full="R2.5-R8-F-F-F-F",
+        history_actions="R-R-F-F-F-F",
+        history_token_count=6,
+        acting_position="UTG",
+        source_file="test.json",
+        action_family=ActionFamily.OPEN,
+        actor_position=Position.UTG,
+        aggressor_position=Position.MP,
+        call_count=0,
+        limp_count=0,
+        raise_time=2,
+        pot_size=12.0,
+        raise_size_bb=8.0,
+        is_in_position=False,
+    )
+    unmatched_node = ParsedStrategyNodeRecord(
+        stack_bb=100,
+        history_full="UNMATCHED_REENTRY",
+        history_actions="",
+        history_token_count=0,
+        acting_position="UTG",
+        source_file="test.json",
+        action_family=ActionFamily.OPEN,
+        actor_position=Position.UTG,
+        aggressor_position=Position.MP,
+        call_count=0,
+        limp_count=0,
+        raise_time=2,
+        pot_size=12.0,
+        raise_size_bb=8.0,
+        is_in_position=False,
+    )
+    matched_node_id = repo.insert_node(source_id=source_id, node_record=matched_node)
+    unmatched_node_id = repo.insert_node(
+        source_id=source_id,
+        node_record=unmatched_node,
+    )
+    for node_id in (matched_node_id, unmatched_node_id):
+        repo.insert_actions(
+            node_id=node_id,
+            action_records=(
+                ParsedStrategyActionRecord(
+                    0,
+                    "F",
+                    "FOLD",
+                    None,
+                    False,
+                    1.0,
+                    "",
+                    PreflopRange.zeros(),
+                    0.0,
+                    0.0,
+                ),
+            ),
+        )
+    repo.close()
+
+    adapter = StrategyRepositoryAdapter(tmp_path / "preflop_strategy_reentry.db")
+    adapter.connect()
+    return adapter, source_id
+
+
 def _build_session_context() -> StrategySessionContext:
     return _build_session_context_with_posterior_seats()
 
@@ -278,6 +393,31 @@ def test_hero_no_match_returns_unsupported(tmp_path: Path) -> None:
     )
 
     assert isinstance(decision, UnsupportedScenarioDecision)
+
+    adapter.close()
+
+
+def test_hero_resolver_supports_facing_3bet_reentry(tmp_path: Path) -> None:
+    """Hero reentry 到 facing 3-bet 节点时应匹配完整翻前历史。"""
+
+    adapter, source_id = _make_strategy_repo_with_facing_3bet_node(tmp_path)
+    resolver = HeroGtoResolver(
+        repository_adapter=adapter,
+        source_id=source_id,
+        random_generator=random.Random(0),
+    )
+    observed_state = _build_hero_open_facing_3bet_state()
+    session_context = _build_session_context_with_posterior_seats(
+        posterior_seats=(4,),
+    )
+
+    decision = resolver.resolve(
+        observed_state=observed_state,
+        session_context=session_context,
+    )
+
+    assert isinstance(decision, RecommendationDecision)
+    assert "matched_history=R2.5-R8-F-F-F-F" in decision.notes
 
     adapter.close()
 
@@ -881,17 +1021,17 @@ class TestComputeOpponentAggressionRatio:
         assert len(result[1]) == 2
 
     def test_clamp_upper_bound(self) -> None:
-        """极端宽范围对手的比值被 clamp 到 5.0."""
+        """极端宽范围的仍存活对手比值被 clamp 到 5.0."""
         ctx = _build_session_with_opponent_data(
             seat=3,
             prior_frequency=0.01,
-            matched_action_type="fold",
+            matched_action_type="raise",
             posterior_total_freq=0.80,
         )
         observed = _build_observed_state_for_aggression(
             hero_seat=5,
             action_history=[
-                PlayerAction(3, ActionType.FOLD, 0.0, Street.PREFLOP),
+                PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP),
             ],
         )
         ratio, details = _compute_opponent_aggression_ratio(

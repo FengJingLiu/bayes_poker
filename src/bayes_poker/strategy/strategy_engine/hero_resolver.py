@@ -246,37 +246,21 @@ def _normalize_source_ids(
 def _collect_acted_live_opponent_seats(
     observed_state: ObservedTableState,
 ) -> tuple[int, ...]:
-    """收集 hero 首次行动前已行动且仍在局中的对手座位。
+    """收集当前决策点前已行动且仍存活的对手座位。
 
     Args:
         observed_state: 当前观测状态.
 
     Returns:
-        以行动顺序去重后的对手座位元组.
+        按最近一次动作索引升序排列的对手座位元组.
     """
 
-    hero_seat = observed_state.hero_seat
-    live_seats = {
-        player.seat_index
-        for player in observed_state.players
-        if player.seat_index != hero_seat and not player.is_folded
-    }
-
-    acted_live_seats: list[int] = []
-    seen_seats: set[int] = set()
-    for action in observed_state.action_history:
-        if action.player_index == hero_seat:
-            break
-        current_seat = action.player_index
-        if current_seat not in live_seats or current_seat in seen_seats:
-            continue
-        acted_live_seats.append(current_seat)
-        seen_seats.add(current_seat)
-    return tuple(acted_live_seats)
+    last_actions = observed_state.get_live_opponent_last_action_indices_before_current_turn()
+    return tuple(seat for seat, _ in last_actions)
 
 
 def _build_acted_history_actions(observed_state: ObservedTableState) -> str:
-    """构建 hero 首次行动前的行动线签名。
+    """构建当前决策点之前的翻前行动线签名。
 
     Args:
         observed_state: 当前观测状态。
@@ -285,33 +269,7 @@ def _build_acted_history_actions(observed_state: ObservedTableState) -> str:
         以 `-` 拼接的行动线签名, 例如 `R-C`。
     """
 
-    history_tokens: list[str] = []
-    for action in observed_state.action_history:
-        if action.player_index == observed_state.hero_seat:
-            break
-        if action.street != Street.PREFLOP:
-            continue
-        history_tokens.append(
-            _normalize_action_type_to_history_token(action.action_type)
-        )
-    return "-".join(history_tokens)
-
-
-def _normalize_action_type_to_history_token(action_type: ActionType) -> str:
-    """把动作类型归一为历史签名 token。
-
-    Args:
-        action_type: 动作类型。
-
-    Returns:
-        归一化后的 token, 取值为 `F`、`C`、`R`。
-    """
-
-    if action_type == ActionType.FOLD:
-        return "F"
-    if action_type in {ActionType.CALL, ActionType.CHECK}:
-        return "C"
-    return "R"
+    return observed_state.get_preflop_history_tokens_before_current_turn()
 
 
 def _assert_acted_opponents_have_posterior(
