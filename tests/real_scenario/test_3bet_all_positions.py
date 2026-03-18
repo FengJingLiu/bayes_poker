@@ -1,7 +1,8 @@
-"""真实场景: 3-Bet 全位置组合覆盖测试。
+"""真实场景: 3-Bet 全位置组合覆盖测试 (G5 贝叶斯路径)。
 
 Hero 遍历所有可能位置, opener 和 3bettor 遍历所有合法位置组合,
-验证 StrategyEngine 对每种组合均能返回合法的 RecommendationDecision。
+使用 G5 OpponentEstimator 贝叶斯后验路径验证 StrategyEngine
+对每种组合均能返回合法的 RecommendationDecision, 并将 hero 范围变化导出 CSV。
 
 6-max 翻前行动顺序: UTG -> MP -> CO -> BTN -> SB -> BB
 合法 3-Bet 组合共 20 种 (opener < 3bettor < hero, 按行动顺序):
@@ -20,6 +21,7 @@ Hero 遍历所有可能位置, opener 和 3bettor 遍历所有合法位置组合
 from __future__ import annotations
 
 import asyncio
+import csv
 from pathlib import Path
 
 import pytest
@@ -44,6 +46,12 @@ from .helpers import (
     write_gtoplus_exports,
 )
 
+# ---------------------------------------------------------------------------
+# 常量
+# ---------------------------------------------------------------------------
+
+_CSV_OUTPUT_DIR: Path = Path(__file__).resolve().parents[2] / "data" / "reports"
+
 
 def _3bet_combo_id(combo: tuple[Position, Position, Position]) -> str:
     """为 pytest parametrize 生成可读的 3-Bet 测试 ID。
@@ -58,6 +66,75 @@ def _3bet_combo_id(combo: tuple[Position, Position, Position]) -> str:
     return f"{opener.value}_open-{three_bettor.value}_3bet-hero_{hero.value}"
 
 
+# ---------------------------------------------------------------------------
+# CSV 导出
+# ---------------------------------------------------------------------------
+
+
+def _write_3bet_hero_range_csv(
+    all_snapshots: dict[str, list[HeroStrategySnapshot]],
+    output_path: Path,
+) -> None:
+    """将 3-Bet 场景下 hero 范围变化写入 CSV 文件。
+
+    Args:
+        all_snapshots: combo_key -> snapshot 列表映射。
+        output_path: 输出 CSV 路径。
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    all_action_codes: set[str] = set()
+    for snapshots in all_snapshots.values():
+        for snap in snapshots:
+            all_action_codes |= set(snap.prior_action_distribution)
+            all_action_codes |= set(snap.action_distribution)
+    sorted_actions = sorted(all_action_codes)
+
+    header = [
+        "combo",
+        "player_name",
+        "total_hands",
+        "pfr_pct",
+        "node_id",
+        "source_id",
+    ]
+    for ac in sorted_actions:
+        header.extend([f"prior_{ac}", f"posterior_{ac}", f"delta_{ac}"])
+
+    rows: list[list[str | float | int]] = []
+    for combo_key, snapshots in all_snapshots.items():
+        for snap in snapshots:
+            row: list[str | float | int] = [
+                combo_key,
+                snap.player_name,
+                snap.total_hands,
+                round(snap.pfr_pct, 4),
+                snap.selected_node_id,
+                snap.selected_source_id,
+            ]
+            for ac in sorted_actions:
+                prior = snap.prior_action_distribution.get(ac, 0.0)
+                posterior = snap.action_distribution.get(ac, 0.0)
+                row.extend([
+                    round(prior, 6),
+                    round(posterior, 6),
+                    round(posterior - prior, 6),
+                ])
+            rows.append(row)
+
+    with open(output_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+    print(f"\n[CSV] 3-Bet hero 范围变化已写入: {output_path} ({len(rows)} 行)")
+
+
+# ---------------------------------------------------------------------------
+# 测试: 单组合验证 (G5 路径)
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.large_sample
 @pytest.mark.parametrize(
     "three_bet_combo",
@@ -65,17 +142,17 @@ def _3bet_combo_id(combo: tuple[Position, Position, Position]) -> str:
     ids=[_3bet_combo_id(c) for c in ALL_3BET_COMBINATIONS_6MAX],
 )
 def test_3bet_single_combo_returns_valid_recommendation(
-    real_scenario_engine: StrategyEngine,
+    real_scenario_engine_g5: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     three_bet_combo: tuple[Position, Position, Position],
 ) -> None:
-    """验证单个 3-Bet 组合下 StrategyEngine 返回合法推荐。
+    """验证单个 3-Bet 组合下 G5 引擎返回合法推荐。
 
     对每种 (opener, 3bettor, hero) 位置组合, 使用样本玩家,
     验证 engine 能返回 RecommendationDecision 且各字段合法。
 
     Args:
-        real_scenario_engine: 真实场景 StrategyEngine fixture。
+        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         three_bet_combo: (opener, 3bettor, hero) 元组。
     """
@@ -91,9 +168,9 @@ def test_3bet_single_combo_returns_valid_recommendation(
     )
 
     decision = asyncio.run(
-        real_scenario_engine(
+        real_scenario_engine_g5(
             session_id=(
-                f"3bet_{opener_position.value}_{three_bettor_position.value}"
+                f"g5_3bet_{opener_position.value}_{three_bettor_position.value}"
                 f"_{hero_position.value}_{player_row.player_name}"
             ),
             observed_state=observed_state,
@@ -101,26 +178,31 @@ def test_3bet_single_combo_returns_valid_recommendation(
     )
 
     label = (
-        f"{opener_position.value} open -> {three_bettor_position.value} 3bet"
+        f"[G5] {opener_position.value} open -> {three_bettor_position.value} 3bet"
         f" -> hero {hero_position.value}"
     )
     assert_valid_recommendation(decision, label=label)
 
 
+# ---------------------------------------------------------------------------
+# 测试: 全组合 + 多玩家遍历, 含 GTO+ 导出 + CSV (G5 路径)
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.large_sample
-def test_3bet_all_combos_all_players_with_gtoplus_export(
-    real_scenario_engine: StrategyEngine,
+def test_3bet_all_combos_all_players_with_csv_export(
+    real_scenario_engine_g5: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     tmp_path: Path,
 ) -> None:
-    """全覆盖: 20 种 3-Bet 组合 x 3 名玩家, 验证推荐并导出 GTO+。
+    """全覆盖: 20 种 3-Bet 组合 x 3 名玩家 (G5 路径), 验证推荐并导出 CSV。
 
     对每种 (opener, 3bettor, hero) 位置组合, 遍历所有样本玩家作为 3bettor,
     验证 engine 返回 RecommendationDecision, 导出 GTO+ 范围文本,
-    并打印 prior vs posterior 对比。
+    打印 prior vs posterior 对比, 并将全部 hero 范围变化写入 CSV。
 
     Args:
-        real_scenario_engine: 真实场景 StrategyEngine fixture。
+        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         tmp_path: pytest 临时目录。
     """
@@ -154,19 +236,19 @@ def test_3bet_all_combos_all_players_with_gtoplus_export(
             )
 
             decision = asyncio.run(
-                real_scenario_engine(
-                    session_id=f"3bet_full_{combo_key}_{player_row.player_name}_{state_version}",
+                real_scenario_engine_g5(
+                    session_id=f"g5_3bet_full_{combo_key}_{player_row.player_name}_{state_version}",
                     observed_state=observed_state,
                 )
             )
 
-            label = f"{combo_key} player={player_row.player_name}"
+            label = f"[G5] {combo_key} player={player_row.player_name}"
             rec = assert_valid_recommendation(decision, label=label)
 
             snapshot = build_snapshot_from_decision(
                 player_row=player_row,
                 decision=rec,
-                engine=real_scenario_engine,
+                engine=real_scenario_engine_g5,
             )
             combo_snapshots.append(snapshot)
 
@@ -182,12 +264,21 @@ def test_3bet_all_combos_all_players_with_gtoplus_export(
     for combo_key, snapshots in all_snapshots.items():
         export_dir = tmp_path / f"3bet_gtoplus_{combo_key}"
         print(f"\n{'=' * 88}")
-        print(f"3-Bet 组合: {combo_key}")
+        print(f"[G5] 3-Bet 组合: {combo_key}")
         print(f"{'=' * 88}")
         for snapshot in snapshots:
             write_gtoplus_exports(output_dir=export_dir, snapshot=snapshot)
             print_snapshot(snapshot)
         print_pairwise_range_comparison(snapshots)
+
+    # 导出 CSV
+    csv_path = _CSV_OUTPUT_DIR / "3bet_hero_range_g5.csv"
+    _write_3bet_hero_range_csv(all_snapshots, csv_path)
+
+
+# ---------------------------------------------------------------------------
+# 测试: 同一 opener 下不同 3bettor/hero 组合差异 (G5 路径)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.large_sample
@@ -197,16 +288,16 @@ def test_3bet_all_combos_all_players_with_gtoplus_export(
     ids=["UTG", "MP", "CO", "BTN"],
 )
 def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
-    real_scenario_engine: StrategyEngine,
+    real_scenario_engine_g5: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     opener_position: Position,
 ) -> None:
-    """验证同一 opener 位置下, 不同 3bettor/hero 组合命中不同策略节点。
+    """验证同一 opener 位置下, 不同 3bettor/hero 组合命中不同策略节点 (G5 路径)。
 
     策略引擎应区分 3bettor 和 hero 所在位置, 返回不同的 node_id 或不同的动作分布。
 
     Args:
-        real_scenario_engine: 真实场景 StrategyEngine fixture。
+        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         opener_position: 固定的 opener 位置。
     """
@@ -238,9 +329,9 @@ def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
             state_version=idx,
         )
         decision = asyncio.run(
-            real_scenario_engine(
+            real_scenario_engine_g5(
                 session_id=(
-                    f"3bet_diff_{opener_position.value}"
+                    f"g5_3bet_diff_{opener_position.value}"
                     f"_{three_bettor_pos.value}_{hero_pos.value}_{idx}"
                 ),
                 observed_state=observed_state,
@@ -249,7 +340,7 @@ def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
         rec = assert_valid_recommendation(
             decision,
             label=(
-                f"{opener_position.value} open -> {three_bettor_pos.value} 3bet"
+                f"[G5] {opener_position.value} open -> {three_bettor_pos.value} 3bet"
                 f" -> hero {hero_pos.value}"
             ),
         )
@@ -259,16 +350,21 @@ def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
     unique_nodes = set(node_ids)
     unique_distributions = len({tuple(sorted(d.items())) for d in distributions})
     assert unique_nodes or unique_distributions > 1, (
-        f"{opener_position.value} open 3-Bet: "
+        f"[G5] {opener_position.value} open 3-Bet: "
         f"所有组合命中相同节点且分布完全一致, 可能存在问题。"
         f"node_ids={node_ids}"
     )
 
     print(
-        f"\n{opener_position.value} open 3-Bet -> 不同组合差异: "
+        f"\n[G5] {opener_position.value} open 3-Bet -> 不同组合差异: "
         f"unique_nodes={len(unique_nodes)}/{len(node_ids)}, "
         f"unique_distributions={unique_distributions}/{len(distributions)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 测试: 同一 hero 下不同 opener/3bettor 组合差异 (G5 路径)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.large_sample
@@ -278,16 +374,16 @@ def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
     ids=["CO", "BTN", "SB", "BB"],
 )
 def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
-    real_scenario_engine: StrategyEngine,
+    real_scenario_engine_g5: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     hero_position: Position,
 ) -> None:
-    """验证同一 hero 位置下, 不同 opener/3bettor 组合命中不同策略节点。
+    """验证同一 hero 位置下, 不同 opener/3bettor 组合命中不同策略节点 (G5 路径)。
 
     面对不同位置组合的 3-bet, hero 的策略应有差异。
 
     Args:
-        real_scenario_engine: 真实场景 StrategyEngine fixture。
+        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         hero_position: 固定的 hero 位置。
     """
@@ -317,9 +413,9 @@ def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
             state_version=idx,
         )
         decision = asyncio.run(
-            real_scenario_engine(
+            real_scenario_engine_g5(
                 session_id=(
-                    f"3bet_hero_diff_{hero_position.value}"
+                    f"g5_3bet_hero_diff_{hero_position.value}"
                     f"_{opener_pos.value}_{three_bettor_pos.value}_{idx}"
                 ),
                 observed_state=observed_state,
@@ -328,7 +424,7 @@ def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
         rec = assert_valid_recommendation(
             decision,
             label=(
-                f"{opener_pos.value} open -> {three_bettor_pos.value} 3bet"
+                f"[G5] {opener_pos.value} open -> {three_bettor_pos.value} 3bet"
                 f" -> hero {hero_position.value}"
             ),
         )
@@ -338,25 +434,30 @@ def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
     unique_nodes = set(node_ids)
     unique_distributions = len({tuple(sorted(d.items())) for d in distributions})
     assert len(unique_nodes) > 1 or unique_distributions > 1, (
-        f"hero {hero_position.value} 3-Bet: "
+        f"[G5] hero {hero_position.value} 3-Bet: "
         f"面对所有组合命中相同节点且分布完全一致, 可能存在问题。"
         f"node_ids={node_ids}"
     )
 
     print(
-        f"\nhero {hero_position.value} <- 不同 3-Bet 组合差异: "
+        f"\n[G5] hero {hero_position.value} <- 不同 3-Bet 组合差异: "
         f"unique_nodes={len(unique_nodes)}/{len(node_ids)}, "
         f"unique_distributions={unique_distributions}/{len(distributions)}"
     )
 
 
+# ---------------------------------------------------------------------------
+# 测试: 不同对手风格组合影响 hero 策略 (G5 路径)
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.large_sample
 def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
-    real_scenario_engine: StrategyEngine,
+    real_scenario_engine_g5: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """验证固定 3-Bet 位置下, 不同对手风格组合会改变 hero 策略。
+    """验证固定 3-Bet 位置下, 不同对手风格组合会改变 hero 策略 (G5 路径)。
 
     固定位置组合为 ``UTG open -> MP 3bet -> hero BB``。对 ``selected_players``
     做 ``opener x 3bettor`` 全排列 (3x3=9) 后逐一运行引擎, 验证:
@@ -365,7 +466,7 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
     3. adjusted_belief_ranges 导出的 GTO+ 范围在不同对手组合下出现差异。
 
     Args:
-        real_scenario_engine: 真实场景 StrategyEngine fixture。
+        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
         selected_players: 按 PFR 差异采样的 3 名玩家。
         capsys: pytest 输出捕获 fixture, 用于校验 changed_actions 打印结果。
     """
@@ -391,9 +492,9 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
             )
 
             decision = asyncio.run(
-                real_scenario_engine(
+                real_scenario_engine_g5(
                     session_id=(
-                        "3bet_style_combo"
+                        "g5_3bet_style_combo"
                         f"_{opener_row.player_name}_{three_bettor_row.player_name}"
                         f"_{state_version}"
                     ),
@@ -403,7 +504,7 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
             rec = assert_valid_recommendation(
                 decision,
                 label=(
-                    f"{opener_position.value} open({opener_row.player_name})"
+                    f"[G5] {opener_position.value} open({opener_row.player_name})"
                     f" -> {three_bettor_position.value} 3bet({three_bettor_row.player_name})"
                     f" -> hero {hero_position.value}"
                 ),
@@ -422,6 +523,9 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
                 dampened_ratio = float(raw_value)
                 product_ratio *= dampened_ratio
 
+            # 引擎内部对 product 做了 clamp(0.1, 10.0), 测试侧也需同步
+            clamped_product = max(0.1, min(product_ratio, 10.0))
+
             assert "aggression_ratio=" in rec.notes, (
                 "notes 中应包含 aggression_ratio, 以便校验乘积逻辑"
             )
@@ -429,9 +533,10 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
                 0
             ]
             logged_ratio = float(ratio_text)
-            assert logged_ratio == pytest.approx(product_ratio, rel=1e-3, abs=1e-4), (
-                "hero aggression_ratio 应等于所有已行动对手 dampened_ratio 的乘积: "
-                f"logged={logged_ratio}, product={product_ratio}, details={details}"
+            assert logged_ratio == pytest.approx(clamped_product, rel=1e-3, abs=1e-4), (
+                "hero aggression_ratio 应等于所有已行动对手 dampened_ratio 的乘积(clamp后): "
+                f"logged={logged_ratio}, clamped_product={clamped_product}, "
+                f"raw_product={product_ratio}, details={details}"
             )
 
             combo_label = (
@@ -446,7 +551,7 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
             snapshot = build_snapshot_from_decision(
                 player_row=snapshot_player,
                 decision=rec,
-                engine=real_scenario_engine,
+                engine=real_scenario_engine_g5,
             )
             snapshots.append(snapshot)
             print_snapshot(snapshot)
