@@ -69,6 +69,30 @@ def _map_table_position_to_metrics(position: Position) -> MetricsPosition | None
     return mapping.get(position)
 
 
+def _map_domain_action_to_metrics_action(
+    action_type: ActionType | None,
+) -> MetricsActionType:
+    """把领域动作类型映射到 player_metrics 动作类型。
+
+    Args:
+        action_type: 领域层动作类型; `None` 表示此前尚未行动。
+
+    Returns:
+        player_metrics 使用的动作类型枚举。
+    """
+
+    mapping = {
+        None: MetricsActionType.FOLD,
+        ActionType.FOLD: MetricsActionType.FOLD,
+        ActionType.CHECK: MetricsActionType.CHECK,
+        ActionType.CALL: MetricsActionType.CALL,
+        ActionType.BET: MetricsActionType.BET,
+        ActionType.RAISE: MetricsActionType.RAISE,
+        ActionType.ALL_IN: MetricsActionType.ALL_IN,
+    }
+    return mapping[action_type]
+
+
 def _is_in_position_on_flop(
     *,
     actor_position: Position,
@@ -264,8 +288,7 @@ def build_player_node_context(
     if metrics_position is None:
         raise UnsupportedContextError("当前 actor 位置无法映射到 player metrics")
 
-    preflop_actions = _filter_preflop_actions(observed_state.action_history)
-    prefix_actions = _build_first_action_prefix(preflop_actions, actor_seat)
+    prefix_actions = list(observed_state.get_preflop_prefix_before_current_turn())
     action_order = tuple(action.player_index for action in prefix_actions)
 
     base_node_context = _build_base_node_context(
@@ -299,14 +322,16 @@ def build_player_node_context(
     num_raises = base_node_context.raise_time
     if node_context.aggressor_position is not None and base_node_context.raise_time > 0:
         num_callers = base_node_context.call_count
+    previous_action = observed_state.get_preflop_previous_action_for_seat(actor_seat)
+    active_player_count = observed_state.get_active_player_count_before_current_turn()
 
     params = PreFlopParams(
         table_type=table_type,
         position=metrics_position,
         num_callers=min(num_callers, 1),
         num_raises=min(num_raises, 2),
-        num_active_players=max(2, observed_state.player_count),
-        previous_action=MetricsActionType.FOLD,
+        num_active_players=max(2, active_player_count),
+        previous_action=_map_domain_action_to_metrics_action(previous_action),
         in_position_on_flop=_is_in_position_on_flop(
             actor_position=actor_position,
             aggressor_position=node_context.aggressor_position,
