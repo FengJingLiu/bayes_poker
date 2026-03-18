@@ -40,6 +40,7 @@ class StrategyEngineConfig:
     strategy_names: tuple[str, ...] | None = None
     pool_prior_strength: float = 20.0
     enable_global_raise_blending: bool = True
+    use_g5_estimator: bool = False
 
 
 class StrategyEngine:
@@ -111,6 +112,7 @@ def build_strategy_engine(config: StrategyEngineConfig) -> StrategyEngine:
         config=OpponentPipelineConfig(
             table_type=config.table_type,
             enable_global_raise_blending=config.enable_global_raise_blending,
+            use_g5_estimator=config.use_g5_estimator,
         ),
     )
     hero_resolver = HeroGtoResolver(

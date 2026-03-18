@@ -53,6 +53,7 @@ class OpponentPipelineConfig:
     table_type: TableType = TableType.SIX_MAX
     session_timeout: float = SessionConfig.session_timeout
     enable_global_raise_blending: bool = True
+    use_g5_estimator: bool = False
 
 
 class OpponentPipeline:
@@ -189,6 +190,7 @@ class OpponentPipeline:
             player_name=player.player_id,
             table_type=self._config.table_type,
             node_context=node_context,
+            use_g5_estimator=self._config.use_g5_estimator,
         )
         self._last_source_kind = node_stats.source_kind
 
