@@ -30,6 +30,7 @@ class PreFlopParams:
             else:
                 raise ValueError(f"Invalid position for HU: {self.position}")
 
+        # 这里不是真正的之前动作为 FOLD，而是代表该玩家第一次行动（之前没有过动作）。
         if self.previous_action == ActionType.FOLD:
             a0 = int(self.position)
             a1 = -1

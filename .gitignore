@@ -30,4 +30,5 @@ tests/fixtures
 *.sqlite
 
 # Tools
-.sisyphus/.claude/
+.sisyphus/
+.claude/
