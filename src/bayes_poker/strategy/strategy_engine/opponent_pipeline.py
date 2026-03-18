@@ -107,30 +107,40 @@ class OpponentPipeline:
         if context.last_action_fingerprint == fingerprint:
             return context
 
-        acted_prefixes = _collect_first_action_prefixes(observed_state)
         live_opponents = [
             player
             for player in observed_state.players
             if player.seat_index != observed_state.hero_seat and not player.is_folded
         ]
+        live_opponent_seats = {player.seat_index for player in live_opponents}
+        live_opponents_by_seat = {
+            player.seat_index: player for player in live_opponents
+        }
+        latest_live_action_indices = (
+            observed_state.get_live_opponent_last_action_indices_before_current_turn()
+        )
         acted_opponents = [
-            player for player in live_opponents if player.seat_index in acted_prefixes
+            (live_opponents_by_seat[seat], action_index)
+            for seat, action_index in latest_live_action_indices
+            if seat in live_opponents_by_seat
         ]
-        acted_opponents.sort(key=lambda player: acted_prefixes[player.seat_index][0])
+        acted_seats = {player.seat_index for player, _ in acted_opponents}
         prior_only_opponents = [
             player
             for player in live_opponents
-            if player.seat_index not in acted_prefixes
-        ]
-        preflop_prefix = [
-            action
-            for action in observed_state.action_history
-            if action.street == Street.PREFLOP
+            if player.seat_index not in acted_seats
         ]
 
-        for player in acted_opponents:
+        for seat in tuple(context.player_ranges):
+            if seat not in live_opponent_seats:
+                context.player_ranges.pop(seat, None)
+        for seat in tuple(context.player_summaries):
+            if seat not in live_opponent_seats:
+                context.player_summaries.pop(seat, None)
+
+        for player, action_index in acted_opponents:
             seat = player.seat_index
-            action_index, prefix = acted_prefixes[seat]
+            prefix = list(observed_state.get_preflop_prefix_before_action_index(action_index))
             action = observed_state.action_history[action_index]
             prior_policy = self._build_initial_prior_range(
                 player=player,

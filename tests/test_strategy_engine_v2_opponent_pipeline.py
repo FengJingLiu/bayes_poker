@@ -435,6 +435,42 @@ def _build_state(*, hand_id: str) -> ObservedTableState:
     )
 
 
+def _build_hero_fourbet_facing_fivebet_state() -> ObservedTableState:
+    """构造仍存活对手在 hero 回合前已经行动两次的翻前场景。"""
+
+    return ObservedTableState(
+        table_id="table-reentry",
+        player_count=6,
+        small_blind=0.5,
+        big_blind=1.0,
+        hand_id="h-reentry",
+        street=Street.PREFLOP,
+        btn_seat=0,
+        actor_seat=3,
+        hero_seat=3,
+        players=[
+            Player(0, "btn", 100.0, 0.0, Position.BTN, is_folded=True),
+            Player(1, "sb", 99.5, 0.5, Position.SB, is_folded=True),
+            Player(2, "bb", 99.0, 1.0, Position.BB, is_folded=True),
+            Player(3, "hero", 76.0, 24.0, Position.UTG),
+            Player(4, "mp", 97.5, 2.5, Position.MP, is_folded=True),
+            Player(5, "co", 45.0, 55.0, Position.CO),
+        ],
+        action_history=[
+            PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP),
+            PlayerAction(4, ActionType.CALL, 2.5, Street.PREFLOP),
+            PlayerAction(5, ActionType.RAISE, 10.0, Street.PREFLOP),
+            PlayerAction(0, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(1, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(2, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(3, ActionType.RAISE, 24.0, Street.PREFLOP),
+            PlayerAction(4, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(5, ActionType.RAISE, 55.0, Street.PREFLOP),
+        ],
+        state_version=1,
+    )
+
+
 def _build_stats_repo(tmp_path: Path) -> PlayerStatsRepository:
     repo = PlayerStatsRepository(tmp_path / "player_stats.db")
     repo.connect()
@@ -504,6 +540,85 @@ def test_sequential_update_and_prior_only(tmp_path: Path) -> None:
 
     stats_repo.close()
     repository_adapter.close()
+
+
+def test_opponent_pipeline_uses_latest_live_opponent_action_for_reentry_node(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """当前仍存活对手若已多次行动, pipeline 应基于最近一次动作建模。"""
+
+    captured: dict[str, object] = {}
+    pipeline = OpponentPipeline(
+        repository_adapter=object(),  # type: ignore[arg-type]
+        stats_adapter=object(),  # type: ignore[arg-type]
+        source_id=1,
+    )
+    observed_state = _build_hero_fourbet_facing_fivebet_state()
+
+    def fake_build_initial_prior_range(
+        self: OpponentPipeline,
+        *,
+        player: Player,
+        observed_state: ObservedTableState,
+        decision_prefix: list[PlayerAction],
+    ) -> GtoPriorPolicy:
+        """记录先验构建时收到的决策前缀。"""
+
+        del self, player, observed_state
+        captured["prior_prefix_length"] = len(decision_prefix)
+        return GtoPriorPolicy(
+            action_names=("R55",),
+            actions=(
+                GtoPriorAction(
+                    action_name="R55",
+                    blended_frequency=1.0,
+                    action_type="RAISE",
+                    bet_size_bb=55.0,
+                    belief_range=PreflopRange.ones(),
+                ),
+            ),
+        )
+
+    def fake_build_posterior_range(
+        self: OpponentPipeline,
+        *,
+        player: Player,
+        observed_state: ObservedTableState,
+        action: PlayerAction,
+        decision_prefix: list[PlayerAction],
+        prior_policy: GtoPriorPolicy,
+    ) -> PreflopRange:
+        """记录 pipeline 实际选择的动作和前缀。"""
+
+        del observed_state, prior_policy
+        self._last_source_kind = "test"
+        captured["player_seat"] = player.seat_index
+        captured["action_amount"] = action.amount
+        captured["posterior_prefix_length"] = len(decision_prefix)
+        return PreflopRange.ones()
+
+    monkeypatch.setattr(
+        OpponentPipeline,
+        "_build_initial_prior_range",
+        fake_build_initial_prior_range,
+    )
+    monkeypatch.setattr(
+        OpponentPipeline,
+        "_build_posterior_range",
+        fake_build_posterior_range,
+    )
+
+    context = pipeline.process_hero_snapshot(
+        session_id="reentry",
+        observed_state=observed_state,
+    )
+
+    assert context.player_summaries[5]["status"] == "posterior"
+    assert 5 in context.player_ranges
+    assert captured["player_seat"] == 5
+    assert captured["action_amount"] == 55.0
+    assert captured["prior_prefix_length"] == 8
+    assert captured["posterior_prefix_length"] == 8
 
 
 def test_idempotent_for_duplicate_hero_snapshot(tmp_path: Path) -> None:
