@@ -494,3 +494,138 @@ def test_get_with_raw_missing_player_returns_none_pair(tmp_path: Path) -> None:
         )
     assert raw is None
     assert smoothed is None
+
+
+def test_load_all_for_estimator_excludes_aggregated_and_is_sorted(
+    tmp_path: Path,
+) -> None:
+    """load_all_for_estimator() 必须排除 aggregated_* 玩家且结果按名称稳定排序。
+
+    Args:
+        tmp_path: pytest 提供的临时目录.
+
+    Returns:
+        None.
+    """
+    params = _make_node_context().params
+    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
+        for name in ("zebra", "alpha", "aggregated_sixmax_100", "beta", "Aggregated_Other"):
+            _insert_player_stats(repo, _make_player_stats(player_name=name, params=params))
+
+        result = repo.load_all_for_estimator(TableType.SIX_MAX)
+
+    names = [s.player_name for s in result]
+    # aggregated_* 玩家必须被排除
+    assert "aggregated_sixmax_100" not in names
+    assert "Aggregated_Other" not in names
+    # 普通玩家必须全部保留
+    assert "alpha" in names
+    assert "beta" in names
+    assert "zebra" in names
+    # 结果必须按名称 casefold 稳定升序排列
+    assert names == sorted(names, key=str.casefold)
+
+
+def test_load_g5_estimated_ad_returns_none_for_missing_player(tmp_path: Path) -> None:
+    """load_g5_estimated_ad() 在玩家不存在数据库中时必须返回 None。
+
+    Args:
+        tmp_path: pytest 提供的临时目录.
+
+    Returns:
+        None.
+    """
+    from unittest.mock import MagicMock
+
+    from bayes_poker.player_metrics.opponent_estimator import OpponentEstimator
+
+    params = _make_node_context().params
+    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
+        # 仅插入聚合玩家，不插入目标玩家
+        _insert_player_stats(
+            repo,
+            _make_player_stats(player_name="aggregated_sixmax_100", params=params),
+        )
+        estimator = OpponentEstimator([], TableType.SIX_MAX, random_seed=0)
+        adapter = PlayerNodeStatsAdapter(repo)
+        result = adapter.load_g5_estimated_ad(
+            player_name="nonexistent_player",
+            estimator=estimator,
+            table_type=TableType.SIX_MAX,
+        )
+
+    assert result is None
+
+
+def test_load_g5_path_sets_source_kind(tmp_path: Path) -> None:
+    """use_g5_estimator=True 且玩家存在时，source_kind 应为 'g5_player'。
+
+    Args:
+        tmp_path: pytest 提供的临时目录.
+
+    Returns:
+        None.
+    """
+    from bayes_poker.player_metrics.opponent_estimator import OpponentEstimator
+
+    context = _make_node_context()
+    params = context.params
+
+    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
+        player_stats = _make_player_stats(player_name="villain", params=params)
+        _insert_player_stats(repo, player_stats)
+        _insert_player_stats(
+            repo,
+            _make_player_stats(player_name="aggregated_sixmax_100", params=params),
+        )
+
+        # 构建包含目标玩家的池（同一玩家作为池成员，用于先验构建）
+        all_stats = repo.load_all_for_estimator(TableType.SIX_MAX)
+        estimator = OpponentEstimator(all_stats, TableType.SIX_MAX, random_seed=0)
+
+        adapter = PlayerNodeStatsAdapter(repo)
+        result = adapter.load(
+            player_name="villain",
+            table_type=TableType.SIX_MAX,
+            node_context=context,
+            use_g5_estimator=True,
+        )
+
+    assert result.source_kind == "g5_player"
+
+
+def test_get_g5_estimator_prefers_summary_fast_path(tmp_path: Path) -> None:
+    """存在 summary 表时应避免回退到全量 blob 初始化.
+
+    Args:
+        tmp_path: pytest 提供的临时目录.
+
+    Returns:
+        None.
+    """
+
+    from bayes_poker.player_metrics.opponent_estimator import OpponentEstimator
+
+    context = _make_node_context()
+    params = context.params
+
+    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
+        _insert_player_stats(
+            repo,
+            _make_player_stats(player_name="villain", params=params),
+        )
+        _insert_player_stats(
+            repo,
+            _make_player_stats(player_name="aggregated_sixmax_100", params=params),
+        )
+        repo.build_metrics_summary(TableType.SIX_MAX, batch_size=1)
+
+        def _unexpected_slow_path(_: TableType) -> list[PlayerStats]:
+            raise AssertionError("不应回退到 load_all_for_estimator 慢路径")
+
+        repo.load_all_for_estimator = _unexpected_slow_path  # type: ignore[method-assign]
+
+        adapter = PlayerNodeStatsAdapter(repo)
+        estimator = adapter._get_g5_estimator(TableType.SIX_MAX)
+
+    assert isinstance(estimator, OpponentEstimator)

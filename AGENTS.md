@@ -10,51 +10,16 @@
 
 # Agent Guide（供自动化编码代理使用）
 
-> 约定: 本仓库内统一使用简体中文沟通/输出（含 PR、commit message 建议、注释、日志文案）。
+> 约定: 与工具/模型交互用**英语**，与用户交互用**中文**。
 
 ## 项目概览
 
 - 语言/版本: Python `>=3.12`（见 `pyproject.toml`）。
 - 包管理/运行: 使用 `uv`。
+- 虚拟环境 `.venv`
 - 代码布局: `src/` 为可导入包, `tests/` 为测试, `scripts/` 为脚本。
 - 主要依赖: `pokerkit`（文档: https://pokerkit.readthedocs.io/）。
 - 可选依赖: `websockets`、`cnocr`、`opencv-python`、`pywin32`。
-
-## 模块结构
-
-> 注意: `strategy/` 模块复杂度高，有独立 AGENTS.md: `src/bayes_poker/strategy/AGENTS.md`
-
-```text
-src/bayes_poker/
-├── hand_history/            # 手牌历史解析（离线）
-├── table/                   # 实时牌桌解析
-│   ├── layout/              # 布局与动态缩放
-│   ├── detector.py          # 阶段/动作检测
-│   ├── manager.py           # 多牌桌管理器
-│   ├── observed_state.py    # 观察状态模型
-│   └── parser.py            # TableParser 多进程解析器
-├── screen/                  # 截屏与牌桌区域识别
-├── ocr/                     # OCR 引擎封装
-├── comm/                    # WebSocket 通信
-│   ├── client.py            # 客户端
-│   ├── server.py            # 服务器
-│   ├── session.py           # 会话管理与重放
-│   └── agent.py             # TableParser 集成代理
-├── strategy/                # 策略引擎（strategy_engine/preflop_parse/range）
-├── player_metrics/          # 玩家统计（Rust 加速接口）
-├── storage/                 # SQLite 仓储
-├── domain/                  # 领域模型
-├── config/                  # 配置
-└── main.py                  # 批量统计入口
-```
-
-## 快速开始（环境）
-
-- 创建并同步虚拟环境: `uv sync`
-- 在 uv 环境中运行命令: `uv run <command ...>`
-- 新增依赖（运行时）: `uv add <package>`
-- 新增依赖（开发）: `uv add --dev <package>`
-- 修改依赖后更新锁文件: `uv sync`
 
 ## 运行（run）
 
@@ -192,11 +157,6 @@ src/bayes_poker/
 ## 开发者工具（编辑器配置）
 
 - VSCode: `.vscode/settings.json` 已配置 `python.analysis.extraPaths = ["./src"]` 与 pytest。
-
-## Cursor / Copilot 规则
-
-- 未发现 Cursor 规则: `.cursorrules` 或 `.cursor/rules/**`。
-- 未发现 Copilot 规则: `.github/copilot-instructions.md`。
 
 ## 变更原则（KISS/YAGNI）
 

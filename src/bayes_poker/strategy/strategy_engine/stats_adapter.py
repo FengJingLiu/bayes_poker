@@ -90,6 +90,7 @@ class PlayerNodeStatsAdapter:
         player_name: str | None,
         table_type: TableType,
         node_context: PlayerNodeContext,
+        use_g5_estimator: bool = False,
     ) -> PlayerNodeStats:
         """读取指定玩家在当前节点的动作概率。
 
@@ -99,10 +100,14 @@ class PlayerNodeStatsAdapter:
         3. 从 raw 提取 confidence + 全局信号。
         4. 从 smoothed 提取节点概率, 组装返回。
 
+        当 use_g5_estimator=True 时，先尝试 G5 HistDistribution 路径；
+        不可用时（玩家不在库中）自动回退到原有平滑路径。
+
         Args:
             player_name: 玩家名, 为空时直接走 population fallback。
             table_type: 桌型。
             node_context: 当前节点上下文。
+            use_g5_estimator: 是否优先使用 G5 估计路径（默认 False）。
 
         Returns:
             当前节点的玩家动作概率。
@@ -113,6 +118,16 @@ class PlayerNodeStatsAdapter:
             return self._load_population_node_stats(table_type, node_context)
         if player_name is None:
             return self._load_population_node_stats(table_type, node_context)
+
+        if use_g5_estimator:
+            g5_result = self._load_g5_node_stats(
+                player_name=player_name,
+                table_type=table_type,
+                node_context=node_context,
+                raw_stats=raw_stats,
+            )
+            if g5_result is not None:
+                return g5_result
 
         adaptive_k = self._compute_adaptive_prior_strength(raw_stats)
         raw_from_pair, smoothed = self._repo.get_with_raw(
@@ -275,3 +290,129 @@ class PlayerNodeStatsAdapter:
         if total_samples < 0:
             raise ValueError("total_samples 不能为负数")
         return total_samples / (total_samples + self._config.confidence_k)
+
+    def _get_g5_estimator(self, table_type: TableType) -> object:
+        """懒加载并缓存 G5 OpponentEstimator（按桌型）。"""
+        if not hasattr(self, "_g5_estimators"):
+            self._g5_estimators: dict[TableType, object] = {}
+        estimator = self._g5_estimators.get(table_type)
+        if estimator is None:
+            from bayes_poker.player_metrics.opponent_estimator import OpponentEstimator
+
+            def _load_exact(name: str) -> PlayerStats | None:
+                try:
+                    stats = self._repo.get(name, table_type, smooth_with_pool=False)
+                except sqlite3.OperationalError:
+                    return None
+                if stats is None or stats.player_name != name:
+                    return None
+                return stats
+
+            summaries = self._repo.load_summary_for_estimator(table_type)
+            if summaries:
+                estimator = OpponentEstimator.from_summaries(
+                    summaries,
+                    table_type=table_type,
+                    stats_loader=_load_exact,
+                )
+            else:
+                estimator = OpponentEstimator(
+                    self._repo.load_all_for_estimator(table_type),
+                    table_type,
+                )
+            self._g5_estimators[table_type] = estimator
+        return estimator
+
+    def _load_g5_node_stats(
+        self,
+        *,
+        player_name: str,
+        table_type: TableType,
+        node_context: PlayerNodeContext,
+        raw_stats: PlayerStats,
+    ) -> PlayerNodeStats | None:
+        """尝试用 G5 路径构建节点统计，失败时返回 None 以触发回退。"""
+        try:
+            estimator = self._get_g5_estimator(table_type)
+            estimated = self.load_g5_estimated_ad(
+                player_name=player_name,
+                estimator=estimator,
+                table_type=table_type,
+            )
+        except sqlite3.OperationalError:
+            return None
+
+        if estimated is None:
+            return None
+
+        preflop_ads, _ = estimated
+        try:
+            ad = preflop_ads[node_context.params.to_index()]
+        except IndexError:
+            return None
+
+        raw_action = raw_stats.get_preflop_stats(node_context.params)
+        return self._build_player_node_stats_from_estimated_ad(
+            player_stats=raw_stats,
+            action_total=raw_action.total_samples(),
+            ad=ad,
+        )
+
+    def _build_player_node_stats_from_estimated_ad(
+        self,
+        *,
+        player_stats: PlayerStats,
+        action_total: int,
+        ad: object,
+    ) -> PlayerNodeStats:
+        """从 EstimatedAD 构建 PlayerNodeStats。
+
+        bet sizing 分布保持均匀（G5 路径不建模 sizing 分解）。
+        """
+        from bayes_poker.player_metrics.estimated_ad import EstimatedAD
+
+        assert isinstance(ad, EstimatedAD)
+        return PlayerNodeStats(
+            raise_probability=ad.bet_raise.mean,
+            call_probability=ad.check_call.mean,
+            fold_probability=ad.fold.mean,
+            bet_0_40_probability=0.25,
+            bet_40_80_probability=0.25,
+            bet_80_120_probability=0.25,
+            bet_over_120_probability=0.25,
+            confidence=self._build_confidence(action_total),
+            global_pfr=self._compute_global_pfr(player_stats),
+            global_vpip=player_stats.vpip.to_float(),
+            total_hands=player_stats.vpip.total,
+            source_kind="g5_player",
+        )
+
+    def load_g5_estimated_ad(
+        self,
+        player_name: str,
+        estimator: object,
+        table_type: TableType,
+    ) -> tuple[list[object], list[object]] | None:
+        """用 G5 HistDistribution 路径获取玩家 AD 估计。
+
+        此方法提供 G5 风格贝叶斯估计的备选入口，与现有
+        平滑路径完全独立，不影响默认行为。
+
+        Args:
+            player_name: 目标玩家名。
+            estimator: 已初始化的 OpponentEstimator 实例。
+            table_type: 桌型。
+
+        Returns:
+            元组 (preflop_ads, postflop_ads)，玩家在数据库中不存在时返回 None。
+        """
+        from bayes_poker.player_metrics.opponent_estimator import OpponentEstimator
+
+        if not isinstance(estimator, OpponentEstimator):
+            return None
+
+        player_stats = self._load_raw_player_stats(player_name, table_type)
+        if player_stats is None or player_stats.player_name != player_name:
+            return None
+
+        return estimator.estimate_player_model(player_stats)

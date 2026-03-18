@@ -25,7 +25,13 @@ from .builder import (
     is_in_position,
 )
 from .enums import ActionType, Position, Street, TableType
-from .models import ActionStats, BetSizingCategory, PlayerStats, StatValue
+from .models import (
+    ActionStats,
+    BetSizingCategory,
+    PlayerMetricsSummary,
+    PlayerStats,
+    StatValue,
+)
 from .params import PostFlopParams, PreFlopParams
 from .posterior import (
     ActionBucket,
@@ -39,6 +45,14 @@ from .posterior import (
     smooth_binary_counts,
     smooth_multinomial_counts,
 )
+from .gaussian_distribution import GaussianDistribution
+from .hist_distribution import HistDistribution
+from .estimated_ad import EstimatedAD
+from .opponent_estimator import (
+    DifferencePair,
+    OpponentEstimator,
+    OpponentEstimatorOptions,
+)
 
 __all__ = [
     "ActionStats",
@@ -49,6 +63,7 @@ __all__ = [
     "BetSizingCategory",
     "BinaryPosteriorCounts",
     "ParsedAction",
+    "PlayerMetricsSummary",
     "PlayerStats",
     "Position",
     "PostFlopParams",
@@ -72,4 +87,10 @@ __all__ = [
     "resolve_aggressive_leaf_fields",
     "smooth_binary_counts",
     "smooth_multinomial_counts",
+    "DifferencePair",
+    "EstimatedAD",
+    "GaussianDistribution",
+    "HistDistribution",
+    "OpponentEstimator",
+    "OpponentEstimatorOptions",
 ]

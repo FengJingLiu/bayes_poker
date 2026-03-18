@@ -14,9 +14,14 @@ from pathlib import Path
 
 import pytest
 
+from bayes_poker.player_metrics.builder import (
+    calculate_aggression,
+    calculate_pfr,
+    calculate_wtp,
+)
+from bayes_poker.player_metrics.enums import ActionType
 from bayes_poker.player_metrics.enums import Street, TableType
 from bayes_poker.player_metrics.models import ActionStats, PlayerStats, StatValue
-from bayes_poker.player_metrics.enums import ActionType
 from bayes_poker.player_metrics.params import PostFlopParams, PreFlopParams
 from bayes_poker.player_metrics.serialization import merge_player_stats
 from bayes_poker.storage import PlayerStatsRepository
@@ -241,6 +246,37 @@ def _make_postflop_player_stats(
     target.bet_40_80 = bet_40_80
     target.bet_80_120 = bet_80_120
     target.bet_over_120 = bet_over_120
+    return stats
+
+
+def _make_dense_player_stats(
+    *,
+    player_name: str,
+    total_hands: int = 40,
+) -> PlayerStats:
+    """构造用于 summary 表测试的致密玩家统计.
+
+    Args:
+        player_name: 玩家名.
+        total_hands: 总手数.
+
+    Returns:
+        覆盖全部翻前和翻后节点的 `PlayerStats`.
+    """
+
+    stats = PlayerStats(player_name=player_name, table_type=TableType.SIX_MAX)
+    stats.vpip = StatValue(positive=total_hands // 2, total=total_hands)
+
+    for index, action_stats in enumerate(stats.preflop_stats):
+        action_stats.raise_samples = 2 + (index % 3)
+        action_stats.check_call_samples = 3 + (index % 2)
+        action_stats.fold_samples = 1 + (index % 4)
+
+    for index, action_stats in enumerate(stats.postflop_stats):
+        action_stats.raise_samples = 1 + (index % 5)
+        action_stats.check_call_samples = 2 + (index % 3)
+        action_stats.fold_samples = index % 2
+
     return stats
 
 
@@ -558,6 +594,100 @@ class TestPoolSmoothedGet:
                     smooth_with_pool=True,
                     pool_prior_strength=10.0,
                 )
+
+
+class TestPlayerMetricsSummaryStorage:
+    """`player_metrics_summary` 表构建与读取测试."""
+
+    def test_build_metrics_summary_creates_rows(self, tmp_path: Path) -> None:
+        """应写入 summary 行并返回轻量指标.
+
+        Args:
+            tmp_path: pytest 提供的临时目录.
+
+        Returns:
+            None.
+        """
+
+        alice = _make_dense_player_stats(player_name="alice", total_hands=48)
+        bob = _make_dense_player_stats(player_name="bob", total_hands=64)
+
+        with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
+            _insert_player_stats(repo, alice)
+            _insert_player_stats(repo, bob)
+
+            written = repo.build_metrics_summary(TableType.SIX_MAX, batch_size=1)
+            summaries = repo.load_summary_for_estimator(TableType.SIX_MAX)
+
+        expected = {}
+        for stats in (alice, bob):
+            expected[stats.player_name] = {
+                "total_hands": stats.vpip.total,
+                "pfr": calculate_pfr(stats),
+                "agg": calculate_aggression(stats),
+                "wtp": calculate_wtp(stats),
+            }
+
+        assert written == 2
+        assert len(summaries) == 2
+        assert [summary.player_name for summary in summaries] == ["alice", "bob"]
+        for summary in summaries:
+            metric = expected[summary.player_name]
+            assert summary.table_type == TableType.SIX_MAX
+            assert summary.total_hands == metric["total_hands"]
+            assert (summary.vpip_pos, summary.vpip_total) == (
+                metric["total_hands"] // 2,
+                metric["total_hands"],
+            )
+            assert (summary.pfr_pos, summary.pfr_total) == metric["pfr"]
+            assert (summary.agg_pos, summary.agg_total) == metric["agg"]
+            assert (summary.wtp_pos, summary.wtp_total) == metric["wtp"]
+
+    def test_build_metrics_summary_excludes_aggregated(self, tmp_path: Path) -> None:
+        """应跳过 `aggregated_*` 玩家.
+
+        Args:
+            tmp_path: pytest 提供的临时目录.
+
+        Returns:
+            None.
+        """
+
+        with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
+            _insert_player_stats(
+                repo,
+                _make_dense_player_stats(
+                    player_name="aggregated_sixmax_100",
+                    total_hands=80,
+                ),
+            )
+            _insert_player_stats(
+                repo,
+                _make_dense_player_stats(player_name="villain", total_hands=60),
+            )
+
+            written = repo.build_metrics_summary(TableType.SIX_MAX, batch_size=2)
+            summaries = repo.load_summary_for_estimator(TableType.SIX_MAX)
+
+        assert written == 1
+        assert [summary.player_name for summary in summaries] == ["villain"]
+
+    def test_load_summary_returns_empty_when_table_missing(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """缺少 summary 表时应平稳降级为空列表.
+
+        Args:
+            tmp_path: pytest 提供的临时目录.
+
+        Returns:
+            None.
+        """
+
+        with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
+            assert repo.summary_table_exists() is False
+            assert repo.load_summary_for_estimator(TableType.SIX_MAX) == []
 
 
 def _build_stats(

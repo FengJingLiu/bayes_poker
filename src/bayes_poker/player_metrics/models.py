@@ -165,3 +165,55 @@ class PlayerStats:
 
     def __str__(self) -> str:
         return f"{self.player_name}, VPIP: {self.vpip}"
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerMetricsSummary:
+    """玩家轻量指标摘要.
+
+    Attributes:
+        player_name: 玩家名.
+        table_type: 桌型.
+        total_hands: 总手数, 等于 `vpip_total`.
+        vpip_pos: VPIP 正样本数.
+        vpip_total: VPIP 总样本数.
+        pfr_pos: PFR 正样本数.
+        pfr_total: PFR 总样本数.
+        agg_pos: Aggression 正样本数.
+        agg_total: Aggression 总样本数.
+        wtp_pos: WTP 正样本数.
+        wtp_total: WTP 总样本数.
+        vpip_mean: 预计算的 VPIP 后验高斯均值（None 表示未预计算）.
+        vpip_sigma: 预计算的 VPIP 后验高斯标准差.
+        pfr_mean: 预计算的 PFR 后验高斯均值.
+        pfr_sigma: 预计算的 PFR 后验高斯标准差.
+        agg_mean: 预计算的 Aggression 后验高斯均值.
+        agg_sigma: 预计算的 Aggression 后验高斯标准差.
+        wtp_mean: 预计算的 WTP 后验高斯均值.
+        wtp_sigma: 预计算的 WTP 后验高斯标准差.
+    """
+
+    player_name: str
+    table_type: TableType
+    total_hands: int
+    vpip_pos: int
+    vpip_total: int
+    pfr_pos: int
+    pfr_total: int
+    agg_pos: int
+    agg_total: int
+    wtp_pos: int
+    wtp_total: int
+    # 预计算的 BaseModel 高斯参数（可选，None 表示未预计算）
+    vpip_mean: float | None = None
+    vpip_sigma: float | None = None
+    pfr_mean: float | None = None
+    pfr_sigma: float | None = None
+    agg_mean: float | None = None
+    agg_sigma: float | None = None
+    wtp_mean: float | None = None
+    wtp_sigma: float | None = None
+
+    def has_base_model(self) -> bool:
+        """返回是否携带预计算的 BaseModel 数据."""
+        return self.vpip_mean is not None

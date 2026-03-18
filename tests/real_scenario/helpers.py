@@ -22,6 +22,14 @@ from bayes_poker.strategy.strategy_engine.utg_open_ev_validation import (
 )
 from bayes_poker.table.observed_state import ObservedTableState
 
+from bayes_poker.player_metrics.enums import (
+    ActionType as MetricsActionType,
+    TableType,
+)
+from bayes_poker.player_metrics.models import ActionStats, PlayerStats, StatValue
+from bayes_poker.player_metrics.estimated_ad import EstimatedAD
+from bayes_poker.player_metrics.params import PreFlopParams, PostFlopParams
+
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
@@ -1514,3 +1522,183 @@ ALL_FACING_3BET_COMBINATIONS_6MAX: list[tuple[Position, Position]] = [
     for three_bettor in PREFLOP_ACTION_ORDER_6MAX[i + 1 :]
 ]
 """全部 15 种合法 Facing 3-Bet 位置组合 (hero_opener, 3bettor), 6-max。"""
+
+
+# ---------------------------------------------------------------------------
+# 合成 PlayerStats 构造
+# ---------------------------------------------------------------------------
+
+
+def make_synthetic_player_stats(
+    *,
+    player_name: str,
+    total_hands: int,
+    vpip_pct: float,
+    pfr_pct: float,
+    agg_pct: float = 0.35,
+    wtp_pct: float = 0.55,
+    table_type: TableType = TableType.SIX_MAX,
+) -> PlayerStats:
+    """根据指定的 VPIP/PFR/AGG/WTP 百分比构造可控的 PlayerStats 对象.
+
+    本函数用于测试场景, 在不依赖真实数据库的情况下快速生成具有
+    已知统计特征的玩家统计. 样本量在各 bin 间近似均匀分布.
+
+    Args:
+        player_name: 玩家名称.
+        total_hands: 总手数, 作为各维度分配样本的基础.
+        vpip_pct: VPIP 百分比 (0.0 ~ 1.0).
+        pfr_pct: PFR 百分比 (0.0 ~ 1.0), 应 <= vpip_pct.
+        agg_pct: 翻后激进因子百分比 (0.0 ~ 1.0), 默认 0.35.
+        wtp_pct: Went To Pot 百分比 (0.0 ~ 1.0), 默认 0.55.
+        table_type: 桌型, 默认 SIX_MAX.
+
+    Returns:
+        填充好各分桶样本的 PlayerStats 实例.
+    """
+    stats = PlayerStats(player_name=player_name, table_type=table_type)
+    stats.vpip = StatValue(
+        positive=round(total_hands * vpip_pct), total=total_hands
+    )
+
+    # -- preflop: 仅填充 previous_action == FOLD 的 bin (PFR 统计来源) --
+    all_preflop_params = PreFlopParams.get_all_params(table_type)
+    fold_indices: list[int] = [
+        p.to_index()
+        for p in all_preflop_params
+        if p.previous_action == MetricsActionType.FOLD
+    ]
+    num_fold_bins = len(fold_indices)
+
+    if num_fold_bins > 0:
+        base_total, remainder = divmod(total_hands, num_fold_bins)
+        for rank, idx in enumerate(fold_indices):
+            bin_total = base_total + (1 if rank < remainder else 0)
+            bin_raise = round(bin_total * pfr_pct)
+            bin_call = max(0, round(bin_total * (vpip_pct - pfr_pct)))
+            bin_fold = max(0, bin_total - bin_raise - bin_call)
+            stats.preflop_stats[idx].raise_samples = bin_raise
+            stats.preflop_stats[idx].check_call_samples = bin_call
+            stats.preflop_stats[idx].fold_samples = bin_fold
+
+    # -- postflop: 按 num_bets 区分强制/非强制行动 bin --
+    all_postflop_params = PostFlopParams.get_all_params(table_type)
+    forced_indices: list[int] = []
+    unforced_indices: list[int] = []
+    for p in all_postflop_params:
+        if p.num_bets > 0:
+            forced_indices.append(p.to_index())
+        else:
+            unforced_indices.append(p.to_index())
+
+    # 强制行动 bin: 面对加注, 使用 agg/wtp 分配
+    if forced_indices:
+        base_total_f, remainder_f = divmod(total_hands, len(forced_indices))
+        for rank, idx in enumerate(forced_indices):
+            bin_total = base_total_f + (1 if rank < remainder_f else 0)
+            bin_raise = round(bin_total * agg_pct)
+            bin_call = max(0, round(bin_total * (wtp_pct - agg_pct)))
+            bin_fold = max(0, bin_total - bin_raise - bin_call)
+            stats.postflop_stats[idx].raise_samples = bin_raise
+            stats.postflop_stats[idx].check_call_samples = bin_call
+            stats.postflop_stats[idx].fold_samples = bin_fold
+
+    # 非强制行动 bin: 无人加注, 仅分配 raise/call
+    if unforced_indices:
+        base_total_u, remainder_u = divmod(total_hands, len(unforced_indices))
+        for rank, idx in enumerate(unforced_indices):
+            bin_total = base_total_u + (1 if rank < remainder_u else 0)
+            bin_raise = round(bin_total * agg_pct)
+            bin_call = bin_total - bin_raise
+            stats.postflop_stats[idx].raise_samples = bin_raise
+            stats.postflop_stats[idx].check_call_samples = bin_call
+            stats.postflop_stats[idx].fold_samples = 0
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# EstimatedAD 对比格式化
+# ---------------------------------------------------------------------------
+
+
+def format_estimated_ad_comparison(
+    *,
+    labels: list[str],
+    ads: list[EstimatedAD],
+    node_label: str = "",
+) -> str:
+    """将多个 EstimatedAD 格式化为 Markdown 对比表格.
+
+    用于在测试报告或日志中直观比较不同来源/玩家的行动概率分布估计.
+
+    Args:
+        labels: 每行对应的标签名列表, 长度须与 ads 一致.
+        ads: EstimatedAD 实例列表.
+        node_label: 可选的表格标题, 非空时作为 ``###`` 级标题输出.
+
+    Returns:
+        包含完整 Markdown 表格的字符串.
+    """
+    lines: list[str] = []
+    if node_label:
+        lines.append(f"### {node_label}\n")
+
+    header = (
+        "| Label | BR mean | BR σ | CC mean | CC σ "
+        "| FO mean | FO σ | prior_k | update_n |"
+    )
+    separator = (
+        "|-------|---------|------|---------|------"
+        "|---------|------|---------|----------|"
+    )
+    lines.append(header)
+    lines.append(separator)
+
+    for label, ad in zip(labels, ads):
+        row = (
+            f"| {label} "
+            f"| {ad.bet_raise.mean:.4f} | {ad.bet_raise.sigma:.4f} "
+            f"| {ad.check_call.mean:.4f} | {ad.check_call.sigma:.4f} "
+            f"| {ad.fold.mean:.4f} | {ad.fold.sigma:.4f} "
+            f"| {ad.prior_samples} | {ad.update_samples} |"
+        )
+        lines.append(row)
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Hero 范围 G5 报告写入
+# ---------------------------------------------------------------------------
+
+
+def write_hero_range_g5_report(
+    *,
+    output_path: Path,
+    title: str,
+    config_text: str,
+    sections: list[tuple[str, str]],
+) -> None:
+    """将详细的 Markdown 报告写入磁盘.
+
+    用于持久化 Hero 范围验证或 G5 分析结果, 便于后续 review.
+
+    Args:
+        output_path: 输出文件路径.
+        title: 报告标题, 将作为一级标题写入.
+        config_text: 配置描述文本, 写入 ``## 配置`` 小节.
+        sections: ``(小节标题, 小节内容)`` 列表, 依次写入二级标题.
+
+    Returns:
+        None. 文件写入到 output_path.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = []
+    lines.append(f"# {title}\n\n")
+    lines.append(f"## 配置\n\n{config_text}\n\n")
+    for section_title, section_content in sections:
+        lines.append(f"## {section_title}\n\n{section_content}\n\n")
+
+    output_path.write_text("".join(lines), encoding="utf-8")
