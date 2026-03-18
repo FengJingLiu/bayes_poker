@@ -261,6 +261,48 @@ class TestObservedTableState:
         history = state.get_action_history_string()
         assert history == "F-C-R3"
 
+    def test_observed_state_exposes_reentry_preflop_views(self) -> None:
+        """测试观察状态暴露 hero reentry 所需的翻前查询视图。"""
+        state = ObservedTableState(
+            table_id="t1",
+            player_count=6,
+            small_blind=0.5,
+            big_blind=1.0,
+            hand_id="h1",
+            street=Street.PREFLOP,
+            btn_seat=0,
+            actor_seat=3,
+            hero_seat=3,
+            players=[
+                Player(0, "btn", 100.0, 0.0, DomainPosition.BTN, is_folded=True),
+                Player(1, "sb", 99.5, 0.5, DomainPosition.SB, is_folded=True),
+                Player(2, "bb", 99.0, 1.0, DomainPosition.BB, is_folded=True),
+                Player(3, "hero", 97.5, 2.5, DomainPosition.UTG),
+                Player(4, "villain", 92.0, 8.0, DomainPosition.MP),
+                Player(5, "co", 100.0, 0.0, DomainPosition.CO, is_folded=True),
+            ],
+            action_history=[
+                PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP),
+                PlayerAction(4, ActionType.RAISE, 8.0, Street.PREFLOP),
+                PlayerAction(5, ActionType.FOLD, 0.0, Street.PREFLOP),
+                PlayerAction(0, ActionType.FOLD, 0.0, Street.PREFLOP),
+                PlayerAction(1, ActionType.FOLD, 0.0, Street.PREFLOP),
+                PlayerAction(2, ActionType.FOLD, 0.0, Street.PREFLOP),
+            ],
+            state_version=1,
+        )
+
+        assert tuple(
+            action.player_index for action in state.get_preflop_prefix_before_current_turn()
+        ) == (3, 4, 5, 0, 1, 2)
+        assert state.get_preflop_previous_action_for_seat(3) == ActionType.RAISE
+        assert state.get_preflop_previous_action_for_seat(4) == ActionType.RAISE
+        assert state.get_preflop_history_tokens_before_current_turn() == "R-R-F-F-F-F"
+        assert state.get_live_opponent_last_action_indices_before_current_turn() == (
+            (4, 1),
+        )
+        assert state.get_active_player_count_before_current_turn() == 2
+
     def test_to_dict_and_from_dict(self) -> None:
         """测试序列化和反序列化。"""
         state = create_observed_state()

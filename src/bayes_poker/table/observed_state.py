@@ -69,6 +69,24 @@ def _get_position_enum(
         return None
 
 
+def _format_raise_history_token(amount: float, big_blind: float) -> str:
+    """格式化激进行动的历史 token。
+
+    Args:
+        amount: 动作金额。
+        big_blind: 当前大盲金额。
+
+    Returns:
+        不带连字符的 raise token, 如 `R2.5` 或 `R8`。
+    """
+    if big_blind > 0:
+        amount_bb = amount / big_blind
+        amount_str = f"{amount_bb:.1f}".rstrip("0").rstrip(".")
+    else:
+        amount_str = f"{amount:.0f}"
+    return f"R{amount_str}"
+
+
 @dataclass
 class ObservedTableState:
     """观察者视角的牌桌状态。
@@ -395,15 +413,166 @@ class ObservedTableState:
                 ActionType.RAISE,
                 ActionType.ALL_IN,
             ):
-                # 金额转换为 BB 单位
-                if self.big_blind > 0:
-                    amount_bb = action.amount / self.big_blind
-                    amount_str = f"{amount_bb:.1f}".rstrip("0").rstrip(".")
-                else:
-                    amount_str = f"{action.amount:.0f}"
-                tokens.append(f"R{amount_str}")
+                tokens.append(
+                    _format_raise_history_token(action.amount, self.big_blind)
+                )
 
         return "-".join(tokens)
+
+    def get_preflop_actions(self) -> tuple[PlayerAction, ...]:
+        """返回当前手牌的完整翻前动作序列。
+
+        Returns:
+            按原始顺序排列的翻前动作元组。
+        """
+
+        return tuple(
+            action for action in self.action_history if action.street == Street.PREFLOP
+        )
+
+    def get_preflop_prefix_before_current_turn(self) -> tuple[PlayerAction, ...]:
+        """返回当前决策点之前的翻前动作前缀。
+
+        Returns:
+            当前行动玩家出手前已经发生的翻前动作元组。
+        """
+
+        return self.get_preflop_actions()
+
+    def get_preflop_prefix_before_action_index(
+        self,
+        action_index: int,
+    ) -> tuple[PlayerAction, ...]:
+        """返回指定动作索引之前的翻前动作前缀。
+
+        Args:
+            action_index: `action_history` 中的绝对动作索引。
+
+        Returns:
+            指定索引之前的翻前动作元组。
+        """
+
+        return tuple(
+            action
+            for index, action in enumerate(self.action_history)
+            if index < action_index and action.street == Street.PREFLOP
+        )
+
+    def get_preflop_prior_actions_for_seat(
+        self,
+        seat: int,
+    ) -> tuple[PlayerAction, ...]:
+        """返回指定座位在当前决策点之前的翻前动作。
+
+        Args:
+            seat: 目标座位号。
+
+        Returns:
+            该座位在当前决策点之前已经执行的翻前动作元组。
+        """
+
+        return tuple(
+            action
+            for action in self.get_preflop_prefix_before_current_turn()
+            if action.player_index == seat
+        )
+
+    def get_preflop_previous_action_for_seat(self, seat: int) -> ActionType | None:
+        """返回指定座位在当前决策点之前的最近一次翻前动作类型。
+
+        Args:
+            seat: 目标座位号。
+
+        Returns:
+            最近一次翻前动作类型; 若此前尚未行动则返回 `None`。
+        """
+
+        prior_actions = self.get_preflop_prior_actions_for_seat(seat)
+        if not prior_actions:
+            return None
+        return prior_actions[-1].action_type
+
+    def get_preflop_history_tokens_before_current_turn(
+        self,
+        include_size: bool = False,
+    ) -> str:
+        """返回当前决策点之前的翻前历史 token 字符串。
+
+        Args:
+            include_size: 是否为激进行动附带 BB 尺寸。
+
+        Returns:
+            形如 `R-R-F-F` 或 `R2.5-R8-F-F` 的历史字符串。
+        """
+
+        tokens: list[str] = []
+        for action in self.get_preflop_prefix_before_current_turn():
+            if action.action_type == ActionType.FOLD:
+                tokens.append("F")
+            elif action.action_type in {ActionType.CHECK, ActionType.CALL}:
+                tokens.append("C")
+            elif action.action_type in {
+                ActionType.BET,
+                ActionType.RAISE,
+                ActionType.ALL_IN,
+            }:
+                if include_size:
+                    tokens.append(
+                        _format_raise_history_token(action.amount, self.big_blind)
+                    )
+                else:
+                    tokens.append("R")
+        return "-".join(tokens)
+
+    def get_live_opponent_last_action_indices_before_current_turn(
+        self,
+    ) -> tuple[tuple[int, int], ...]:
+        """返回当前仍存活对手在当前决策点前的最近动作索引。
+
+        Returns:
+            `(seat, action_index)` 元组组成的序列, 按最近动作索引升序排列。
+        """
+
+        prefix = self.get_preflop_prefix_before_current_turn()
+        folded_seats = {
+            action.player_index
+            for action in prefix
+            if action.action_type == ActionType.FOLD
+        }
+        live_opponent_seats = {
+            player.seat_index
+            for player in self.players
+            if player.seat_index != self.hero_seat
+            and player.seat_index not in folded_seats
+        }
+
+        latest_indices: dict[int, int] = {}
+        for index, action in enumerate(self.action_history):
+            if action.street != Street.PREFLOP:
+                continue
+            if action.player_index not in live_opponent_seats:
+                continue
+            latest_indices[action.player_index] = index
+
+        return tuple(sorted(latest_indices.items(), key=lambda item: item[1]))
+
+    def get_active_player_count_before_current_turn(self) -> int:
+        """返回当前决策点之前仍在牌局中的玩家数量。
+
+        Returns:
+            当前尚未在翻前弃牌的玩家人数。
+        """
+
+        folded_seats = {
+            action.player_index
+            for action in self.get_preflop_prefix_before_current_turn()
+            if action.action_type == ActionType.FOLD
+        }
+        return sum(
+            1
+            for player in self.players
+            if player.seat_index not in folded_seats
+        )
 
 
 def create_observed_state(
