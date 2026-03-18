@@ -169,7 +169,7 @@ def _extract_source_kind(snap: HeroStrategySnapshot) -> str:
     ids=[_rfi_combo_id(c) for c in ALL_RFI_COMBINATIONS_6MAX],
 )
 def test_rfi_single_combo_returns_valid_recommendation(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     rfi_combo: tuple[Position, Position],
 ) -> None:
@@ -179,7 +179,7 @@ def test_rfi_single_combo_returns_valid_recommendation(
     验证 engine 能返回 RecommendationDecision 且各字段合法。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         rfi_combo: (opener_position, hero_position) 元组。
     """
@@ -194,7 +194,7 @@ def test_rfi_single_combo_returns_valid_recommendation(
     )
 
     decision = asyncio.run(
-        real_scenario_engine_g5(
+        real_scenario_engine(
             session_id=f"g5_rfi_{opener_position.value}_{hero_position.value}_{player_row.player_name}",
             observed_state=observed_state,
         )
@@ -211,7 +211,7 @@ def test_rfi_single_combo_returns_valid_recommendation(
 
 @pytest.mark.large_sample
 def test_rfi_all_combos_all_players_with_csv_export(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     tmp_path: Path,
 ) -> None:
@@ -222,7 +222,7 @@ def test_rfi_all_combos_all_players_with_csv_export(
     打印 prior vs posterior 对比, 并将全部 hero 范围变化写入 CSV。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         tmp_path: pytest 临时目录。
     """
@@ -247,7 +247,7 @@ def test_rfi_all_combos_all_players_with_csv_export(
             )
 
             decision = asyncio.run(
-                real_scenario_engine_g5(
+                real_scenario_engine(
                     session_id=f"g5_rfi_full_{combo_key}_{player_row.player_name}_{state_version}",
                     observed_state=observed_state,
                 )
@@ -259,7 +259,7 @@ def test_rfi_all_combos_all_players_with_csv_export(
             snapshot = build_snapshot_from_decision(
                 player_row=player_row,
                 decision=rec,
-                engine=real_scenario_engine_g5,
+                engine=real_scenario_engine,
             )
             combo_snapshots.append(snapshot)
 
@@ -302,7 +302,7 @@ def test_rfi_all_combos_all_players_with_csv_export(
     ids=["UTG", "MP", "CO", "BTN"],
 )
 def test_rfi_same_opener_different_hero_positions_produce_different_nodes(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     opener_position: Position,
 ) -> None:
@@ -312,7 +312,7 @@ def test_rfi_same_opener_different_hero_positions_produce_different_nodes(
     同一 opener 对应多个 hero 位置时, 至少应有部分差异。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         opener_position: 固定的 opener 位置。
     """
@@ -336,7 +336,7 @@ def test_rfi_same_opener_different_hero_positions_produce_different_nodes(
             state_version=idx,
         )
         decision = asyncio.run(
-            real_scenario_engine_g5(
+            real_scenario_engine(
                 session_id=f"g5_rfi_diff_{opener_position.value}_{hero_position.value}_{idx}",
                 observed_state=observed_state,
             )
@@ -376,7 +376,7 @@ def test_rfi_same_opener_different_hero_positions_produce_different_nodes(
     ids=["CO", "BTN", "SB", "BB"],
 )
 def test_rfi_same_hero_different_opener_positions_produce_different_nodes(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     hero_position: Position,
 ) -> None:
@@ -386,7 +386,7 @@ def test_rfi_same_hero_different_opener_positions_produce_different_nodes(
     例如 BTN 面对 UTG open vs CO open, 动作分布应不同。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         hero_position: 固定的 hero 位置。
     """
@@ -410,7 +410,7 @@ def test_rfi_same_hero_different_opener_positions_produce_different_nodes(
             state_version=idx,
         )
         decision = asyncio.run(
-            real_scenario_engine_g5(
+            real_scenario_engine(
                 session_id=f"g5_rfi_hero_diff_{hero_position.value}_{opener_position.value}_{idx}",
                 observed_state=observed_state,
             )

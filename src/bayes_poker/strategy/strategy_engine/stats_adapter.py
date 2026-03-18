@@ -53,16 +53,10 @@ class PlayerNodeStatsAdapterConfig:
     """玩家节点概率适配器配置。
 
     Attributes:
-        pool_prior_strength: 玩家样本与群体样本平滑时的群体先验强度。
         confidence_k: 置信度计算中的平滑常量。
-        adaptive_reference_hands: 自适应平滑的参考手数。
-        adaptive_min_strength: 自适应平滑的最小强度。
     """
 
-    pool_prior_strength: float = 20.0
     confidence_k: float = 20.0
-    adaptive_reference_hands: float = 200.0
-    adaptive_min_strength: float = 2.0
 
 
 class PlayerNodeStatsAdapter:
@@ -90,24 +84,18 @@ class PlayerNodeStatsAdapter:
         player_name: str | None,
         table_type: TableType,
         node_context: PlayerNodeContext,
-        use_g5_estimator: bool = False,
     ) -> PlayerNodeStats:
         """读取指定玩家在当前节点的动作概率。
 
-        四步流程:
-        1. 获取 raw_stats 计算 adaptive_k。
-        2. 基于 adaptive_k 调用 get_with_raw() 获取 (raw, smoothed)。
-        3. 从 raw 提取 confidence + 全局信号。
-        4. 从 smoothed 提取节点概率, 组装返回。
-
-        当 use_g5_estimator=True 时，先尝试 G5 HistDistribution 路径；
-        不可用时（玩家不在库中）自动回退到原有平滑路径。
+        流程:
+        1. 获取 raw_stats 判断玩家是否存在。
+        2. G5 OpponentEstimator 路径构建节点概率。
+        3. G5 不可用时回退到 population fallback。
 
         Args:
             player_name: 玩家名, 为空时直接走 population fallback。
             table_type: 桌型。
             node_context: 当前节点上下文。
-            use_g5_estimator: 是否优先使用 G5 估计路径（默认 False）。
 
         Returns:
             当前节点的玩家动作概率。
@@ -119,80 +107,16 @@ class PlayerNodeStatsAdapter:
         if player_name is None:
             return self._load_population_node_stats(table_type, node_context)
 
-        if use_g5_estimator:
-            g5_result = self._load_g5_node_stats(
-                player_name=player_name,
-                table_type=table_type,
-                node_context=node_context,
-                raw_stats=raw_stats,
-            )
-            if g5_result is not None:
-                return g5_result
-
-        adaptive_k = self._compute_adaptive_prior_strength(raw_stats)
-        raw_from_pair, smoothed = self._repo.get_with_raw(
-            player_name,
-            table_type,
-            pool_prior_strength=adaptive_k,
+        g5_result = self._load_g5_node_stats(
+            player_name=player_name,
+            table_type=table_type,
+            node_context=node_context,
+            raw_stats=raw_stats,
         )
-        if smoothed is None:
-            return self._load_population_node_stats(table_type, node_context)
+        if g5_result is not None:
+            return g5_result
 
-        raw_action = (
-            raw_from_pair.get_preflop_stats(node_context.params)
-            if raw_from_pair is not None
-            else None
-        )
-        raw_total = raw_action.total_samples() if raw_action is not None else 0
-        raw_confidence = self._build_confidence(raw_total)
-
-        global_pfr = (
-            self._compute_global_pfr(raw_from_pair)
-            if raw_from_pair is not None
-            else 0.0
-        )
-        global_vpip = (
-            raw_from_pair.vpip.to_float() if raw_from_pair is not None else 0.0
-        )
-        total_hands = raw_from_pair.vpip.total if raw_from_pair is not None else 0
-
-        smoothed_action = smoothed.get_preflop_stats(node_context.params)
-        return PlayerNodeStats(
-            raise_probability=smoothed_action.bet_raise_probability(),
-            call_probability=smoothed_action.check_call_probability(),
-            fold_probability=smoothed_action.fold_probability(),
-            bet_0_40_probability=smoothed_action.bet_0_40_probability(),
-            bet_40_80_probability=smoothed_action.bet_40_80_probability(),
-            bet_80_120_probability=smoothed_action.bet_80_120_probability(),
-            bet_over_120_probability=smoothed_action.bet_over_120_probability(),
-            confidence=raw_confidence,
-            global_pfr=global_pfr,
-            global_vpip=global_vpip,
-            total_hands=total_hands,
-            source_kind="player",
-        )
-
-    def _compute_adaptive_prior_strength(
-        self,
-        player_stats: PlayerStats,
-    ) -> float:
-        """根据玩家全局手牌量自适应调整 pool_prior_strength。
-
-        全局手牌多 -> 信任玩家数据 -> 降低 prior_strength。
-        全局手牌少 -> 不确定性高 -> 保持较高 prior_strength。
-
-        Args:
-            player_stats: 玩家原始统计数据。
-
-        Returns:
-            自适应调整后的 pool_prior_strength。
-        """
-
-        total_hands = player_stats.vpip.total
-        base_strength = self._config.pool_prior_strength
-        reference_hands = self._config.adaptive_reference_hands
-        adaptive_strength = base_strength / (1.0 + total_hands / reference_hands)
-        return max(self._config.adaptive_min_strength, adaptive_strength)
+        return self._load_population_node_stats(table_type, node_context)
 
     @staticmethod
     def _compute_global_pfr(player_stats: PlayerStats) -> float:
@@ -331,7 +255,7 @@ class PlayerNodeStatsAdapter:
         node_context: PlayerNodeContext,
         raw_stats: PlayerStats,
     ) -> PlayerNodeStats | None:
-        """尝试用 G5 路径构建节点统计，失败时返回 None 以触发回退。"""
+        """用 G5 OpponentEstimator 构建节点统计, 不可用时返回 None 触发 population fallback。"""
         try:
             estimator = self._get_g5_estimator(table_type)
             estimated = self.load_g5_estimated_ad(
@@ -393,10 +317,7 @@ class PlayerNodeStatsAdapter:
         estimator: object,
         table_type: TableType,
     ) -> tuple[list[object], list[object]] | None:
-        """用 G5 HistDistribution 路径获取玩家 AD 估计。
-
-        此方法提供 G5 风格贝叶斯估计的备选入口，与现有
-        平滑路径完全独立，不影响默认行为。
+        """用 G5 OpponentEstimator 获取玩家全节点 AD 估计。
 
         Args:
             player_name: 目标玩家名。

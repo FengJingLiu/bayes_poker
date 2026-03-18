@@ -159,69 +159,8 @@ def test_player_stats_hit(tmp_path: Path) -> None:
             node_context=context,
         )
 
-    assert stats.source_kind == "player"
-    assert stats.raise_probability == 0.5
-    assert stats.call_probability == 0.3
-    assert abs(stats.fold_probability - 0.2) < 1e-9
-    assert stats.bet_0_40_probability == 0.25
-    assert stats.bet_40_80_probability == 0.25
-    assert stats.bet_80_120_probability == 0.25
-    assert stats.bet_over_120_probability == 0.25
-    assert stats.confidence == 0.5
-
-
-def test_compute_adaptive_prior_strength_zero_hands() -> None:
-    """0 手牌时返回 base_strength。
-
-    Returns:
-        None。
-    """
-
-    adapter = PlayerNodeStatsAdapter.__new__(PlayerNodeStatsAdapter)
-    adapter._config = PlayerNodeStatsAdapterConfig()
-    stats = PlayerStats(player_name="test", table_type=TableType.SIX_MAX)
-    stats.vpip = StatValue(positive=0, total=0)
-
-    result = adapter._compute_adaptive_prior_strength(stats)
-
-    assert result == 20.0
-
-
-def test_compute_adaptive_prior_strength_200_hands() -> None:
-    """200 手牌时自适应先验强度减半。
-
-    Returns:
-        None。
-    """
-
-    adapter = PlayerNodeStatsAdapter.__new__(PlayerNodeStatsAdapter)
-    adapter._config = PlayerNodeStatsAdapterConfig()
-    stats = PlayerStats(player_name="test", table_type=TableType.SIX_MAX)
-    stats.vpip = StatValue(positive=50, total=200)
-
-    result = adapter._compute_adaptive_prior_strength(stats)
-
-    assert abs(result - 10.0) < 0.01
-
-
-def test_compute_adaptive_prior_strength_min_clamp() -> None:
-    """超大手牌样本时应被最小强度钳制。
-
-    Returns:
-        None。
-    """
-
-    adapter = PlayerNodeStatsAdapter.__new__(PlayerNodeStatsAdapter)
-    adapter._config = PlayerNodeStatsAdapterConfig(
-        adaptive_min_strength=2.0,
-        adaptive_reference_hands=200.0,
-    )
-    stats = PlayerStats(player_name="test", table_type=TableType.SIX_MAX)
-    stats.vpip = StatValue(positive=500, total=5000)
-
-    result = adapter._compute_adaptive_prior_strength(stats)
-
-    assert result == 2.0
+    assert stats.source_kind == "g5_player"
+    assert stats.confidence > 0.0
 
 
 def test_load_fills_global_fields(tmp_path: Path) -> None:
@@ -255,7 +194,7 @@ def test_load_fills_global_fields(tmp_path: Path) -> None:
     assert result.total_hands == 20
     assert result.global_vpip > 0.0
     assert result.global_pfr >= 0.0
-    assert result.source_kind == "player"
+    assert result.source_kind == "g5_player"
 
 
 def test_load_population_fallback_global_fields(tmp_path: Path) -> None:
@@ -377,9 +316,7 @@ def test_uniform_population_fallback_without_aggregated_stats(tmp_path: Path) ->
     with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
         adapter = PlayerNodeStatsAdapter(
             repo,
-            config=PlayerNodeStatsAdapterConfig(
-                pool_prior_strength=20.0, confidence_k=20.0
-            ),
+            config=PlayerNodeStatsAdapterConfig(confidence_k=20.0),
         )
         stats = adapter.load(
             player_name=None,
@@ -427,8 +364,8 @@ def test_adapter_load_包含全局统计占位字段(tmp_path: Path) -> None:
     assert stats.total_hands == 0
 
 
-def test_adapter_config_包含自适应参数默认值() -> None:
-    """验证适配器配置包含自适应参数默认值。
+def test_adapter_config_包含置信度参数默认值() -> None:
+    """验证适配器配置包含置信度参数默认值。
 
     Returns:
         None。
@@ -436,8 +373,7 @@ def test_adapter_config_包含自适应参数默认值() -> None:
 
     config = PlayerNodeStatsAdapterConfig()
 
-    assert config.adaptive_reference_hands == 200.0
-    assert config.adaptive_min_strength == 2.0
+    assert config.confidence_k == 20.0
 
 
 def test_get_with_raw_returns_both_raw_and_smoothed(tmp_path: Path) -> None:
@@ -558,7 +494,7 @@ def test_load_g5_estimated_ad_returns_none_for_missing_player(tmp_path: Path) ->
 
 
 def test_load_g5_path_sets_source_kind(tmp_path: Path) -> None:
-    """use_g5_estimator=True 且玩家存在时，source_kind 应为 'g5_player'。
+    """玩家存在时, G5 路径应返回 source_kind='g5_player'。
 
     Args:
         tmp_path: pytest 提供的临时目录.
@@ -588,7 +524,6 @@ def test_load_g5_path_sets_source_kind(tmp_path: Path) -> None:
             player_name="villain",
             table_type=TableType.SIX_MAX,
             node_context=context,
-            use_g5_estimator=True,
         )
 
     assert result.source_kind == "g5_player"

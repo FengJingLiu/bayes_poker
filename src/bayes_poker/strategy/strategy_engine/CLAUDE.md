@@ -72,7 +72,6 @@ engine = build_strategy_engine(StrategyEngineConfig(
     player_stats_db_path=Path("data/database/player_stats.db"),
     table_type=TableType.SIX_MAX,
     source_ids=(1, 2, 3),           # 可指定多个策略源
-    pool_prior_strength=20.0,       # 贝叶斯先验强度
     enable_global_raise_blending=True,
 ))
 ```

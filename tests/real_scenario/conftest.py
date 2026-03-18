@@ -43,7 +43,9 @@ def _skip_unless_real_scenario_enabled() -> None:
 
 @pytest.fixture(scope="module")
 def real_scenario_engine() -> StrategyEngine:
-    """构建真实场景 StrategyEngine (module 级复用, 旧 belief-k 路径)。
+    """构建真实场景 StrategyEngine (module 级复用)。
+
+    G5 OpponentEstimator 为默认且唯一的对手建模路径。
 
     Returns:
         已初始化的 StrategyEngine 实例。
@@ -56,26 +58,6 @@ def real_scenario_engine() -> StrategyEngine:
             player_stats_db_path=PLAYER_STATS_DB_PATH,
             table_type=TableType.SIX_MAX,
             source_ids=(1, 2, 3, 4, 5),
-        )
-    )
-
-
-@pytest.fixture(scope="module")
-def real_scenario_engine_g5() -> StrategyEngine:
-    """构建真实场景 StrategyEngine (module 级复用, G5 贝叶斯路径)。
-
-    Returns:
-        已初始化的、启用 G5 OpponentEstimator 的 StrategyEngine 实例。
-    """
-
-    _skip_unless_real_scenario_enabled()
-    return build_strategy_engine(
-        StrategyEngineConfig(
-            strategy_db_path=STRATEGY_DB_PATH,
-            player_stats_db_path=PLAYER_STATS_DB_PATH,
-            table_type=TableType.SIX_MAX,
-            source_ids=(1, 2, 3, 4, 5),
-            use_g5_estimator=True,
         )
     )
 

@@ -22,7 +22,6 @@ from .repository_adapter import (
 )
 from .stats_adapter import (
     PlayerNodeStatsAdapter,
-    PlayerNodeStatsAdapterConfig,
 )
 from bayes_poker.table.observed_state import ObservedTableState
 
@@ -38,9 +37,7 @@ class StrategyEngineConfig:
     source_ids: tuple[int, ...] | None = None
     strategy_name: str | None = None
     strategy_names: tuple[str, ...] | None = None
-    pool_prior_strength: float = 20.0
     enable_global_raise_blending: bool = True
-    use_g5_estimator: bool = False
 
 
 class StrategyEngine:
@@ -99,12 +96,7 @@ def build_strategy_engine(config: StrategyEngineConfig) -> StrategyEngine:
     source_ids = tuple(source.source_id for source in sources)
     stats_repo = PlayerStatsRepository(config.player_stats_db_path)
     stats_repo.connect()
-    stats_adapter = PlayerNodeStatsAdapter(
-        stats_repo,
-        config=PlayerNodeStatsAdapterConfig(
-            pool_prior_strength=config.pool_prior_strength,
-        ),
-    )
+    stats_adapter = PlayerNodeStatsAdapter(stats_repo)
     opponent_pipeline = OpponentPipeline(
         repository_adapter=repository_adapter,
         stats_adapter=stats_adapter,
@@ -112,7 +104,6 @@ def build_strategy_engine(config: StrategyEngineConfig) -> StrategyEngine:
         config=OpponentPipelineConfig(
             table_type=config.table_type,
             enable_global_raise_blending=config.enable_global_raise_blending,
-            use_g5_estimator=config.use_g5_estimator,
         ),
     )
     hero_resolver = HeroGtoResolver(

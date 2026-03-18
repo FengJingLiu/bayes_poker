@@ -142,7 +142,7 @@ def _write_3bet_hero_range_csv(
     ids=[_3bet_combo_id(c) for c in ALL_3BET_COMBINATIONS_6MAX],
 )
 def test_3bet_single_combo_returns_valid_recommendation(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     three_bet_combo: tuple[Position, Position, Position],
 ) -> None:
@@ -152,7 +152,7 @@ def test_3bet_single_combo_returns_valid_recommendation(
     验证 engine 能返回 RecommendationDecision 且各字段合法。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         three_bet_combo: (opener, 3bettor, hero) 元组。
     """
@@ -168,7 +168,7 @@ def test_3bet_single_combo_returns_valid_recommendation(
     )
 
     decision = asyncio.run(
-        real_scenario_engine_g5(
+        real_scenario_engine(
             session_id=(
                 f"g5_3bet_{opener_position.value}_{three_bettor_position.value}"
                 f"_{hero_position.value}_{player_row.player_name}"
@@ -191,7 +191,7 @@ def test_3bet_single_combo_returns_valid_recommendation(
 
 @pytest.mark.large_sample
 def test_3bet_all_combos_all_players_with_csv_export(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     tmp_path: Path,
 ) -> None:
@@ -202,7 +202,7 @@ def test_3bet_all_combos_all_players_with_csv_export(
     打印 prior vs posterior 对比, 并将全部 hero 范围变化写入 CSV。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         tmp_path: pytest 临时目录。
     """
@@ -236,7 +236,7 @@ def test_3bet_all_combos_all_players_with_csv_export(
             )
 
             decision = asyncio.run(
-                real_scenario_engine_g5(
+                real_scenario_engine(
                     session_id=f"g5_3bet_full_{combo_key}_{player_row.player_name}_{state_version}",
                     observed_state=observed_state,
                 )
@@ -248,7 +248,7 @@ def test_3bet_all_combos_all_players_with_csv_export(
             snapshot = build_snapshot_from_decision(
                 player_row=player_row,
                 decision=rec,
-                engine=real_scenario_engine_g5,
+                engine=real_scenario_engine,
             )
             combo_snapshots.append(snapshot)
 
@@ -288,7 +288,7 @@ def test_3bet_all_combos_all_players_with_csv_export(
     ids=["UTG", "MP", "CO", "BTN"],
 )
 def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     opener_position: Position,
 ) -> None:
@@ -297,7 +297,7 @@ def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
     策略引擎应区分 3bettor 和 hero 所在位置, 返回不同的 node_id 或不同的动作分布。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         opener_position: 固定的 opener 位置。
     """
@@ -329,7 +329,7 @@ def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
             state_version=idx,
         )
         decision = asyncio.run(
-            real_scenario_engine_g5(
+            real_scenario_engine(
                 session_id=(
                     f"g5_3bet_diff_{opener_position.value}"
                     f"_{three_bettor_pos.value}_{hero_pos.value}_{idx}"
@@ -374,7 +374,7 @@ def test_3bet_same_opener_different_3bettor_hero_produce_different_nodes(
     ids=["CO", "BTN", "SB", "BB"],
 )
 def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     hero_position: Position,
 ) -> None:
@@ -383,7 +383,7 @@ def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
     面对不同位置组合的 3-bet, hero 的策略应有差异。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 玩家样本 fixture。
         hero_position: 固定的 hero 位置。
     """
@@ -413,7 +413,7 @@ def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
             state_version=idx,
         )
         decision = asyncio.run(
-            real_scenario_engine_g5(
+            real_scenario_engine(
                 session_id=(
                     f"g5_3bet_hero_diff_{hero_position.value}"
                     f"_{opener_pos.value}_{three_bettor_pos.value}_{idx}"
@@ -453,7 +453,7 @@ def test_3bet_same_hero_different_opener_3bettor_produce_different_nodes(
 
 @pytest.mark.large_sample
 def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
-    real_scenario_engine_g5: StrategyEngine,
+    real_scenario_engine: StrategyEngine,
     selected_players: list[PlayerPfrRow],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -466,7 +466,7 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
     3. adjusted_belief_ranges 导出的 GTO+ 范围在不同对手组合下出现差异。
 
     Args:
-        real_scenario_engine_g5: G5 路径 StrategyEngine fixture。
+        real_scenario_engine: G5 路径 StrategyEngine fixture。
         selected_players: 按 PFR 差异采样的 3 名玩家。
         capsys: pytest 输出捕获 fixture, 用于校验 changed_actions 打印结果。
     """
@@ -492,7 +492,7 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
             )
 
             decision = asyncio.run(
-                real_scenario_engine_g5(
+                real_scenario_engine(
                     session_id=(
                         "g5_3bet_style_combo"
                         f"_{opener_row.player_name}_{three_bettor_row.player_name}"
@@ -551,7 +551,7 @@ def test_3bet_different_opponent_style_combos_produce_different_hero_strategy(
             snapshot = build_snapshot_from_decision(
                 player_row=snapshot_player,
                 decision=rec,
-                engine=real_scenario_engine_g5,
+                engine=real_scenario_engine,
             )
             snapshots.append(snapshot)
             print_snapshot(snapshot)
