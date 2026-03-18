@@ -21,8 +21,10 @@ strategy/
 
 - 仅支持 `6-max`
 - 仅支持 `Street.PREFLOP`
-- 仅支持 **首次行动** 的 `OPEN / CALL_VS_OPEN / LIMP`
-- 明确不支持: `three_bet+`、HU、9-max、postflop、hero posterior
+- 支持 **首次行动** 的 `OPEN / CALL_VS_OPEN / LIMP`
+- 支持 **actor reentry** 的翻前决策, 当前重点覆盖 `Hero open -> facing 3-bet`
+- 对手 posterior 使用 **当前决策点前仍存活对手的最近一次翻前动作**
+- 明确不支持: `limp-after-raise`、HU、9-max、postflop、完整 hero posterior
 
 ### 关键模块
 
@@ -52,12 +54,14 @@ strategy/
 2. **对手范围更新阶段 (`OpponentPipeline.process_hero_snapshot`)**
    - **会话与缓存管理**: 从 `StrategySessionStore` 取出会话级缓存。若当前 Action Fingerprint 未变, 直接返回缓存上下文, 避免重复计算。
    - **已行动对手 (Posterior 更新)**:
+     - `ObservedTableState` 负责提供当前决策点视图, 包括完整翻前前缀、指定动作索引之前的前缀、当前仍存活对手的最近一次动作索引。
      - `build_player_node_context`: 构建对手历史的 NodeContext。
      - `PlayerNodeStatsAdapter.load`: 加载玩家历史群体统计概率。
      - `StrategyNodeMapper.map_node_context`: 把上下文映射到策略库中的最近 GTO 节点。
      - `GtoPriorBuilder.build_policy`: 计算该节点的 GTO 策略先验（Prior）。
      - `_select_matching_prior_action`: 按真实动作类型严格匹配, 并在同类型中按尺度选择最近动作。
      - `_adjust_belief_with_stats_and_ev`: 根据玩家平滑 stats 频率与 GTO 频率差异, 按 EV 排序做约束式信念重分配。
+     - 仅为当前决策点前仍存活且已行动的对手保留 posterior。
    - **未行动对手 (暂缓建模)**:
      - 当前版本不对未行动玩家构建精细 `player_range`, 并在代码中保留 TODO 后续恢复。
      - `player_summaries` 仅记录 `status=prior_only_deferred`。

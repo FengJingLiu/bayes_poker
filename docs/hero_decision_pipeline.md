@@ -63,7 +63,8 @@ src/bayes_poker/
 |---|---|
 | 仅 6-max | 不支持 HU / 9-max |
 | 仅 Preflop | 不支持 Postflop |
-| 仅首次行动场景 | OPEN / CALL_VS_OPEN / LIMP; 不支持 3-bet+ |
+| 支持首次行动 + 部分 reentry | 已支持 OPEN / CALL_VS_OPEN / LIMP, 以及 `Hero open -> facing 3-bet` 的再次决策 |
+| 仍未支持的边界 | `limp-after-raise`, postflop, HU, 9-max, 完整 hero posterior |
 | 运行时禁止 import | `preflop_engine`, `runtime`, `preflop_parse.query` 不可在新链路中使用 |
 
 ---
@@ -81,10 +82,11 @@ StrategyEngine.__call__(session_id, observed_state: ObservedTableState)
 ├── ━━━ 对手管线: 逐个处理已行动对手 ━━━
 │   OpponentPipeline.process_hero_snapshot(session_ctx, state)
 │   │
-│   │  # 收集第一个动作前缀 (只看第一次行动的对手)
-│   │  _collect_first_action_prefixes(state) -> list[ObservedAction]
+│   │  # 从 ObservedTableState 派生当前决策点视图
+│   │  state.get_preflop_prefix_before_current_turn()
+│   │  state.get_live_opponent_last_action_indices_before_current_turn()
 │   │
-│   │  for each acted_opponent in first_action_prefixes:
+│   │  for each acted_live_opponent in latest_live_actions:
 │   │  │
 │   │  ├── [A] build_player_node_context(state, opponent) -> PlayerNodeContext
 │   │  │       # 包含: position, stack, history, player_name, action 等
@@ -163,6 +165,18 @@ class ObservedTableState:
         amount_cents: int            # 动作金额 (分)
         street: Street
 ```
+
+当前运行时不会再额外构造一个独立的 preflop slice 对象。
+所有“当前决策点之前”的切片都由 `ObservedTableState` 即时推导, 典型接口包括:
+
+- `get_preflop_prefix_before_current_turn()`
+- `get_preflop_prefix_before_action_index(action_index)`
+- `get_preflop_previous_action_for_seat(seat)`
+- `get_preflop_history_tokens_before_current_turn(include_size: bool = False)`
+- `get_live_opponent_last_action_indices_before_current_turn()`
+- `get_active_player_count_before_current_turn()`
+
+其中 `previous_action=FOLD` 在 `PreFlopParams` 索引语义里表示“该玩家此前尚未行动”, 不是“真实上一动作就是 fold”。
 
 ### 3.2 PlayerNodeContext (内部上下文)
 
@@ -661,33 +675,26 @@ class OpponentPipeline:
 
         结果写入 session_ctx.opponent_ranges[seat] = PreflopRange
         """
-        first_actions = self._collect_first_action_prefixes(state)
+        latest_live_actions = (
+            state.get_live_opponent_last_action_indices_before_current_turn()
+        )
 
-        for observed_action in first_actions:
+        for seat, action_index in latest_live_actions:
+            decision_prefix = state.get_preflop_prefix_before_action_index(action_index)
+            observed_action = state.action_history[action_index]
             # [A-F] 步骤见第 2 节调用链
             posterior_range = self._process_single_opponent(
-                session_ctx, state, observed_action
+                session_ctx, state, observed_action, decision_prefix
             )
-            session_ctx.set_opponent_range(observed_action.seat, posterior_range)
+            session_ctx.set_opponent_range(seat, posterior_range)
 ```
 
-### 9.2 `_collect_first_action_prefixes`
+### 9.2 当前决策点视图
 
-```python
-def _collect_first_action_prefixes(
-    self, state: ObservedTableState
-) -> list[ObservedAction]:
-    """
-    只收集每位对手的 **第一个动作**.
-    v1 约束: 不处理 re-action (如被 3bet 后的再决策).
-
-    返回:
-    - ObservedAction(seat, position, action_type, bet_size_bb, ...)
-    - 按行动顺序排列
-    - 排除 hero 自己
-    - 排除 fold (fold 对手没有后续范围需求)
-    """
-```
+- `OpponentPipeline` 不再把“第一次动作”当作唯一事实来源。
+- 当前版本只对 **当前决策点之前仍存活且已行动** 的对手保留 posterior。
+- 若某对手在当前快照里已经不再 live, 其旧 posterior 会从 `session_context` 中清理。
+- 多次行动的对手以 **最近一次动作** 作为 posterior 建模入口, 但对应的 `decision_prefix` 会保留该动作之前的完整翻前前缀。
 
 ### 9.3 `_select_matching_prior_action`
 
@@ -811,20 +818,22 @@ class HeroGtoResolver:
 
         流程:
         1. build_player_node_context(state, hero_seat)
-        2. StrategyNodeMapper.map_node_context(hero_ctx)
-        3. GtoPriorBuilder.build_policy(mapped_ctx)
-        4. 构建 action_distribution:
+        2. 用当前决策点之前的完整翻前前缀构建 `preferred_history_actions`
+        3. StrategyNodeMapper.map_node_context(hero_ctx)
+        4. GtoPriorBuilder.build_policy(mapped_ctx)
+        5. 基于已行动 live opponent 的 posterior / prior 比值构建 aggression_ratio
+        6. 按 aggression_ratio 调整 hero 动作频率
+        7. 构建 action_distribution:
            {action_code: frequency for action in policy.actions}
-        5. 计算 action_evs:
+        8. 计算 action_evs:
            {action_code: total_ev for action in policy.actions}
-        6. 按频率采样一个动作
-        7. 返回 RecommendationDecision
+        9. 按频率采样一个动作
+        10. 返回 RecommendationDecision
 
         !! 当前局限:
-        - 直接返回 GTO 策略, **未考虑对手后验范围**
-        - 未根据对手松紧程度调整 hero 的行动频率
-        - 未利用对手的 bet_size_distribution 信息
-        - session_ctx 中的 opponent_ranges 已计算但未被 hero_resolver 使用
+        - Hero 当前只把对手 posterior 压缩成 aggression_ratio 标量信号
+        - 未直接按对手 belief_range 的逐组合信息重算 hero range
+        - 未利用对手的 bet_size_distribution 进一步修正 hero 决策
         """
 ```
 
@@ -895,16 +904,16 @@ class PostflopRange:
 
 ## 12. 当前局限与待解决问题
 
-### 12.1 Hero 不使用对手后验范围 (核心问题)
+### 12.1 Hero 仅部分使用对手后验范围
 
 **现状:**
 - `OpponentPipeline` 已经为每个已行动对手计算了后验范围
 - 后验范围存储在 `session_ctx.opponent_ranges[seat]`
-- 但 `HeroGtoResolver.resolve()` 完全没有读取或使用这些数据
-- Hero 直接返回查表的 GTO 策略
+- `HeroGtoResolver.resolve()` 会读取 posterior 的总频率, 与 prior 频率形成 `aggression_ratio`
+- Hero 已经不再是纯查表返回, 会按 `aggression_ratio` 调整激进行为频率
 
 **期望:**
-- Hero 应该根据对手的后验范围调整自己的策略
+- Hero 应该进一步根据对手的完整后验范围调整自己的策略
 - 例: 如果对手的 open 范围比 GTO 宽 -> hero 可以更频繁地 3-bet
 - 例: 如果对手的 open 范围比 GTO 紧 -> hero 应该减少轻的 3-bet bluff
 
@@ -920,11 +929,13 @@ class PostflopRange:
 - 例: 选择超大注 (>120% pot) 的对手可能极化 (超强或 bluff)
 - 应将 bet_size_distribution 纳入后验更新
 
-### 12.3 仅支持首次行动
+### 12.3 Preflop Multi-Action 仍是部分支持
 
-- 不处理 3-bet/4-bet 场景
-- 不处理对手的 re-action
-- 不处理 postflop
+- 已支持 Hero 首次行动
+- 已支持 `Hero open -> facing 3-bet` 的 reentry
+- 已支持在 `three_bet+` 链路中, 用当前仍存活对手的最近一次动作做 posterior
+- 仍不支持 `limp-after-raise`
+- 仍不支持 postflop
 
 ### 12.4 会话状态未跨手牌
 
