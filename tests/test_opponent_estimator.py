@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bayes_poker.player_metrics.builder import (
     calculate_aggression,
     calculate_pfr,
@@ -408,8 +410,12 @@ class TestOpponentEstimatorVectorizedSelection:
         assert 3 not in returned_indices
         assert returned_indices == {0, 2}
 
-    def test_numpy_and_python_paths_produce_same_order(self) -> None:
-        """向量化路径与 Python 标量路径在小池上结果完全一致。"""
+    def test_numpy_and_python_paths_remain_equivalent_with_float_noise(self) -> None:
+        """向量化路径与标量路径在浮点噪声下仍保持等价语义。
+
+        preflop 距离在该夹具下可严格一致。
+        postflop 距离会出现 1e-15 级别噪声, 因而只校验候选集合与逐索引距离近似相等。
+        """
         pool = _make_player_pool(15)
         target = _make_player_stats("hero", vpip=0.28, total_hands=200)
 
@@ -428,6 +434,14 @@ class TestOpponentEstimatorVectorizedSelection:
         assert [p.index for p in pre_np] == [p.index for p in pre_py], (
             "preflop 向量化路径与标量路径索引顺序应一致"
         )
-        assert [p.index for p in post_np] == [p.index for p in post_py], (
-            "postflop 向量化路径与标量路径索引顺序应一致"
+        post_np_by_index = {pair.index: pair.difference for pair in post_np}
+        post_py_by_index = {pair.index: pair.difference for pair in post_py}
+
+        assert post_np_by_index.keys() == post_py_by_index.keys(), (
+            "postflop 向量化路径与标量路径应返回同一批候选玩家"
         )
+        for index, scalar_distance in post_py_by_index.items():
+            assert post_np_by_index[index] == pytest.approx(
+                scalar_distance,
+                abs=1e-12,
+            ), f"postflop index={index} 的距离只允许出现可忽略浮点噪声"
