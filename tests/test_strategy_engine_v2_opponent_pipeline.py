@@ -24,6 +24,7 @@ from bayes_poker.strategy.strategy_engine.gto_policy import (
 )
 from bayes_poker.strategy.strategy_engine.opponent_pipeline import (
     OpponentPipeline,
+    _PosteriorResult,
     _adjust_belief_with_stats_and_ev,
     _calibrate_policy,
     _build_prior_only_range_from_policy,
@@ -587,7 +588,7 @@ def test_opponent_pipeline_uses_latest_live_opponent_action_for_reentry_node(
         action: PlayerAction,
         decision_prefix: list[PlayerAction],
         prior_policy: GtoPriorPolicy,
-    ) -> PreflopRange:
+    ) -> _PosteriorResult:
         """记录 pipeline 实际选择的动作和前缀。"""
 
         del observed_state, prior_policy
@@ -595,7 +596,23 @@ def test_opponent_pipeline_uses_latest_live_opponent_action_for_reentry_node(
         captured["player_seat"] = player.seat_index
         captured["action_amount"] = action.amount
         captured["posterior_prefix_length"] = len(decision_prefix)
-        return PreflopRange.ones()
+        from bayes_poker.strategy.strategy_engine.stats_adapter import PlayerNodeStats
+
+        dummy_stats = PlayerNodeStats(
+            raise_probability=0.1,
+            call_probability=0.3,
+            fold_probability=0.6,
+            bet_0_40_probability=0.0,
+            bet_40_80_probability=0.0,
+            bet_80_120_probability=0.0,
+            bet_over_120_probability=0.0,
+            confidence=0.5,
+            global_pfr=0.15,
+            global_vpip=0.25,
+            total_hands=100,
+            source_kind="test",
+        )
+        return _PosteriorResult(range=PreflopRange.ones(), node_stats=dummy_stats)
 
     monkeypatch.setattr(
         OpponentPipeline,

@@ -1146,6 +1146,550 @@ def build_4bet_state(
     )
 
 
+def _should_fold_in_hero_open_facing_4bet(
+    position: Position,
+    hero_opener_position: Position,
+    three_bettor_position: Position,
+    four_bettor_position: Position,
+) -> bool:
+    """判断在 Hero Open Facing 4-Bet 场景中, 某位置是否已 fold。
+
+    行动流程: Hero(opener) open -> 中间 fold -> 3bettor 3bet
+    -> 中间 fold -> 4bettor 4bet -> 剩余 fold -> 回到 Hero 决策。
+
+    不需要 fold 的: hero_opener 自身, 3bettor 自身, 4bettor 自身。
+    其余所有非关键位置都已 fold。
+
+    Args:
+        position: 待判断的位置。
+        hero_opener_position: Hero (同时也是 opener) 位置。
+        three_bettor_position: 3bettor 位置。
+        four_bettor_position: 4bettor 位置。
+
+    Returns:
+        True 表示该位置需要 fold。
+    """
+
+    if position in (hero_opener_position, three_bettor_position, four_bettor_position):
+        return False
+    return True
+
+
+def _should_fold_in_hero_3bet_facing_4bet(
+    position: Position,
+    opener_position: Position,
+    hero_3bettor_position: Position,
+    four_bettor_position: Position,
+) -> bool:
+    """判断在 Hero 3-Bet Facing 4-Bet 场景中, 某位置是否已 fold。
+
+    行动流程: opener open -> 中间 fold -> hero 3bet
+    -> 中间 fold -> 4bettor 4bet -> 剩余 fold -> opener fold
+    -> 回到 Hero 决策。
+
+    不需要 fold 的: hero(3bettor) 自身, 4bettor 自身。
+    其余位置在 Hero 当前决策点之前都已 fold。
+
+    Args:
+        position: 待判断的位置。
+        opener_position: Opener 位置。
+        hero_3bettor_position: Hero (同时也是 3bettor) 位置。
+        four_bettor_position: 4bettor 位置。
+
+    Returns:
+        True 表示该位置需要 fold。
+    """
+
+    if position == opener_position:
+        return True
+    if position in (hero_3bettor_position, four_bettor_position):
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# 场景构造: Hero Open Facing 4-Bet
+# ---------------------------------------------------------------------------
+
+
+def build_hero_open_facing_4bet_state(
+    *,
+    hero_opener_position: Position,
+    three_bettor_position: Position,
+    four_bettor_position: Position,
+    three_bettor_player_name: str,
+    four_bettor_player_name: str,
+    state_version: int = 1,
+    hero_cards: tuple[str, str] = ("As", "Kh"),
+    open_size_bb: float = 2.5,
+    three_bet_size_bb: float = 8.0,
+    four_bet_size_bb: float = 20.0,
+    small_blind: float = 0.5,
+    big_blind: float = 1.0,
+) -> ObservedTableState:
+    """构造 Hero Open Facing 4-Bet 的 6-max preflop 观察状态。
+
+    场景描述: Hero 在 hero_opener_position open raise, 中间玩家 fold,
+    3bettor 3-bet, 中间玩家 fold, 4bettor 4-bet,
+    剩余玩家 fold, 行动权回到 Hero, 轮到 Hero 做 call/fold/5bet 决策。
+
+    行动顺序约束: hero_opener < 3bettor < 4bettor (按翻前行动顺序)。
+
+    Args:
+        hero_opener_position: Hero 所在位置 (同时也是 opener)。
+        three_bettor_position: 3-bet 的对手位置。
+        four_bettor_position: 4-bet 的对手位置。
+        three_bettor_player_name: 3-bettor 玩家名。
+        four_bettor_player_name: 4-bettor 玩家名。
+        state_version: 状态版本号。
+        hero_cards: Hero 手牌, 默认 AKo。
+        open_size_bb: Hero open raise 大小 (以 BB 为单位), 默认 2.5。
+        three_bet_size_bb: 3-bet 大小 (以 BB 为单位), 默认 8.0。
+        four_bet_size_bb: 4-bet 大小 (以 BB 为单位), 默认 20.0。
+        small_blind: 小盲注额, 默认 0.5。
+        big_blind: 大盲注额, 默认 1.0。
+
+    Returns:
+        可直接喂给 StrategyEngine 的观察状态。
+
+    Raises:
+        ValueError: 位置行动顺序不合法时抛出。
+    """
+
+    hero_order = PREFLOP_ACTION_ORDER_6MAX.index(hero_opener_position)
+    three_bettor_order = PREFLOP_ACTION_ORDER_6MAX.index(three_bettor_position)
+    four_bettor_order = PREFLOP_ACTION_ORDER_6MAX.index(four_bettor_position)
+
+    if not (hero_order < three_bettor_order < four_bettor_order):
+        raise ValueError(
+            f"Hero Open Facing 4-Bet 场景要求 hero(opener) < 3bettor < 4bettor: "
+            f"hero={hero_opener_position.value}(order={hero_order}) "
+            f"3bettor={three_bettor_position.value}(order={three_bettor_order}) "
+            f"4bettor={four_bettor_position.value}(order={four_bettor_order})"
+        )
+
+    hero_seat = _POSITION_TO_SEAT_6MAX[hero_opener_position]
+    open_amount = open_size_bb * big_blind
+    three_bet_amount = three_bet_size_bb * big_blind
+    four_bet_amount = four_bet_size_bb * big_blind
+
+    players: list[Player] = []
+    action_history: list[PlayerAction] = []
+
+    pot = small_blind + big_blind + open_amount + three_bet_amount + four_bet_amount
+
+    for position in PREFLOP_ACTION_ORDER_6MAX:
+        seat = _POSITION_TO_SEAT_6MAX[position]
+
+        if position == hero_opener_position:
+            # Hero (opener): 已 open raise, 现在等待面对 4bet 后的决策
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=f"hero_{position.value.lower()}",
+                    stack=100.0 - open_amount,
+                    bet=open_amount,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                )
+            )
+            action_history.append(
+                PlayerAction(
+                    player_index=seat,
+                    action_type=ActionType.RAISE,
+                    amount=open_amount,
+                    street=Street.PREFLOP,
+                )
+            )
+        elif position == three_bettor_position:
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=three_bettor_player_name,
+                    stack=100.0 - three_bet_amount,
+                    bet=three_bet_amount,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                )
+            )
+            action_history.append(
+                PlayerAction(
+                    player_index=seat,
+                    action_type=ActionType.RAISE,
+                    amount=three_bet_amount,
+                    street=Street.PREFLOP,
+                )
+            )
+        elif position == four_bettor_position:
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=four_bettor_player_name,
+                    stack=100.0 - four_bet_amount,
+                    bet=four_bet_amount,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                )
+            )
+            action_history.append(
+                PlayerAction(
+                    player_index=seat,
+                    action_type=ActionType.RAISE,
+                    amount=four_bet_amount,
+                    street=Street.PREFLOP,
+                )
+            )
+        elif position == Position.SB:
+            is_folded = _should_fold_in_hero_open_facing_4bet(
+                position,
+                hero_opener_position,
+                three_bettor_position,
+                four_bettor_position,
+            )
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id="sb_player",
+                    stack=100.0 - small_blind,
+                    bet=small_blind,
+                    position=position,
+                    is_folded=is_folded,
+                )
+            )
+            if is_folded:
+                action_history.append(
+                    PlayerAction(
+                        player_index=seat,
+                        action_type=ActionType.FOLD,
+                        amount=0.0,
+                        street=Street.PREFLOP,
+                    )
+                )
+        elif position == Position.BB:
+            is_folded = _should_fold_in_hero_open_facing_4bet(
+                position,
+                hero_opener_position,
+                three_bettor_position,
+                four_bettor_position,
+            )
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id="bb_player",
+                    stack=100.0 - big_blind,
+                    bet=big_blind,
+                    position=position,
+                    is_folded=is_folded,
+                )
+            )
+            if is_folded:
+                action_history.append(
+                    PlayerAction(
+                        player_index=seat,
+                        action_type=ActionType.FOLD,
+                        amount=0.0,
+                        street=Street.PREFLOP,
+                    )
+                )
+        else:
+            is_folded = _should_fold_in_hero_open_facing_4bet(
+                position,
+                hero_opener_position,
+                three_bettor_position,
+                four_bettor_position,
+            )
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=f"{position.value.lower()}_player",
+                    stack=100.0,
+                    bet=0.0,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                    is_folded=is_folded,
+                )
+            )
+            if is_folded:
+                action_history.append(
+                    PlayerAction(
+                        player_index=seat,
+                        action_type=ActionType.FOLD,
+                        amount=0.0,
+                        street=Street.PREFLOP,
+                    )
+                )
+
+    table_id = (
+        f"hero_open_facing_4bet_{hero_opener_position.value.lower()}"
+        f"_vs_{three_bettor_position.value.lower()}_3bet"
+        f"_vs_{four_bettor_position.value.lower()}_4bet"
+    )
+
+    return ObservedTableState(
+        table_id=table_id,
+        player_count=6,
+        small_blind=small_blind,
+        big_blind=big_blind,
+        hand_id=f"hero_open_facing_4bet_hand_{state_version}",
+        street=Street.PREFLOP,
+        pot=pot,
+        btn_seat=_POSITION_TO_SEAT_6MAX[Position.BTN],
+        actor_seat=hero_seat,
+        hero_seat=hero_seat,
+        hero_cards=hero_cards,
+        players=players,
+        action_history=action_history,
+        state_version=state_version,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 场景构造: Hero 3-Bet Facing 4-Bet
+# ---------------------------------------------------------------------------
+
+
+def build_hero_3bet_facing_4bet_state(
+    *,
+    opener_position: Position,
+    hero_3bettor_position: Position,
+    four_bettor_position: Position,
+    opener_player_name: str,
+    four_bettor_player_name: str,
+    state_version: int = 1,
+    hero_cards: tuple[str, str] = ("As", "Kh"),
+    open_size_bb: float = 2.5,
+    three_bet_size_bb: float = 8.0,
+    four_bet_size_bb: float = 20.0,
+    small_blind: float = 0.5,
+    big_blind: float = 1.0,
+) -> ObservedTableState:
+    """构造 Hero 3-Bet Facing 4-Bet 的 6-max preflop 观察状态。
+
+    场景描述: opener open raise, 中间玩家 fold, Hero 3-bet,
+    中间玩家 fold, 4bettor 4-bet, 剩余玩家 fold, opener 对 4-bet 弃牌,
+    行动权回到 Hero, 轮到 Hero 做 call/fold/5bet 决策。
+
+    行动顺序约束: opener < hero(3bettor) < 4bettor (按翻前行动顺序)。
+
+    Args:
+        opener_position: Opener 位置。
+        hero_3bettor_position: Hero 所在位置 (同时也是 3bettor)。
+        four_bettor_position: 4-bet 的对手位置。
+        opener_player_name: Opener 玩家名。
+        four_bettor_player_name: 4-bettor 玩家名。
+        state_version: 状态版本号。
+        hero_cards: Hero 手牌, 默认 AKo。
+        open_size_bb: Open raise 大小 (以 BB 为单位), 默认 2.5。
+        three_bet_size_bb: Hero 3-bet 大小 (以 BB 为单位), 默认 8.0。
+        four_bet_size_bb: 4-bet 大小 (以 BB 为单位), 默认 20.0。
+        small_blind: 小盲注额, 默认 0.5。
+        big_blind: 大盲注额, 默认 1.0。
+
+    Returns:
+        可直接喂给 StrategyEngine 的观察状态。
+
+    Raises:
+        ValueError: 位置行动顺序不合法时抛出。
+    """
+
+    opener_order = PREFLOP_ACTION_ORDER_6MAX.index(opener_position)
+    hero_order = PREFLOP_ACTION_ORDER_6MAX.index(hero_3bettor_position)
+    four_bettor_order = PREFLOP_ACTION_ORDER_6MAX.index(four_bettor_position)
+
+    if not (opener_order < hero_order < four_bettor_order):
+        raise ValueError(
+            f"Hero 3-Bet Facing 4-Bet 场景要求 opener < hero(3bettor) < 4bettor: "
+            f"opener={opener_position.value}(order={opener_order}) "
+            f"hero={hero_3bettor_position.value}(order={hero_order}) "
+            f"4bettor={four_bettor_position.value}(order={four_bettor_order})"
+        )
+
+    hero_seat = _POSITION_TO_SEAT_6MAX[hero_3bettor_position]
+    open_amount = open_size_bb * big_blind
+    three_bet_amount = three_bet_size_bb * big_blind
+    four_bet_amount = four_bet_size_bb * big_blind
+
+    players: list[Player] = []
+    action_history: list[PlayerAction] = []
+
+    pot = small_blind + big_blind + open_amount + three_bet_amount + four_bet_amount
+
+    for position in PREFLOP_ACTION_ORDER_6MAX:
+        seat = _POSITION_TO_SEAT_6MAX[position]
+
+        if position == opener_position:
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=opener_player_name,
+                    stack=100.0 - open_amount,
+                    bet=open_amount,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                    is_folded=True,
+                )
+            )
+            action_history.append(
+                PlayerAction(
+                    player_index=seat,
+                    action_type=ActionType.RAISE,
+                    amount=open_amount,
+                    street=Street.PREFLOP,
+                )
+            )
+        elif position == hero_3bettor_position:
+            # Hero (3bettor): 已 3-bet, 现在面对 4bet 决策
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=f"hero_{position.value.lower()}",
+                    stack=100.0 - three_bet_amount,
+                    bet=three_bet_amount,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                )
+            )
+            action_history.append(
+                PlayerAction(
+                    player_index=seat,
+                    action_type=ActionType.RAISE,
+                    amount=three_bet_amount,
+                    street=Street.PREFLOP,
+                )
+            )
+        elif position == four_bettor_position:
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=four_bettor_player_name,
+                    stack=100.0 - four_bet_amount,
+                    bet=four_bet_amount,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                )
+            )
+            action_history.append(
+                PlayerAction(
+                    player_index=seat,
+                    action_type=ActionType.RAISE,
+                    amount=four_bet_amount,
+                    street=Street.PREFLOP,
+                )
+            )
+        elif position == Position.SB:
+            is_folded = _should_fold_in_hero_3bet_facing_4bet(
+                position,
+                opener_position,
+                hero_3bettor_position,
+                four_bettor_position,
+            )
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id="sb_player",
+                    stack=100.0 - small_blind,
+                    bet=small_blind,
+                    position=position,
+                    is_folded=is_folded,
+                )
+            )
+            if is_folded:
+                action_history.append(
+                    PlayerAction(
+                        player_index=seat,
+                        action_type=ActionType.FOLD,
+                        amount=0.0,
+                        street=Street.PREFLOP,
+                    )
+                )
+        elif position == Position.BB:
+            is_folded = _should_fold_in_hero_3bet_facing_4bet(
+                position,
+                opener_position,
+                hero_3bettor_position,
+                four_bettor_position,
+            )
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id="bb_player",
+                    stack=100.0 - big_blind,
+                    bet=big_blind,
+                    position=position,
+                    is_folded=is_folded,
+                )
+            )
+            if is_folded:
+                action_history.append(
+                    PlayerAction(
+                        player_index=seat,
+                        action_type=ActionType.FOLD,
+                        amount=0.0,
+                        street=Street.PREFLOP,
+                    )
+                )
+        else:
+            is_folded = _should_fold_in_hero_3bet_facing_4bet(
+                position,
+                opener_position,
+                hero_3bettor_position,
+                four_bettor_position,
+            )
+            players.append(
+                Player(
+                    seat_index=seat,
+                    player_id=f"{position.value.lower()}_player",
+                    stack=100.0,
+                    bet=0.0,
+                    position=position,
+                    is_button=(position == Position.BTN),
+                    is_folded=is_folded,
+                )
+            )
+            if is_folded:
+                action_history.append(
+                    PlayerAction(
+                        player_index=seat,
+                        action_type=ActionType.FOLD,
+                        amount=0.0,
+                        street=Street.PREFLOP,
+                    )
+                )
+
+    opener_seat = _POSITION_TO_SEAT_6MAX[opener_position]
+    action_history.append(
+        PlayerAction(
+            player_index=opener_seat,
+            action_type=ActionType.FOLD,
+            amount=0.0,
+            street=Street.PREFLOP,
+        )
+    )
+
+    table_id = (
+        f"hero_3bet_facing_4bet_{opener_position.value.lower()}_open"
+        f"_{hero_3bettor_position.value.lower()}_3bet"
+        f"_vs_{four_bettor_position.value.lower()}_4bet"
+    )
+
+    return ObservedTableState(
+        table_id=table_id,
+        player_count=6,
+        small_blind=small_blind,
+        big_blind=big_blind,
+        hand_id=f"hero_3bet_facing_4bet_hand_{state_version}",
+        street=Street.PREFLOP,
+        pot=pot,
+        btn_seat=_POSITION_TO_SEAT_6MAX[Position.BTN],
+        actor_seat=hero_seat,
+        hero_seat=hero_seat,
+        hero_cards=hero_cards,
+        players=players,
+        action_history=action_history,
+        state_version=state_version,
+    )
+
+
 def _should_fold_in_multibet(
     position: Position,
     opener_position: Position,
@@ -1523,6 +2067,36 @@ ALL_FACING_3BET_COMBINATIONS_6MAX: list[tuple[Position, Position]] = [
 ]
 """全部 15 种合法 Facing 3-Bet 位置组合 (hero_opener, 3bettor), 6-max。"""
 
+# 所有合法的 (hero_opener, 3bettor, 4bettor) Hero Open Facing 4-Bet 组合 (6-max)。
+# Hero open -> 3bettor 3bet -> 4bettor 4bet -> hero 决策。
+# 行动顺序: hero_opener < 3bettor < 4bettor。
+ALL_HERO_OPEN_FACING_4BET_COMBINATIONS_6MAX: list[
+    tuple[Position, Position, Position]
+] = [
+    (hero_opener, three_bettor, four_bettor)
+    for i, hero_opener in enumerate(PREFLOP_ACTION_ORDER_6MAX)
+    for j, three_bettor in enumerate(
+        PREFLOP_ACTION_ORDER_6MAX[i + 1 :], start=i + 1
+    )
+    for four_bettor in PREFLOP_ACTION_ORDER_6MAX[j + 1 :]
+]
+"""全部 20 种合法 Hero Open Facing 4-Bet 位置组合 (hero_opener, 3bettor, 4bettor), 6-max。"""
+
+# 所有合法的 (opener, hero_3bettor, 4bettor) Hero 3-Bet Facing 4-Bet 组合 (6-max)。
+# Opener open -> hero 3bet -> 4bettor 4bet -> hero 决策。
+# 行动顺序: opener < hero_3bettor < 4bettor。
+ALL_HERO_3BET_FACING_4BET_COMBINATIONS_6MAX: list[
+    tuple[Position, Position, Position]
+] = [
+    (opener, hero_3bettor, four_bettor)
+    for i, opener in enumerate(PREFLOP_ACTION_ORDER_6MAX)
+    for j, hero_3bettor in enumerate(
+        PREFLOP_ACTION_ORDER_6MAX[i + 1 :], start=i + 1
+    )
+    for four_bettor in PREFLOP_ACTION_ORDER_6MAX[j + 1 :]
+]
+"""全部 20 种合法 Hero 3-Bet Facing 4-Bet 位置组合 (opener, hero_3bettor, 4bettor), 6-max。"""
+
 
 # ---------------------------------------------------------------------------
 # 合成 PlayerStats 构造
@@ -1702,3 +2276,345 @@ def write_hero_range_g5_report(
         lines.append(f"## {section_title}\n\n{section_content}\n\n")
 
     output_path.write_text("".join(lines), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 对手画像分段加载
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class OpponentProfile:
+    """对手画像: 携带数据量级别与 VPIP/PFR 分段信息。
+
+    Attributes:
+        player_name: 玩家名。
+        total_hands: 总手数。
+        vpip_pct: VPIP 百分比。
+        pfr_pct: PFR 百分比。
+        data_level: 数据量级别 ("insufficient" / "medium" / "sufficient")。
+        segment: VPIP/PFR 分段标签。
+    """
+
+    player_name: str
+    total_hands: int
+    vpip_pct: float
+    pfr_pct: float
+    data_level: str
+    segment: str
+
+
+def _classify_data_level(total_hands: int) -> str:
+    """根据总手数分类数据量级别。
+
+    Args:
+        total_hands: 总手数。
+
+    Returns:
+        "insufficient" / "medium" / "sufficient"。
+    """
+    if total_hands < 50:
+        return "insufficient"
+    elif total_hands <= 300:
+        return "medium"
+    else:
+        return "sufficient"
+
+
+def _classify_vpip_pfr_segment(vpip_pct: float, pfr_pct: float) -> str:
+    """根据 VPIP/PFR 百分比分类到四象限分段。
+
+    VPIP 中位线 = 25%, PFR 中位线 = 15%。
+    注意: vpip_pct/pfr_pct 的单位是百分比 (如 25.0 表示 25%)。
+
+    Args:
+        vpip_pct: VPIP 百分比值 (如 25.0 表示 25%)。
+        pfr_pct: PFR 百分比值 (如 15.0 表示 15%)。
+
+    Returns:
+        分段标签: "tight_passive" / "tight_aggressive" /
+        "loose_passive" / "loose_aggressive"。
+    """
+    vpip_threshold = 25.0
+    pfr_threshold = 15.0
+
+    if vpip_pct <= vpip_threshold:
+        return "tight_aggressive" if pfr_pct > pfr_threshold else "tight_passive"
+    else:
+        return "loose_aggressive" if pfr_pct > pfr_threshold else "loose_passive"
+
+
+def load_opponent_profiles(
+    *,
+    csv_path: Path,
+    per_group: int = 1,
+) -> list[OpponentProfile]:
+    """从 CSV 中按数据量级别 x VPIP/PFR 分段各取样本。
+
+    对每种 data_level x segment 组合, 按 total_hands 中位取样,
+    保证覆盖所有 12 种组合 (3 数据级别 x 4 VPIP/PFR 分段)。
+
+    Args:
+        csv_path: 玩家核心统计 CSV 路径。
+        per_group: 每个组合取多少个样本, 默认 1。
+
+    Returns:
+        覆盖所有分组的 OpponentProfile 列表。
+    """
+
+    with csv_path.open("r", encoding="utf-8", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        rows = list(reader)
+
+    # 按 data_level x segment 分组
+    groups: dict[tuple[str, str], list[OpponentProfile]] = {}
+
+    for row in rows:
+        table_type = (row.get("table_type") or "").strip().upper()
+        if table_type != "SIX_MAX":
+            continue
+        player_name = (row.get("player_name") or "").strip()
+        if not player_name or player_name.lower().startswith("aggregated_"):
+            continue
+
+        total_hands_raw = (row.get("total_hands") or "0").strip()
+        try:
+            total_hands = int(float(total_hands_raw or "0"))
+        except ValueError:
+            continue
+        if total_hands <= 0:
+            continue
+
+        vpip_pct = parse_percent_value(row.get("vpip_pct", ""))
+        pfr_pct = parse_percent_value(row.get("pfr_pct", ""))
+        if vpip_pct is None or pfr_pct is None:
+            continue
+
+        data_level = _classify_data_level(total_hands)
+        segment = _classify_vpip_pfr_segment(vpip_pct, pfr_pct)
+
+        profile = OpponentProfile(
+            player_name=player_name,
+            total_hands=total_hands,
+            vpip_pct=vpip_pct,
+            pfr_pct=pfr_pct,
+            data_level=data_level,
+            segment=segment,
+        )
+
+        key = (data_level, segment)
+        groups.setdefault(key, []).append(profile)
+
+    # 每组按 total_hands 排序取中位数附近的 per_group 个样本
+    result: list[OpponentProfile] = []
+    for key in sorted(groups.keys()):
+        candidates = sorted(groups[key], key=lambda p: p.total_hands)
+        mid = len(candidates) // 2
+        start = max(0, mid - per_group // 2)
+        end = min(len(candidates), start + per_group)
+        result.extend(candidates[start:end])
+
+    return result
+
+
+def generate_scenario_report(
+    *,
+    output_path: Path,
+    scenario_name: str,
+    results: list[dict[str, object]],
+    total_elapsed_ms: float,
+) -> None:
+    """生成单个场景的详细 Markdown 报告。
+
+    报告包含对手先验/后验频率和 Hero 先验/后验动作分布两组列,
+    便于同时观察对手建模偏移和 Hero 策略调整。
+
+    Args:
+        output_path: 输出文件路径。
+        scenario_name: 场景名称 (如 "RFI", "3-Bet" 等)。
+        results: 每条结果的字典列表, 包含 combo/player/prior/posterior/timing 等。
+        total_elapsed_ms: 总耗时 (毫秒)。
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = []
+    lines.append(f"# {scenario_name} 场景测试报告\n\n")
+    lines.append(f"总耗时: {total_elapsed_ms:.1f}ms\n\n")
+
+    # 按 data_level 分组
+    by_level: dict[str, list[dict[str, object]]] = {}
+    for r in results:
+        level = str(r.get("data_level", "unknown"))
+        by_level.setdefault(level, []).append(r)
+
+    for level in ["insufficient", "medium", "sufficient"]:
+        level_results = by_level.get(level, [])
+        if not level_results:
+            continue
+
+        level_label = {
+            "insufficient": "数据不足 (<50手)",
+            "medium": "数据中等 (50-300手)",
+            "sufficient": "数据充足 (>300手)",
+        }.get(level, level)
+
+        lines.append(f"## {level_label}\n\n")
+
+        # 按 segment 分组
+        by_seg: dict[str, list[dict[str, object]]] = {}
+        for r in level_results:
+            seg = str(r.get("segment", "unknown"))
+            by_seg.setdefault(seg, []).append(r)
+
+        for seg in ["tight_passive", "tight_aggressive", "loose_passive", "loose_aggressive"]:
+            seg_results = by_seg.get(seg, [])
+            if not seg_results:
+                continue
+
+            seg_label = {
+                "tight_passive": "紧被动 (低VPIP/低PFR)",
+                "tight_aggressive": "紧激进 (低VPIP/高PFR)",
+                "loose_passive": "松被动 (高VPIP/低PFR)",
+                "loose_aggressive": "松激进 (高VPIP/高PFR)",
+            }.get(seg, seg)
+
+            lines.append(f"### {seg_label}\n\n")
+
+            # 表头
+            lines.append(
+                "| 位置组合 | 玩家 | 手数 | VPIP | PFR "
+                "| 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) "
+                "| 对手Range先验 | 对手Range后验 | 激进度比 "
+                "| Hero先验分布 | Hero后验分布 | 耗时(ms) |\n"
+            )
+            lines.append(
+                "|---------|------|------|------|-----"
+                "|-------------------|-------------------"
+                "|-------------|-------------|--------"
+                "|------------|------------|----------|\n"
+            )
+
+            for r in seg_results:
+                combo = str(r.get("combo", ""))
+                pname = str(r.get("player_name", ""))
+                hands = r.get("total_hands", 0)
+                vpip = r.get("vpip_pct", 0.0)
+                pfr = r.get("pfr_pct", 0.0)
+                elapsed = r.get("elapsed_ms", 0.0)
+
+                # 对手明细
+                opp_details = r.get("opponent_aggression_details", [])
+                opp_gto_str = _format_opponent_action_dist(
+                    opp_details, key="prior_action_distribution"  # type: ignore[arg-type]
+                )
+                opp_stats_str = _format_opponent_action_dist(
+                    opp_details, key="stats_action_distribution"  # type: ignore[arg-type]
+                )
+                opp_prior_str, opp_posterior_str, ratio_str = _format_opponent_details(
+                    opp_details  # type: ignore[arg-type]
+                )
+
+                # Hero 先验/后验动作分布
+                hero_prior_dist = r.get("prior_distribution", {})
+                hero_posterior_dist = r.get("posterior_distribution", {})
+                hero_prior_str = _format_distribution(hero_prior_dist)  # type: ignore[arg-type]
+                hero_posterior_str = _format_distribution(hero_posterior_dist)  # type: ignore[arg-type]
+
+                lines.append(
+                    f"| {combo} | {pname} | {hands} "
+                    f"| {float(vpip):.1f}% | {float(pfr):.1f}% "  # type: ignore[arg-type]
+                    f"| {opp_gto_str} | {opp_stats_str} "
+                    f"| {opp_prior_str} | {opp_posterior_str} | {ratio_str} "
+                    f"| {hero_prior_str} | {hero_posterior_str} "
+                    f"| {float(elapsed):.1f} |\n"  # type: ignore[arg-type]
+                )
+
+            lines.append("\n")
+
+    output_path.write_text("".join(lines), encoding="utf-8")
+    print(f"\n[报告] {scenario_name} 报告已写入: {output_path}")
+
+
+def _format_opponent_action_dist(
+    details: list[dict[str, object]],
+    *,
+    key: str,
+) -> str:
+    """从 opponent_aggression_details 中提取对手动作分布 (R/C/F)。
+
+    Args:
+        details: opponent_aggression_details 列表。
+        key: 分布字段名, 如 "prior_action_distribution" 或
+            "stats_action_distribution"。
+
+    Returns:
+        格式化字符串, 如 "F:85% C:5% R7.5:10%"。
+        多个对手时以 " / " 分隔。
+    """
+    if not details:
+        return "-"
+
+    parts: list[str] = []
+    for d in details:
+        dist = d.get(key, {})
+        if not isinstance(dist, dict) or not dist:
+            parts.append("-")
+            continue
+        action_parts: list[str] = []
+        for code, prob in dist.items():
+            action_parts.append(f"{code}:{float(prob):.0%}")  # type: ignore[arg-type]
+        parts.append(" ".join(action_parts))
+
+    return " / ".join(parts)
+
+
+def _format_opponent_details(
+    details: list[dict[str, object]],
+) -> tuple[str, str, str]:
+    """从 opponent_aggression_details 中提取对手先验/后验频率与激进度比。
+
+    多个对手时, 显示各对手的值以 "+" 连接; 激进度比显示聚合乘积。
+
+    Args:
+        details: opponent_aggression_details 列表。
+
+    Returns:
+        (prior_str, posterior_str, ratio_str) 三元组。
+    """
+    if not details:
+        return "-", "-", "-"
+
+    prior_parts: list[str] = []
+    posterior_parts: list[str] = []
+    combined_ratio = 1.0
+
+    for d in details:
+        prior_f = float(d.get("prior_freq", 0))  # type: ignore[arg-type]
+        posterior_f = float(d.get("posterior_freq", 0))  # type: ignore[arg-type]
+        dampened = float(d.get("dampened_ratio", d.get("ratio", 1.0)))  # type: ignore[arg-type]
+        prior_parts.append(f"{prior_f:.2%}")
+        posterior_parts.append(f"{posterior_f:.2%}")
+        combined_ratio *= dampened
+
+    prior_str = "+".join(prior_parts)
+    posterior_str = "+".join(posterior_parts)
+    ratio_str = f"{combined_ratio:.4f}"
+    return prior_str, posterior_str, ratio_str
+
+
+def _format_distribution(dist: dict[str, float]) -> str:
+    """将动作分布格式化为简洁字符串。
+
+    Args:
+        dist: action_code -> probability 映射。
+
+    Returns:
+        格式化字符串, 如 "F:30% C:40% R:30%"。
+    """
+    if not dist:
+        return "-"
+    parts = []
+    for code, prob in dist.items():
+        action_code = code if code else "?"
+        parts.append(f"{action_code}:{prob:.0%}")
+    return " ".join(parts)

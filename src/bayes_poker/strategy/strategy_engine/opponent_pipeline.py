@@ -47,6 +47,14 @@ _BELIEF_LOW_MASS_THRESHOLD = 1e-9
 
 
 @dataclass(frozen=True, slots=True)
+class _PosteriorResult:
+    """对手后验范围构建结果, 包含范围和节点统计。"""
+
+    range: PreflopRange
+    node_stats: PlayerNodeStats
+
+
+@dataclass(frozen=True, slots=True)
 class OpponentPipelineConfig:
     """对手范围更新管线配置。"""
 
@@ -152,18 +160,33 @@ class OpponentPipeline:
                 action=action,
                 big_blind=observed_state.big_blind,
             )
-            context.player_ranges[seat] = self._build_posterior_range(
+            posterior_result = self._build_posterior_range(
                 player=player,
                 observed_state=observed_state,
                 action=action,
                 decision_prefix=prefix,
                 prior_policy=prior_policy,
             )
+            context.player_ranges[seat] = posterior_result.range
+            # GTO 先验各动作频率
+            prior_action_dist = {
+                a.action_name: a.blended_frequency
+                for a in prior_policy.actions
+            }
+            # 贝叶斯平滑后的 F/C/R 概率
+            ns = posterior_result.node_stats
+            stats_action_dist = {
+                "F": ns.fold_probability,
+                "C": ns.call_probability,
+                "R": ns.raise_probability,
+            }
             context.player_summaries[seat] = {
                 "status": "posterior",
                 "source_kind": self._last_source_kind,
                 "prior_frequency": matched_prior_action.blended_frequency,
                 "matched_action_type": action.action_type.value,
+                "prior_action_distribution": prior_action_dist,
+                "stats_action_distribution": stats_action_dist,
             }
 
         for player in prior_only_opponents:
@@ -185,7 +208,7 @@ class OpponentPipeline:
         action: PlayerAction,
         decision_prefix: list[PlayerAction],
         prior_policy: GtoPriorPolicy,
-    ) -> PreflopRange:
+    ) -> _PosteriorResult:
         state_for_player = self._build_state_for_player(
             player=player,
             observed_state=observed_state,
@@ -208,12 +231,13 @@ class OpponentPipeline:
             big_blind=observed_state.big_blind,
         )
         prior = _resolve_action_prior_range(matched_action)
-        return _adjust_belief_with_stats_and_ev(
+        posterior_range = _adjust_belief_with_stats_and_ev(
             prior=prior,
             observed_action_type=action.action_type,
             node_stats=node_stats,
             enable_global_raise_blending=self._config.enable_global_raise_blending,
         )
+        return _PosteriorResult(range=posterior_range, node_stats=node_stats)
 
     def _build_initial_prior_range(
         self,

@@ -491,6 +491,13 @@ def _compute_opponent_aggression_ratio(
                 "posterior_freq": posterior_freq,
                 "ratio": raw_ratio,
                 "dampened_ratio": dampened_ratio,
+                "source_kind": summary.get("source_kind", ""),
+                "prior_action_distribution": summary.get(
+                    "prior_action_distribution", {}
+                ),
+                "stats_action_distribution": summary.get(
+                    "stats_action_distribution", {}
+                ),
             }
         )
 
