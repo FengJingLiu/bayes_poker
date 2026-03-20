@@ -12,6 +12,15 @@ from pathlib import Path
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player, PlayerAction, Position
+from bayes_poker.player_metrics.enums import (
+    ActionType as MetricsActionType,
+)
+from bayes_poker.player_metrics.enums import (
+    TableType,
+)
+from bayes_poker.player_metrics.estimated_ad import EstimatedAD
+from bayes_poker.player_metrics.models import PlayerStats, StatValue
+from bayes_poker.player_metrics.params import PostFlopParams, PreFlopParams
 from bayes_poker.strategy.strategy_engine import (
     RecommendationDecision,
     StrategyEngine,
@@ -21,14 +30,6 @@ from bayes_poker.strategy.strategy_engine.utg_open_ev_validation import (
     sanitize_filename,
 )
 from bayes_poker.table.observed_state import ObservedTableState
-
-from bayes_poker.player_metrics.enums import (
-    ActionType as MetricsActionType,
-    TableType,
-)
-from bayes_poker.player_metrics.models import ActionStats, PlayerStats, StatValue
-from bayes_poker.player_metrics.estimated_ad import EstimatedAD
-from bayes_poker.player_metrics.params import PreFlopParams, PostFlopParams
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -289,7 +290,6 @@ def build_rfi_state(
         )
 
     hero_seat = _POSITION_TO_SEAT_6MAX[hero_position]
-    opener_seat = _POSITION_TO_SEAT_6MAX[opener_position]
     open_amount = open_size_bb * big_blind
 
     # 构造 6 名玩家
@@ -514,8 +514,6 @@ def build_3bet_state(
         )
 
     hero_seat = _POSITION_TO_SEAT_6MAX[hero_position]
-    opener_seat = _POSITION_TO_SEAT_6MAX[opener_position]
-    three_bettor_seat = _POSITION_TO_SEAT_6MAX[three_bettor_position]
     open_amount = open_size_bb * big_blind
     three_bet_amount = three_bet_size_bb * big_blind
 
@@ -742,7 +740,6 @@ def build_facing_3bet_state(
         )
 
     hero_seat = _POSITION_TO_SEAT_6MAX[hero_opener_position]
-    three_bettor_seat = _POSITION_TO_SEAT_6MAX[three_bettor_position]
     open_amount = open_size_bb * big_blind
     three_bet_amount = three_bet_size_bb * big_blind
 
@@ -2075,9 +2072,7 @@ ALL_HERO_OPEN_FACING_4BET_COMBINATIONS_6MAX: list[
 ] = [
     (hero_opener, three_bettor, four_bettor)
     for i, hero_opener in enumerate(PREFLOP_ACTION_ORDER_6MAX)
-    for j, three_bettor in enumerate(
-        PREFLOP_ACTION_ORDER_6MAX[i + 1 :], start=i + 1
-    )
+    for j, three_bettor in enumerate(PREFLOP_ACTION_ORDER_6MAX[i + 1 :], start=i + 1)
     for four_bettor in PREFLOP_ACTION_ORDER_6MAX[j + 1 :]
 ]
 """全部 20 种合法 Hero Open Facing 4-Bet 位置组合 (hero_opener, 3bettor, 4bettor), 6-max。"""
@@ -2090,9 +2085,7 @@ ALL_HERO_3BET_FACING_4BET_COMBINATIONS_6MAX: list[
 ] = [
     (opener, hero_3bettor, four_bettor)
     for i, opener in enumerate(PREFLOP_ACTION_ORDER_6MAX)
-    for j, hero_3bettor in enumerate(
-        PREFLOP_ACTION_ORDER_6MAX[i + 1 :], start=i + 1
-    )
+    for j, hero_3bettor in enumerate(PREFLOP_ACTION_ORDER_6MAX[i + 1 :], start=i + 1)
     for four_bettor in PREFLOP_ACTION_ORDER_6MAX[j + 1 :]
 ]
 """全部 20 种合法 Hero 3-Bet Facing 4-Bet 位置组合 (opener, hero_3bettor, 4bettor), 6-max。"""
@@ -2131,9 +2124,7 @@ def make_synthetic_player_stats(
         填充好各分桶样本的 PlayerStats 实例.
     """
     stats = PlayerStats(player_name=player_name, table_type=table_type)
-    stats.vpip = StatValue(
-        positive=round(total_hands * vpip_pct), total=total_hands
-    )
+    stats.vpip = StatValue(positive=round(total_hands * vpip_pct), total=total_hands)
 
     # -- preflop: 仅填充 previous_action == FOLD 的 bin (PFR 统计来源) --
     all_preflop_params = PreFlopParams.get_all_params(table_type)
@@ -2229,7 +2220,7 @@ def format_estimated_ad_comparison(
     lines.append(header)
     lines.append(separator)
 
-    for label, ad in zip(labels, ads):
+    for label, ad in zip(labels, ads, strict=True):
         row = (
             f"| {label} "
             f"| {ad.bet_raise.mean:.4f} | {ad.bet_raise.sigma:.4f} "
@@ -2466,7 +2457,12 @@ def generate_scenario_report(
             seg = str(r.get("segment", "unknown"))
             by_seg.setdefault(seg, []).append(r)
 
-        for seg in ["tight_passive", "tight_aggressive", "loose_passive", "loose_aggressive"]:
+        for seg in [
+            "tight_passive",
+            "tight_aggressive",
+            "loose_passive",
+            "loose_aggressive",
+        ]:
             seg_results = by_seg.get(seg, [])
             if not seg_results:
                 continue
@@ -2505,10 +2501,12 @@ def generate_scenario_report(
                 # 对手明细
                 opp_details = r.get("opponent_aggression_details", [])
                 opp_gto_str = _format_opponent_action_dist(
-                    opp_details, key="prior_action_distribution"  # type: ignore[arg-type]
+                    opp_details,
+                    key="prior_action_distribution",  # type: ignore[arg-type]
                 )
                 opp_stats_str = _format_opponent_action_dist(
-                    opp_details, key="stats_action_distribution"  # type: ignore[arg-type]
+                    opp_details,
+                    key="stats_action_distribution",  # type: ignore[arg-type]
                 )
                 opp_prior_str, opp_posterior_str, ratio_str = _format_opponent_details(
                     opp_details  # type: ignore[arg-type]

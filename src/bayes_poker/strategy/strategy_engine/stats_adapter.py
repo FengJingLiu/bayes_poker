@@ -6,13 +6,38 @@ import sqlite3
 from dataclasses import dataclass
 
 from bayes_poker.player_metrics.enums import TableType
-from bayes_poker.player_metrics.models import ActionStats, PlayerStats
+from bayes_poker.player_metrics.models import PlayerStats
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
 from bayes_poker.strategy.strategy_engine.core_types import PlayerNodeContext
 
 _AGGREGATED_PLAYER_NAMES: dict[TableType, str] = {
     TableType.SIX_MAX: "aggregated_sixmax_100",
 }
+
+_MIN_HANDS_FOR_INDIVIDUAL_STATS: int = 10
+
+
+def _should_fallback_to_population(stats: PlayerStats) -> bool:
+    """判断玩家统计是否过于极端, 应回退到聚合玩家池数据。
+
+    当玩家总手数不足 10 手, 或 VPIP 和 PFR(bet_raise) 均为 0 时,
+    个体统计不具备建模意义, 使用 aggregated_sixmax_100 作为替代。
+
+    Args:
+        stats: 玩家原始统计。
+
+    Returns:
+        True 表示应回退到 population fallback。
+    """
+    if stats.vpip.total < _MIN_HANDS_FOR_INDIVIDUAL_STATS:
+        return True
+    if stats.vpip.positive == 0 and stats.vpip.total > 0:
+        total_raise = sum(
+            s.raise_samples for s in stats.preflop_stats
+        )
+        if total_raise == 0:
+            return True
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,10 +52,6 @@ class PlayerNodeStats:
         bet_40_80_probability: 下注尺寸在 (0.4, 0.8] 区间的概率。
         bet_80_120_probability: 下注尺寸在 (0.8, 1.2] 区间的概率。
         bet_over_120_probability: 下注尺寸在 (1.2, +∞) 区间的概率。
-        confidence: 节点统计置信度。
-        global_pfr: 玩家全局 PFR 概率。
-        global_vpip: 玩家全局 VPIP 概率。
-        total_hands: 玩家全局样本手数。
         source_kind: 统计来源, 例如 player 或 population。
     """
 
@@ -41,10 +62,6 @@ class PlayerNodeStats:
     bet_40_80_probability: float
     bet_80_120_probability: float
     bet_over_120_probability: float
-    confidence: float
-    global_pfr: float
-    global_vpip: float
-    total_hands: int
     source_kind: str
 
 
@@ -53,10 +70,10 @@ class PlayerNodeStatsAdapterConfig:
     """玩家节点概率适配器配置。
 
     Attributes:
-        confidence_k: 置信度计算中的平滑常量。
+        max_similar_players: 相似玩家池大小, 传递给 OpponentEstimator。
     """
 
-    confidence_k: float = 20.0
+    max_similar_players: int = 130
 
 
 class PlayerNodeStatsAdapter:
@@ -107,6 +124,9 @@ class PlayerNodeStatsAdapter:
         if player_name is None:
             return self._load_population_node_stats(table_type, node_context)
 
+        if _should_fallback_to_population(raw_stats):
+            return self._load_population_node_stats(table_type, node_context)
+
         g5_result = self._load_g5_node_stats(
             player_name=player_name,
             table_type=table_type,
@@ -117,22 +137,6 @@ class PlayerNodeStatsAdapter:
             return g5_result
 
         return self._load_population_node_stats(table_type, node_context)
-
-    @staticmethod
-    def _compute_global_pfr(player_stats: PlayerStats) -> float:
-        """从原始统计安全计算全局 PFR。
-
-        Args:
-            player_stats: 玩家原始统计数据。
-
-        Returns:
-            全局 PFR 概率, 样本为 0 时返回 0.0。
-        """
-
-        from bayes_poker.player_metrics.builder import calculate_pfr
-
-        positive, total = calculate_pfr(player_stats)
-        return positive / total if total > 0 else 0.0
 
     def _load_raw_player_stats(
         self,
@@ -154,11 +158,7 @@ class PlayerNodeStatsAdapter:
         if not player_name:
             return None
         try:
-            return self._repo.get(
-                player_name,
-                table_type,
-                smooth_with_pool=False,
-            )
+            return self._repo.get(player_name, table_type)
         except sqlite3.OperationalError:
             return None
 
@@ -179,7 +179,6 @@ class PlayerNodeStatsAdapter:
 
         stats = self._load_population_stats(table_type)
         action_stats = stats.get_preflop_stats(node_context.params)
-        total_samples = action_stats.total_samples()
         return PlayerNodeStats(
             raise_probability=action_stats.bet_raise_probability(),
             call_probability=action_stats.check_call_probability(),
@@ -188,10 +187,6 @@ class PlayerNodeStatsAdapter:
             bet_40_80_probability=action_stats.bet_40_80_probability(),
             bet_80_120_probability=action_stats.bet_80_120_probability(),
             bet_over_120_probability=action_stats.bet_over_120_probability(),
-            confidence=self._build_confidence(total_samples),
-            global_pfr=0.0,
-            global_vpip=0.0,
-            total_hands=0,
             source_kind="population",
         )
 
@@ -199,21 +194,12 @@ class PlayerNodeStatsAdapter:
         aggregated_name = _AGGREGATED_PLAYER_NAMES.get(table_type)
         if aggregated_name is not None:
             try:
-                aggregated = self._repo.get(
-                    aggregated_name,
-                    table_type,
-                    smooth_with_pool=False,
-                )
+                aggregated = self._repo.get(aggregated_name, table_type)
             except sqlite3.OperationalError:
                 aggregated = None
             if aggregated is not None:
                 return aggregated
         return PlayerStats(player_name="population", table_type=table_type)
-
-    def _build_confidence(self, total_samples: int) -> float:
-        if total_samples < 0:
-            raise ValueError("total_samples 不能为负数")
-        return total_samples / (total_samples + self._config.confidence_k)
 
     def _get_g5_estimator(self, table_type: TableType) -> object:
         """懒加载并缓存 G5 OpponentEstimator（按桌型）。"""
@@ -221,28 +207,36 @@ class PlayerNodeStatsAdapter:
             self._g5_estimators: dict[TableType, object] = {}
         estimator = self._g5_estimators.get(table_type)
         if estimator is None:
-            from bayes_poker.player_metrics.opponent_estimator import OpponentEstimator
+            from bayes_poker.player_metrics.opponent_estimator import (
+                OpponentEstimator,
+                OpponentEstimatorOptions,
+            )
 
             def _load_exact(name: str) -> PlayerStats | None:
                 try:
-                    stats = self._repo.get(name, table_type, smooth_with_pool=False)
+                    stats = self._repo.get(name, table_type)
                 except sqlite3.OperationalError:
                     return None
                 if stats is None or stats.player_name != name:
                     return None
                 return stats
 
+            options = OpponentEstimatorOptions(
+                max_similar_players=self._config.max_similar_players,
+            )
             summaries = self._repo.load_summary_for_estimator(table_type)
             if summaries:
                 estimator = OpponentEstimator.from_summaries(
                     summaries,
                     table_type=table_type,
                     stats_loader=_load_exact,
+                    options=options,
                 )
             else:
                 estimator = OpponentEstimator(
                     self._repo.load_all_for_estimator(table_type),
                     table_type,
+                    options=options,
                 )
             self._g5_estimators[table_type] = estimator
         return estimator
@@ -275,18 +269,11 @@ class PlayerNodeStatsAdapter:
         except IndexError:
             return None
 
-        raw_action = raw_stats.get_preflop_stats(node_context.params)
-        return self._build_player_node_stats_from_estimated_ad(
-            player_stats=raw_stats,
-            action_total=raw_action.total_samples(),
-            ad=ad,
-        )
+        return self._build_player_node_stats_from_estimated_ad(ad=ad)
 
     def _build_player_node_stats_from_estimated_ad(
         self,
         *,
-        player_stats: PlayerStats,
-        action_total: int,
         ad: object,
     ) -> PlayerNodeStats:
         """从 EstimatedAD 构建 PlayerNodeStats。
@@ -304,10 +291,6 @@ class PlayerNodeStatsAdapter:
             bet_40_80_probability=0.25,
             bet_80_120_probability=0.25,
             bet_over_120_probability=0.25,
-            confidence=self._build_confidence(action_total),
-            global_pfr=self._compute_global_pfr(player_stats),
-            global_vpip=player_stats.vpip.to_float(),
-            total_hands=player_stats.vpip.total,
             source_kind="g5_player",
         )
 

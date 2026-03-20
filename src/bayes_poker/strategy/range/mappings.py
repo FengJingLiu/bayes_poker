@@ -7,10 +7,6 @@ from __future__ import annotations
 
 from functools import reduce
 from itertools import combinations
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 # ============================================================================
 # 常量定义

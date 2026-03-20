@@ -8,10 +8,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from bayes_poker.strategy.range import PreflopRange, RANGE_169_LENGTH
+from bayes_poker.strategy.range import RANGE_169_LENGTH, PreflopRange
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from bayes_poker.strategy.preflop_parse.query import QueryResult
 
 # 策略向量长度（对应 13x13 = 169 种起手牌组合）
 STRATEGY_VECTOR_LENGTH = RANGE_169_LENGTH

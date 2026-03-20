@@ -11,15 +11,20 @@ from bayes_poker.domain.table import (
 )
 from bayes_poker.player_metrics.enums import (
     ActionType as MetricsActionType,
+)
+from bayes_poker.player_metrics.enums import (
     Position as MetricsPosition,
+)
+from bayes_poker.player_metrics.enums import (
     TableType,
 )
 from bayes_poker.player_metrics.params import PreFlopParams
+from bayes_poker.table.observed_state import ObservedTableState
+
 from .core_types import (
     NodeContext,
     PlayerNodeContext,
 )
-from bayes_poker.table.observed_state import ObservedTableState
 
 
 class UnsupportedContextError(ValueError):
@@ -50,9 +55,9 @@ def _resolve_actor_position(
                 raise UnsupportedContextError("无法解析 actor 的位置")
             return player.position
         return position
-    except ValueError:
+    except ValueError as exc:
         if player.position is None:
-            raise UnsupportedContextError("无法解析 actor 的位置")
+            raise UnsupportedContextError("无法解析 actor 的位置") from exc
         return player.position
 
 
@@ -121,22 +126,6 @@ def _is_in_position_on_flop(
     if player_count == 2:
         return actor_position == Position.SB
     return actor_position == Position.BTN
-
-
-def _filter_preflop_actions(action_history: list[PlayerAction]) -> list[PlayerAction]:
-    return [action for action in action_history if action.street == Street.PREFLOP]
-
-
-def _build_first_action_prefix(
-    preflop_actions: list[PlayerAction],
-    actor_seat: int,
-) -> list[PlayerAction]:
-    prefix: list[PlayerAction] = []
-    for action in preflop_actions:
-        if action.player_index == actor_seat:
-            raise UnsupportedContextError("当前最小实现只支持 actor 的首次翻前行动")
-        prefix.append(action)
-    return prefix
 
 
 def _build_base_node_context(

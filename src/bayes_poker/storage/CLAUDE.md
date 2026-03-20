@@ -9,7 +9,7 @@
 
 | 文件 | 职责 |
 |------|------|
-| `player_stats_repository.py` | `PlayerStatsRepository`：玩家统计只读仓库 + 贝叶斯平滑 |
+| `player_stats_repository.py` | `PlayerStatsRepository`：玩家统计只读仓库 |
 | `preflop_strategy_repository.py` | `PreflopStrategyRepository`：GTO 策略读写仓库 |
 
 ---
@@ -22,30 +22,7 @@
 with PlayerStatsRepository("data/database/player_stats.db") as repo:
     # 原始查询
     stats = repo.get("PlayerName", TableType.SIX_MAX)
-
-    # 贝叶斯平滑（pool_prior_strength=20 相当于 20 个虚拟样本）
-    smoothed = repo.get("PlayerName", TableType.SIX_MAX,
-                        smooth_with_pool=True, pool_prior_strength=20.0)
-
-    # 一次读取同时返回原始和平滑（性能优化）
-    raw, smoothed = repo.get_with_raw("PlayerName", TableType.SIX_MAX)
 ```
-
-### 贝叶斯平滑逻辑
-
-**聚合先验玩家**：`aggregated_sixmax_100`（由 `cargo run --example aggregate_sixmax` 生成）
-
-**平滑模型**（`player_metrics/posterior.py`）：
-
-| 场景 | 模型 |
-|------|------|
-| 非盲位首动（fold/raise） | Binary（Beta 后验） |
-| BB check/raise | Binary（Beta 后验） |
-| 其余情况 | Multinomial（Dirichlet 后验） |
-
-**PreFlop 桶布局**（54 桶，对应 `PreFlopParams.to_index()`）：
-- `0..29`：`previous_action==Fold` 的 6 个位置 × 5 个 spot
-- `30..53`：已投入/已行动后再次决策的 24 个 spot
 
 ### 手牌去重接口
 

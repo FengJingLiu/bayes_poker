@@ -167,9 +167,7 @@ def estimator_from_summaries(
     def _stats_loader(name: str) -> PlayerStats | None:
         """按需加载单个玩家的完整统计."""
         try:
-            return player_stats_repo.get(
-                name, TableType.SIX_MAX, smooth_with_pool=False,
-            )
+            return player_stats_repo.get(name, TableType.SIX_MAX)
         except Exception:
             return None
 
@@ -223,9 +221,7 @@ class TestEstimatorInitFromSummaries:
 
         def _stats_loader(name: str) -> PlayerStats | None:
             try:
-                return player_stats_repo.get(
-                    name, TableType.SIX_MAX, smooth_with_pool=False,
-                )
+                return player_stats_repo.get(name, TableType.SIX_MAX)
             except Exception:
                 return None
 
@@ -284,9 +280,7 @@ class TestQuery1000RealPlayers:
         loaded_stats: list[PlayerStats] = []
         skipped = 0
         for name in sampled_player_names:
-            stats = player_stats_repo.get(
-                name, TableType.SIX_MAX, smooth_with_pool=False,
-            )
+            stats = player_stats_repo.get(name, TableType.SIX_MAX)
             if stats is not None:
                 loaded_stats.append(stats)
             else:
@@ -354,9 +348,7 @@ class TestPosteriorTimingDistribution:
         latencies_ms: list[float] = []
 
         for name in sample:
-            stats = player_stats_repo.get(
-                name, TableType.SIX_MAX, smooth_with_pool=False,
-            )
+            stats = player_stats_repo.get(name, TableType.SIX_MAX)
             if stats is None:
                 continue
 

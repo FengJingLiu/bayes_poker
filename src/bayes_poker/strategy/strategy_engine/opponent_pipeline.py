@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from bayes_poker.comm.session import SessionConfig
@@ -11,12 +11,14 @@ from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player, PlayerAction
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.strategy.range import (
-    PreflopRange,
-    RANGE_1326_LENGTH,
     RANGE_169_LENGTH,
     RANGE_169_ORDER,
+    RANGE_1326_LENGTH,
+    PreflopRange,
     combos_per_hand,
 )
+from bayes_poker.table.observed_state import ObservedTableState
+
 from .calibrator import (
     ActionPolicy,
     ActionPolicyAction,
@@ -41,7 +43,6 @@ from .stats_adapter import (
     PlayerNodeStats,
     PlayerNodeStatsAdapter,
 )
-from bayes_poker.table.observed_state import ObservedTableState
 
 _BELIEF_LOW_MASS_THRESHOLD = 1e-9
 
@@ -60,7 +61,6 @@ class OpponentPipelineConfig:
 
     table_type: TableType = TableType.SIX_MAX
     session_timeout: float = SessionConfig.session_timeout
-    enable_global_raise_blending: bool = True
 
 
 class OpponentPipeline:
@@ -134,9 +134,7 @@ class OpponentPipeline:
         ]
         acted_seats = {player.seat_index for player, _ in acted_opponents}
         prior_only_opponents = [
-            player
-            for player in live_opponents
-            if player.seat_index not in acted_seats
+            player for player in live_opponents if player.seat_index not in acted_seats
         ]
 
         for seat in tuple(context.player_ranges):
@@ -148,7 +146,9 @@ class OpponentPipeline:
 
         for player, action_index in acted_opponents:
             seat = player.seat_index
-            prefix = list(observed_state.get_preflop_prefix_before_action_index(action_index))
+            prefix = list(
+                observed_state.get_preflop_prefix_before_action_index(action_index)
+            )
             action = observed_state.action_history[action_index]
             prior_policy = self._build_initial_prior_range(
                 player=player,
@@ -170,8 +170,7 @@ class OpponentPipeline:
             context.player_ranges[seat] = posterior_result.range
             # GTO 先验各动作频率
             prior_action_dist = {
-                a.action_name: a.blended_frequency
-                for a in prior_policy.actions
+                a.action_name: a.blended_frequency for a in prior_policy.actions
             }
             # 贝叶斯平滑后的 F/C/R 概率
             ns = posterior_result.node_stats
@@ -235,7 +234,6 @@ class OpponentPipeline:
             prior=prior,
             observed_action_type=action.action_type,
             node_stats=node_stats,
-            enable_global_raise_blending=self._config.enable_global_raise_blending,
         )
         return _PosteriorResult(range=posterior_range, node_stats=node_stats)
 
@@ -295,20 +293,6 @@ class OpponentPipeline:
             state_version=observed_state.state_version,
             timestamp=observed_state.timestamp,
         )
-
-
-def _collect_first_action_prefixes(
-    observed_state: ObservedTableState,
-) -> dict[int, tuple[int, list[PlayerAction]]]:
-    prefixes: dict[int, tuple[int, list[PlayerAction]]] = {}
-    current_prefix: list[PlayerAction] = []
-    for index, action in enumerate(observed_state.action_history):
-        if action.street != Street.PREFLOP:
-            continue
-        if action.player_index not in prefixes:
-            prefixes[action.player_index] = (index, list(current_prefix))
-        current_prefix.append(action)
-    return prefixes
 
 
 def _calibrate_policy(
@@ -444,7 +428,6 @@ def _adjust_belief_with_stats_and_ev(
     prior: PreflopRange,
     observed_action_type: ActionType,
     node_stats: PlayerNodeStats,
-    enable_global_raise_blending: bool = True,
 ) -> PreflopRange:
     """按 stats 目标频率与 EV 排序做约束式信念重分配。
 
@@ -452,7 +435,6 @@ def _adjust_belief_with_stats_and_ev(
         prior: 该动作对应的先验范围。
         observed_action_type: 真实观测动作类型。
         node_stats: 平滑后的节点统计概率。
-        enable_global_raise_blending: 是否在激进行为下混合全局 PFR 信号。
 
     Returns:
         调整后的后验范围。
@@ -462,23 +444,10 @@ def _adjust_belief_with_stats_and_ev(
     prior_evs = list(prior.evs)
     combo_weights = [_combo_weight(index) for index in range(RANGE_169_LENGTH)]
 
-    stats_frequency = _stats_frequency_for_action_type(
+    target_frequency = _stats_frequency_for_action_type(
         observed_action_type=observed_action_type,
         node_stats=node_stats,
     )
-    if (
-        enable_global_raise_blending
-        and observed_action_type
-        in {ActionType.RAISE, ActionType.BET, ActionType.ALL_IN}
-        and node_stats.total_hands > 0
-    ):
-        node_confidence = node_stats.confidence
-        global_signal = node_stats.global_pfr
-        target_frequency = (
-            node_confidence * stats_frequency + (1.0 - node_confidence) * global_signal
-        )
-    else:
-        target_frequency = stats_frequency
 
     target_frequency = min(max(target_frequency, 0.0), 1.0)
     current_frequency = sum(

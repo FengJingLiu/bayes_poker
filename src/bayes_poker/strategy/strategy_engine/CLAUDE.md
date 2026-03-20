@@ -13,7 +13,7 @@ StrategyEngine (engine.py)
     ├── OpponentPipeline (opponent_pipeline.py)
     │     ├── StrategyNodeMapper      → 匹配 GTO 节点
     │     ├── GtoPriorBuilder         → 构建 169 维先验策略
-    │     ├── PlayerNodeStatsAdapter  → 加载贝叶斯平滑后统计
+    │     ├── PlayerNodeStatsAdapter  → 加载玩家节点统计
     │     └── _adjust_belief_with_stats_and_ev → 后验更新
     │
     └── HeroGtoResolver (hero_resolver.py)
@@ -36,7 +36,7 @@ StrategyEngine (engine.py)
 | `node_mapper.py` | 节点上下文 → 数据库节点匹配 |
 | `context_builder.py` | `ObservedTableState` → 节点查询上下文 |
 | `repository_adapter.py` | `PreflopStrategyRepository` 适配层 |
-| `stats_adapter.py` | `PlayerStatsRepository` 适配层（含平滑） |
+| `stats_adapter.py` | `PlayerStatsRepository` 适配层 |
 | `session_context.py` | 会话内对手范围状态存储（带超时清理） |
 | `core_types.py` | `ActionFamily` 等基础枚举 |
 | `posterior.py` | 策略后验 |

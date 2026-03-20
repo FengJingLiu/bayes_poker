@@ -17,15 +17,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bayes_poker.strategy.range.mappings import (
+    _INDEX_TO_RANK,
+    _INDEX_TO_SUIT,
     RANGE_169_LENGTH,
+    RANGE_169_ORDER,
     RANGE_1326_LENGTH,
     combos_per_hand,
     get_range_169_to_1326,
-    get_range_1326_to_169,
     index1326_to_combo,
-    RANGE_169_ORDER,
-    _INDEX_TO_RANK,
-    _INDEX_TO_SUIT,
 )
 
 if TYPE_CHECKING:
@@ -99,7 +98,7 @@ class PreflopRange:
         """
         total = 0.0
         total_combos = 0.0
-        for idx, (strat, ev) in enumerate(zip(self.strategy, self.evs)):
+        for idx, (strat, ev) in enumerate(zip(self.strategy, self.evs, strict=True)):
             combos = combos_per_hand(RANGE_169_ORDER[idx])
             total += strat * ev * combos
             total_combos += strat * combos

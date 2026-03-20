@@ -160,109 +160,6 @@ def test_player_stats_hit(tmp_path: Path) -> None:
         )
 
     assert stats.source_kind == "g5_player"
-    assert stats.confidence > 0.0
-
-
-def test_load_fills_global_fields(tmp_path: Path) -> None:
-    """load() 应正确填充 global_pfr, global_vpip, total_hands。
-
-    Args:
-        tmp_path: pytest 提供的临时目录。
-
-    Returns:
-        None。
-    """
-
-    context = _make_node_context()
-    stats = _make_player_stats(player_name="villain", params=context.params)
-    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
-        _insert_player_stats(repo, stats)
-        _insert_player_stats(
-            repo,
-            _make_player_stats(
-                player_name="aggregated_sixmax_100",
-                params=context.params,
-            ),
-        )
-        adapter = PlayerNodeStatsAdapter(repo)
-        result = adapter.load(
-            player_name="villain",
-            table_type=TableType.SIX_MAX,
-            node_context=context,
-        )
-
-    assert result.total_hands == 20
-    assert result.global_vpip > 0.0
-    assert result.global_pfr >= 0.0
-    assert result.source_kind == "g5_player"
-
-
-def test_load_population_fallback_global_fields(tmp_path: Path) -> None:
-    """population fallback 时 global 字段为 0。
-
-    Args:
-        tmp_path: pytest 提供的临时目录。
-
-    Returns:
-        None。
-    """
-
-    context = _make_node_context()
-    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
-        _insert_player_stats(
-            repo,
-            _make_player_stats(
-                player_name="aggregated_sixmax_100",
-                params=context.params,
-            ),
-        )
-        adapter = PlayerNodeStatsAdapter(repo)
-        result = adapter.load(
-            player_name="missing",
-            table_type=TableType.SIX_MAX,
-            node_context=context,
-        )
-
-    assert result.source_kind == "population"
-    assert result.global_pfr == 0.0
-    assert result.global_vpip == 0.0
-    assert result.total_hands == 0
-
-
-def test_confidence_uses_raw_not_smoothed_samples(tmp_path: Path) -> None:
-    """confidence 必须基于 raw node samples 而非平滑伪计数。
-
-    Args:
-        tmp_path: pytest 提供的临时目录。
-
-    Returns:
-        None。
-    """
-
-    context = _make_node_context()
-    stats = _make_player_stats(player_name="villain", params=context.params)
-    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
-        _insert_player_stats(repo, stats)
-        _insert_player_stats(
-            repo,
-            _make_player_stats(
-                player_name="aggregated_sixmax_100",
-                params=context.params,
-            ),
-        )
-        adapter = PlayerNodeStatsAdapter(
-            repo,
-            config=PlayerNodeStatsAdapterConfig(confidence_k=20.0),
-        )
-        result = adapter.load(
-            player_name="villain",
-            table_type=TableType.SIX_MAX,
-            node_context=context,
-        )
-
-    raw_total = 20
-    expected_confidence = raw_total / (raw_total + 20.0)
-    assert abs(result.confidence - expected_confidence) < 0.01
 
 
 def test_population_fallback_when_player_missing(tmp_path: Path) -> None:
@@ -314,10 +211,7 @@ def test_population_fallback_when_player_name_missing(tmp_path: Path) -> None:
 def test_uniform_population_fallback_without_aggregated_stats(tmp_path: Path) -> None:
     context = _make_node_context()
     with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
-        adapter = PlayerNodeStatsAdapter(
-            repo,
-            config=PlayerNodeStatsAdapterConfig(confidence_k=20.0),
-        )
+        adapter = PlayerNodeStatsAdapter(repo)
         stats = adapter.load(
             player_name=None,
             table_type=TableType.SIX_MAX,
@@ -329,43 +223,10 @@ def test_uniform_population_fallback_without_aggregated_stats(tmp_path: Path) ->
     assert stats.call_probability == 1 / 3
     assert stats.fold_probability == 1 / 3
     assert stats.bet_0_40_probability == 0.25
-    assert stats.confidence == 0.0
 
 
-def test_adapter_load_包含全局统计占位字段(tmp_path: Path) -> None:
-    """验证适配器输出包含全局统计占位值。
-
-    Args:
-        tmp_path: pytest 提供的临时目录。
-
-    Returns:
-        None。
-    """
-
-    context = _make_node_context()
-    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
-        _insert_player_stats(
-            repo,
-            _make_player_stats(
-                player_name="aggregated_sixmax_100",
-                params=context.params,
-            ),
-        )
-
-        adapter = PlayerNodeStatsAdapter(repo)
-        stats = adapter.load(
-            player_name=None,
-            table_type=TableType.SIX_MAX,
-            node_context=context,
-        )
-
-    assert stats.global_pfr == 0.0
-    assert stats.global_vpip == 0.0
-    assert stats.total_hands == 0
-
-
-def test_adapter_config_包含置信度参数默认值() -> None:
-    """验证适配器配置包含置信度参数默认值。
+def test_adapter_config_默认max_similar_players() -> None:
+    """验证适配器配置包含 max_similar_players 默认值。
 
     Returns:
         None。
@@ -373,63 +234,7 @@ def test_adapter_config_包含置信度参数默认值() -> None:
 
     config = PlayerNodeStatsAdapterConfig()
 
-    assert config.confidence_k == 20.0
-
-
-def test_get_with_raw_returns_both_raw_and_smoothed(tmp_path: Path) -> None:
-    """get_with_raw() 应一次返回 raw 和 smoothed 两份统计.
-
-    Args:
-        tmp_path: pytest 提供的临时目录.
-
-    Returns:
-        None.
-    """
-    context = _make_node_context()
-    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
-        _insert_player_stats(
-            repo, _make_player_stats(player_name="villain", params=context.params)
-        )
-        _insert_player_stats(
-            repo,
-            _make_player_stats(
-                player_name="aggregated_sixmax_100", params=context.params
-            ),
-        )
-        raw, smoothed = repo.get_with_raw(
-            "villain", TableType.SIX_MAX, pool_prior_strength=20.0
-        )
-    assert raw is not None
-    assert smoothed is not None
-    raw_action = raw.get_preflop_stats(context.params)
-    assert raw_action.raise_samples == 5
-    assert raw_action.fold_samples == 2
-    smoothed_action = smoothed.get_preflop_stats(context.params)
-    assert smoothed_action.raise_samples != raw_action.raise_samples
-
-
-def test_get_with_raw_missing_player_returns_none_pair(tmp_path: Path) -> None:
-    """玩家不存在时 get_with_raw() 返回 (None, None).
-
-    Args:
-        tmp_path: pytest 提供的临时目录.
-
-    Returns:
-        None.
-    """
-    with PlayerStatsRepository(tmp_path / "player_stats.db") as repo:
-        _insert_player_stats(
-            repo,
-            _make_player_stats(
-                player_name="aggregated_sixmax_100",
-                params=_make_node_context().params,
-            ),
-        )
-        raw, smoothed = repo.get_with_raw(
-            "nobody", TableType.SIX_MAX, pool_prior_strength=20.0
-        )
-    assert raw is None
-    assert smoothed is None
+    assert config.max_similar_players == 130
 
 
 def test_load_all_for_estimator_excludes_aggregated_and_is_sorted(

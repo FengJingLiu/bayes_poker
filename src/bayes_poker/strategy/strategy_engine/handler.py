@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from bayes_poker.player_metrics.enums import TableType
+
 from .contracts import StrategyHandler
 from .engine import (
     StrategyEngineConfig,
@@ -21,7 +22,6 @@ def create_strategy_handler(
     source_ids: tuple[int, ...] | None = None,
     strategy_name: str | None = None,
     strategy_names: tuple[str, ...] | None = None,
-    enable_global_raise_blending: bool = True,
 ) -> StrategyHandler:
     """创建 strategy_engine v2 的公开 handler.
 
@@ -33,7 +33,6 @@ def create_strategy_handler(
         source_ids: 多个策略源 ID.
         strategy_name: 单个策略源名称.
         strategy_names: 多个策略源名称.
-        enable_global_raise_blending: 是否启用全局加注频率混合.
 
     Returns:
         可调用的策略处理器.
@@ -48,6 +47,5 @@ def create_strategy_handler(
             source_ids=source_ids,
             strategy_name=strategy_name,
             strategy_names=strategy_names,
-            enable_global_raise_blending=enable_global_raise_blending,
         )
     )

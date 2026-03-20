@@ -144,7 +144,7 @@ def estimator_from_real_pool(
         def _stats_loader(name: str) -> PlayerStats | None:
             """按需加载单个玩家的完整统计."""
             try:
-                return repo.get(name, TableType.SIX_MAX, smooth_with_pool=False)
+                return repo.get(name, TableType.SIX_MAX)
             except Exception:
                 return None
 

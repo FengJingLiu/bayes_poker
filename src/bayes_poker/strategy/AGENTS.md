@@ -33,7 +33,7 @@ strategy/
 | `core_types.py` | `ActionFamily`、`NodeContext`、`PlayerNodeContext` |
 | `context_builder.py` | `ObservedTableState -> NodeContext + PreFlopParams` |
 | `repository_adapter.py` | 封装 `PreflopStrategyRepository` 的 v2 中性读接口 |
-| `stats_adapter.py` | `PlayerStatsRepository.get(..., smooth_with_pool=True)` 节点概率适配 |
+| `stats_adapter.py` | `PlayerStatsRepository.get(...)` 节点概率适配 |
 | `node_mapper.py` | 最近节点匹配、距离评分、价格修正 |
 | `gto_policy.py` | 读取最近节点动作先验, 同名动作编码视为数据异常并抛错 |
 | `calibrator.py` | binary / multinomial 校准与尺寸质量再分配 |
@@ -103,6 +103,7 @@ parse_strategy_node, split_history_tokens
 - `table context` 只保存在 `strategy_engine` 会话内存中
 - `PlayerStatsRepository` 节点概率统一通过 `PreFlopParams.to_index()` 映射
 - `_build_prior_range_from_policy` 与 `_resolve_action_prior_range` 为强校验路径: 缺动作/缺 belief_range 时直接抛错, 不做隐式兜底
+- **对手数据要求**: 当玩家总手数不足 10 手或 VPIP 与 PFR 均为 0 时, `stats_adapter` 自动回退到预聚合玩家池数据 (`aggregated_sixmax_100`), 避免极端统计导致贝叶斯后验坍缩为零。判断逻辑位于 `stats_adapter._should_fallback_to_population()`。
 
 ## 测试
 

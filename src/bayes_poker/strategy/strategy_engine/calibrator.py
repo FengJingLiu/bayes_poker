@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from bayes_poker.strategy.range import PreflopRange, RANGE_169_LENGTH
+from bayes_poker.strategy.range import RANGE_169_LENGTH, PreflopRange
 
 _EPSILON = 1e-9
 _MAX_SHIFT = 40.0
@@ -57,22 +57,6 @@ class ActionPolicy:
 
         return self.for_action(action_name).total_frequency()
 
-    def rank_for(self, action_name: str) -> tuple[int, ...]:
-        """按分值与 EV 返回手牌索引排序。"""
-
-        action = next(item for item in self.actions if item.action_name == action_name)
-        rank_scores = action.rank_scores or tuple(action.range.strategy)
-        return tuple(
-            sorted(
-                range(RANGE_169_LENGTH),
-                key=lambda index: (
-                    -rank_scores[index],
-                    -action.range.evs[index],
-                    index,
-                ),
-            )
-        )
-
 
 def calibrate_binary_policy(
     policy: ActionPolicy,
@@ -90,11 +74,6 @@ def calibrate_binary_policy(
         raise ValueError("二元校准要求策略恰好包含两个动作。")
 
     calibrated_action_name = action_name or policy.actions[1].action_name
-    other_action_name = next(
-        action.action_name
-        for action in policy.actions
-        if action.action_name != calibrated_action_name
-    )
 
     base_range = policy.for_action(calibrated_action_name)
     low_shift = -_MAX_SHIFT

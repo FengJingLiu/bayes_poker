@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import logging
 import math
 import random
+from collections.abc import Sequence
 
-from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player
 from bayes_poker.strategy.range import (
-    PreflopRange,
-    RANGE_1326_LENGTH,
     RANGE_169_LENGTH,
     RANGE_169_ORDER,
+    RANGE_1326_LENGTH,
+    PreflopRange,
     combos_per_hand,
 )
+from bayes_poker.table.observed_state import ObservedTableState
+
 from .context_builder import build_player_node_context
 from .contracts import (
     RecommendationDecision,
@@ -29,7 +30,6 @@ from .repository_adapter import (
     StrategyRepositoryAdapter,
 )
 from .session_context import StrategySessionContext
-from bayes_poker.table.observed_state import ObservedTableState
 
 LOGGER = logging.getLogger(__name__)
 
@@ -177,6 +177,7 @@ class HeroGtoResolver:
                 reason=str(exc),
             )
         except Exception as exc:
+            LOGGER.exception("hero_resolver 意外错误: %s", exc)
             return SafeFallbackDecision(
                 state_version=observed_state.state_version,
                 error_code="hero_resolver_error",
@@ -255,7 +256,9 @@ def _collect_acted_live_opponent_seats(
         按最近一次动作索引升序排列的对手座位元组.
     """
 
-    last_actions = observed_state.get_live_opponent_last_action_indices_before_current_turn()
+    last_actions = (
+        observed_state.get_live_opponent_last_action_indices_before_current_turn()
+    )
     return tuple(seat for seat, _ in last_actions)
 
 

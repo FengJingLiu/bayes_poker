@@ -17,6 +17,8 @@ dependencies = [
 dev = [
     "ipykernel>=7.1.0",
     "pytest>=9.0.2",
+    "ruff>=0.15.7",
+    "vulture>=2.15",
 ]
 
 [tool.pytest.ini_options]
@@ -24,3 +26,7 @@ pythonpath = ["src"]
 markers = [
     "large_sample: 依赖本地手牌数据集的大样本回归测试（默认跳过）",
 ]
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "B", "I"] # 包含基本错误、Bug、以及自动排序导入 (Isort)

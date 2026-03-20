@@ -8,6 +8,8 @@ from pathlib import Path
 
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.storage.player_stats_repository import PlayerStatsRepository
+from bayes_poker.table.observed_state import ObservedTableState
+
 from .contracts import (
     NoResponseDecision,
     StrategyDecision,
@@ -23,7 +25,6 @@ from .repository_adapter import (
 from .stats_adapter import (
     PlayerNodeStatsAdapter,
 )
-from bayes_poker.table.observed_state import ObservedTableState
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +38,6 @@ class StrategyEngineConfig:
     source_ids: tuple[int, ...] | None = None
     strategy_name: str | None = None
     strategy_names: tuple[str, ...] | None = None
-    enable_global_raise_blending: bool = True
 
 
 class StrategyEngine:
@@ -103,7 +103,6 @@ def build_strategy_engine(config: StrategyEngineConfig) -> StrategyEngine:
         source_id=source_ids,
         config=OpponentPipelineConfig(
             table_type=config.table_type,
-            enable_global_raise_blending=config.enable_global_raise_blending,
         ),
     )
     hero_resolver = HeroGtoResolver(

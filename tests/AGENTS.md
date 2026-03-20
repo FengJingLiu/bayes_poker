@@ -23,6 +23,8 @@
 - `ALL_3BET_COMBINATIONS_6MAX`: 全部 20 种合法 3-Bet 位置组合 `(opener, 3bettor, hero)`。
 - `ALL_4BET_COMBINATIONS_6MAX`: 全部 15 种合法 4-Bet 位置组合 `(opener, 3bettor, 4bettor, hero)`。
 - `ALL_FACING_3BET_COMBINATIONS_6MAX`: 全部 15 种合法 Facing 3-Bet 位置组合 `(hero_opener, 3bettor)`。
+- `ALL_HERO_OPEN_FACING_4BET_COMBINATIONS_6MAX`: 全部 20 种合法 Hero Open Facing 4-Bet 位置组合 `(hero_opener, 3bettor, 4bettor)`。
+- `ALL_HERO_3BET_FACING_4BET_COMBINATIONS_6MAX`: 全部 20 种合法 Hero 3-Bet Facing 4-Bet 位置组合 `(opener, hero_3bettor, 4bettor)`。
 
 ### 数据结构
 
@@ -33,6 +35,11 @@
 2. `HeroStrategySnapshot`
    - 用途: 承载单个玩家在真实场景下的 Hero 策略结果快照。
    - 字段: `player_name`, `total_hands`, `pfr_pct`, `selected_node_id`, `selected_source_id`, `action_distribution`, `prior_action_distribution`, `opponent_aggression_details`, `sampling_random`, `sampled_action_code`, `gtoplus_by_action`。
+
+3. `OpponentProfile`
+   - 用途: 承载按数据量级别 × VPIP/PFR 分段分组的对手画像。
+   - 字段: `player_name`, `total_hands`, `vpip_pct`, `pfr_pct`, `data_level` (insufficient/medium/sufficient), `segment` (tight_passive/tight_aggressive/loose_passive/loose_aggressive)。
+   - 分类阈值: data_level 按 50/300 手分界; VPIP 按 25% 分松紧, PFR 按 15% 分主被动。注意 CSV 中 vpip_pct/pfr_pct 是百分比尺度 (如 41.9 而非 0.419)。
 
 ### 工具函数清单
 
@@ -70,6 +77,26 @@
     - 与 `build_3bet_state` 的区别: Hero 就是 opener, 已有 RAISE 记录和投注额。
     - 默认尺寸: open_size=2.5bb, three_bet_size=8.0bb。
     - 适用场景: 覆盖 Hero RFI 后遭遇 3-Bet 的全位置场景测试。
+
+ 8. `build_hero_open_facing_4bet_state(hero_opener_position, three_bettor_position, four_bettor_position, ...) -> ObservedTableState`
+    - 功能: 构造 Hero open → 3bet → 4bet → 回到 Hero 决策的 6-max preflop 观察状态。
+    - 约束: hero_opener 在行动序列中最早; 3bettor 和 4bettor 在 hero 之后行动。
+    - Hero 已有 RAISE 记录和投注额, 决策点是面对 4bet。
+    - 默认尺寸: open_size=2.5bb, three_bet_size=8.0bb, four_bet_size=20.0bb。
+
+ 9. `build_hero_3bet_facing_4bet_state(opener_position, hero_3bettor_position, four_bettor_position, ...) -> ObservedTableState`
+    - 功能: 构造 opener open → Hero 3bet → 4bet → 回到 Hero 决策的 6-max preflop 观察状态。
+    - 约束: opener < hero_3bettor; 4bettor 在 hero 之后行动。
+    - Hero 已有 RAISE 记录和投注额, 决策点是面对 4bet。
+    - 默认尺寸: open_size=2.5bb, three_bet_size=8.0bb, four_bet_size=20.0bb。
+
+10. `load_opponent_profiles(csv_path, per_group) -> list[OpponentProfile]`
+    - 功能: 从 CSV 按 3 × 4 分组 (data_level × vpip_pfr_segment) 各采样 per_group 名玩家。
+    - 适用场景: 综合对手画像测试, 覆盖数据量 × 风格的完整矩阵。
+
+11. `generate_scenario_report(scenario_name, results, output_dir) -> Path`
+    - 功能: 将场景测试结果输出为 Markdown 报告, 含按数据量/分段的汇总表。
+    - 适用场景: 综合测试后生成 `docs/real_scenario/*.md` 报告。
 
  8. `_should_fold_in_facing_3bet(pos, hero_opener_position, three_bettor_position) -> bool`
     - 功能: 判断在 Hero 作为 opener 遭遇 3bet 场景中, 给定位置是否已 fold。
@@ -119,9 +146,23 @@
 3. 新增 3-Bet 场景测试时, 使用 `build_3bet_state()` 构造观察状态, 传入 opener/3bettor/hero 位置。
 4. 新增 4-Bet 场景测试时, 使用 `build_4bet_state()` 构造观察状态, 传入 opener/3bettor/4bettor/hero 位置。
 5. 新增 Hero 作为 opener 遭遇 3-Bet 场景测试时, 使用 `build_facing_3bet_state()` 构造观察状态, 传入 hero_opener/3bettor 位置。
-6. 使用 `assert_valid_recommendation()` 做推荐结果的通用断言。
-7. 使用 `conftest.py` 中的共享 fixtures (`real_scenario_engine`, `selected_players`)。
-8. 真实场景测试统一使用环境变量门控:
+6. 新增 Hero open 后遭遇 4-Bet 场景测试时, 使用 `build_hero_open_facing_4bet_state()`, 传入 hero_opener/3bettor/4bettor 位置。
+7. 新增 Hero 3-bet 后遭遇 4-Bet 场景测试时, 使用 `build_hero_3bet_facing_4bet_state()`, 传入 opener/hero_3bettor/4bettor 位置。
+8. 使用 `assert_valid_recommendation()` 做推荐结果的通用断言。
+9. 使用 `conftest.py` 中的共享 fixtures (`real_scenario_engine`, `selected_players`)。
+10. 真实场景测试统一使用环境变量门控:
     - `BAYES_POKER_RUN_REAL_SCENARIO_TESTS=1`
-9. 推荐执行命令:
+11. 综合对手画像测试使用 `load_opponent_profiles()` + `generate_scenario_report()`, 报告输出到 `docs/real_scenario/`。
+12. 当玩家总手数 <10 或 VPIP+PFR 均为 0 时, 引擎自动回退到聚合池数据, 不再抛 ValueError。
+13. 推荐执行命令:
     - `BAYES_POKER_RUN_REAL_SCENARIO_TESTS=1 uv run pytest -q -s tests/real_scenario/`
+
+## 已知缺陷（待修复）
+
+1. **`build_hero_3bet_facing_4bet_state` opener 未在 4bet 后结算**:
+   opener 仍存活 (`is_folded=False`) 且 `action_history` 中只有最初的 open raise, 但在真实 preflop 行动序列中 4bet 之后行动权必须先经过 opener(fold/call/jam), 然后才能回到 Hero。当前构建出的状态导致引擎将 opener 的"最近动作"误识别为 open raise, 所有 `test_hero_3bet_facing_4bet_*.py` 实际覆盖的不是目标场景。修复方案: 在 4bet 之后、Hero 决策之前, 插入 opener 的 FOLD 动作并设置 `is_folded=True`。
+2. **`generate_scenario_report` 格式化问题**:
+   - VPIP/PFR 列使用 `:.1%` 格式化, 但值已经是百分数尺度 (如 16.7), 实际渲染成 1670.0%。应改用 `:.1f`。
+   - `_format_distribution` 将动作码压缩为首字母, 导致 R40/RAI 等不同 raise 分支无法区分。应保留完整 action_code。
+3. **`test_comprehensive_opponent_profiles` 位置组合覆盖不全**:
+   当前仅采样代表性子集 (`_REPRESENTATIVE_*`), 但 `TODO.md` 要求遍历全部合法位置组合。生成的 `docs/real_scenario/*.md` 报告会漏掉大部分位置回归。
