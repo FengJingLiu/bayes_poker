@@ -12,10 +12,10 @@ from bayes_poker.domain.table import Player, PlayerAction
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.strategy.range import (
     RANGE_169_LENGTH,
-    RANGE_169_ORDER,
-    RANGE_1326_LENGTH,
     PreflopRange,
-    combos_per_hand,
+)
+from bayes_poker.strategy.range.belief_adjustment import (
+    adjust_belief_range,
 )
 from bayes_poker.table.observed_state import ObservedTableState
 
@@ -440,70 +440,16 @@ def _adjust_belief_with_stats_and_ev(
         调整后的后验范围。
     """
 
-    adjusted_strategy = [min(max(value, 0.0), 1.0) for value in prior.strategy]
-    prior_evs = list(prior.evs)
-    combo_weights = [_combo_weight(index) for index in range(RANGE_169_LENGTH)]
-
     target_frequency = _stats_frequency_for_action_type(
         observed_action_type=observed_action_type,
         node_stats=node_stats,
     )
-
     target_frequency = min(max(target_frequency, 0.0), 1.0)
-    current_frequency = sum(
-        probability * weight
-        for probability, weight in zip(adjusted_strategy, combo_weights, strict=True)
+    return adjust_belief_range(
+        belief_range=prior,
+        target_frequency=target_frequency,
+        low_mass_threshold=_BELIEF_LOW_MASS_THRESHOLD,
     )
-    delta = target_frequency - current_frequency
-    if abs(delta) <= _BELIEF_LOW_MASS_THRESHOLD:
-        return PreflopRange(strategy=adjusted_strategy, evs=prior_evs)
-
-    if delta > 0.0:
-        sorted_indices = sorted(
-            range(RANGE_169_LENGTH),
-            key=lambda index: prior_evs[index],
-            reverse=True,
-        )
-        for index in sorted_indices:
-            if delta <= _BELIEF_LOW_MASS_THRESHOLD:
-                break
-            weight = combo_weights[index]
-            if weight <= 0.0:
-                continue
-            available_probability = 1.0 - adjusted_strategy[index]
-            if available_probability <= _BELIEF_LOW_MASS_THRESHOLD:
-                continue
-            max_mass = available_probability * weight
-            mass_to_add = min(delta, max_mass)
-            adjusted_strategy[index] += mass_to_add / weight
-            delta -= mass_to_add
-    else:
-        remaining_reduce = -delta
-        sorted_indices = sorted(
-            range(RANGE_169_LENGTH),
-            key=lambda index: prior_evs[index],
-        )
-        for index in sorted_indices:
-            if remaining_reduce <= _BELIEF_LOW_MASS_THRESHOLD:
-                break
-            weight = combo_weights[index]
-            if weight <= 0.0:
-                continue
-            available_probability = adjusted_strategy[index]
-            if available_probability <= _BELIEF_LOW_MASS_THRESHOLD:
-                continue
-            max_mass = available_probability * weight
-            mass_to_remove = min(remaining_reduce, max_mass)
-            adjusted_strategy[index] -= mass_to_remove / weight
-            remaining_reduce -= mass_to_remove
-
-    return PreflopRange(strategy=adjusted_strategy, evs=prior_evs)
-
-
-def _combo_weight(index: int) -> float:
-    """返回某 169 手牌在总频率中的权重。"""
-
-    return combos_per_hand(RANGE_169_ORDER[index]) / RANGE_1326_LENGTH
 
 
 def _stats_frequency_for_action_type(
