@@ -16,6 +16,10 @@ from bayes_poker.strategy.range.mappings import (
     index1326_to_combo,
     index52_to_card,
 )
+from bayes_poker.strategy.range.belief_adjustment import (
+    adjust_belief_range,
+    combo_weight,
+)
 from bayes_poker.strategy.range.models import (
     PostflopRange,
     PreflopRange,
@@ -26,6 +30,8 @@ __all__ = [
     "RANGE_169_LENGTH",
     "RANGE_169_ORDER",
     "RANGE_1326_LENGTH",
+    "adjust_belief_range",
+    "combo_weight",
     # 类
     "PostflopRange",
     "PreflopRange",
