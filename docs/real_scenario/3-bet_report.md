@@ -1,310 +1,310 @@
 # 3-Bet 场景测试报告
 
-总耗时: 149731.2ms
+总耗时: 155917.7ms
 
 ## 数据不足 (<50手)
 
 ### 紧被动 (低VPIP/低PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R15:3% | F:97% R15:3% | 18.6 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R15:3% | F:97% R15:3% | 18.9 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R20:3% | F:97% R20:3% | 18.7 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R20:3% | F:97% R20:3% | 18.7 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | xMichax | 4 | 0.0% | 0.0% | F:96% R15:4% | F:97% R15:3% | 18.8 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R20:3% | F:97% R20:3% | 19.4 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R20:3% | F:97% R20:3% | 18.9 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R21:3% | F:96% R21:4% | 19.2 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:96% R20:4% | F:96% R20:4% | 19.1 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R22:3% | F:96% R22:4% | 19.3 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | xMichax | 4 | 0.0% | 0.0% | F:96% R15:4% | F:97% R15:3% | 19.0 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:96% R20:4% | F:97% R20:3% | 19.4 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:96% R20:4% | F:97% R20:3% | 19.0 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:95% R21:5% | F:95% R21:5% | 19.2 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:94% R21:6% | F:95% R21:5% | 19.8 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R22:3% | F:97% R22:3% | 19.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:95% R21:5% | F:96% R21:4% | 19.4 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:94% R21:6% | F:96% R21:4% | 19.6 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R22:3% | F:98% R22:2% | 19.7 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:97% R22:3% | F:98% R22:2% | 19.8 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R15:3% | F:97% R15:3% | 18.9 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R15:3% | F:97% R15:3% | 19.2 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R20:3% | F:97% R20:3% | 19.1 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R20:3% | F:97% R20:3% | 19.0 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:85% C:8% R:7% | 17.59%+9.05% | 18.03%+7.11% | 0.8972 | F:96% R15:4% | F:97% R15:3% | 19.5 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:85% C:8% R:7% | 17.59%+9.05% | 18.03%+7.11% | 0.8972 | F:97% R20:3% | F:97% R20:3% | 19.8 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:85% C:8% R:7% | 17.59%+9.05% | 18.03%+7.11% | 0.8972 | F:97% R20:3% | F:97% R20:3% | 19.5 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:81% C:1% R:18% / F:82% C:10% R:8% | 17.59%+7.59% | 18.03%+8.02% | 1.0407 | F:97% R21:3% | F:96% R21:4% | 19.6 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:81% C:1% R:18% / F:82% C:10% R:8% | 17.59%+7.59% | 18.03%+8.02% | 1.0407 | F:96% R20:4% | F:96% R20:4% | 19.4 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:81% C:1% R:18% / F:81% C:11% R:8% | 17.59%+6.26% | 18.03%+7.92% | 1.1391 | F:97% R22:3% | F:96% R22:4% | 19.9 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | xMichax | 4 | 0.0% | 0.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:79% C:1% R:20% / F:85% C:8% R:7% | 21.59%+10.86% | 20.11%+7.11% | 0.7808 | F:96% R15:4% | F:97% R15:3% | 19.7 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:79% C:1% R:20% / F:85% C:8% R:7% | 21.59%+10.86% | 20.11%+7.11% | 0.7808 | F:96% R20:4% | F:97% R20:3% | 19.7 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:79% C:1% R:20% / F:85% C:8% R:7% | 21.59%+10.86% | 20.11%+7.11% | 0.7808 | F:96% R20:4% | F:97% R20:3% | 19.8 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:79% C:1% R:20% / F:82% C:10% R:8% | 21.59%+9.38% | 20.11%+8.02% | 0.8927 | F:95% R21:5% | F:95% R21:5% | 20.2 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:79% C:1% R:20% / F:82% C:10% R:8% | 21.59%+9.38% | 20.11%+8.02% | 0.8927 | F:94% R21:6% | F:95% R21:5% | 19.8 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:79% C:1% R:20% / F:81% C:11% R:8% | 21.59%+7.50% | 20.11%+7.92% | 0.9918 | F:97% R22:3% | F:97% R22:3% | 20.1 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | xMichax | 4 | 0.0% | 0.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:75% C:1% R:24% / F:82% C:10% R:8% | 28.89%+12.19% | 24.35%+8.02% | 0.7446 | F:95% R21:5% | F:96% R21:4% | 26.9 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:75% C:1% R:24% / F:82% C:10% R:8% | 28.89%+12.19% | 24.35%+8.02% | 0.7446 | F:94% R21:6% | F:96% R21:4% | 19.8 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:75% C:1% R:24% / F:81% C:11% R:8% | 28.89%+10.61% | 24.35%+7.92% | 0.7934 | F:97% R22:3% | F:98% R22:2% | 20.2 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | xMichax | 4 | 0.0% | 0.0% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:64% C:1% R:35% / F:81% C:11% R:8% | 41.98%+14.96% | 34.85%+7.92% | 0.6630 | F:97% R22:3% | F:98% R22:2% | 20.1 |
 
 ### 紧激进 (低VPIP/高PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | elvq | 12 | 16.7% | 16.7% | F:97% R15:3% | F:96% R15:4% | 419.4 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | elvq | 12 | 16.7% | 16.7% | F:97% R15:3% | F:95% R15:5% | 420.5 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R20:3% | F:96% R20:4% | 417.4 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R20:3% | F:96% R20:4% | 418.3 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | elvq | 12 | 16.7% | 16.7% | F:96% R15:4% | F:95% R15:5% | 418.9 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R20:3% | F:96% R20:4% | 418.5 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R20:3% | F:95% R20:5% | 422.7 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R21:3% | F:95% R21:5% | 421.5 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:96% R20:4% | F:95% R20:5% | 419.0 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R22:3% | F:95% R22:5% | 419.5 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | elvq | 12 | 16.7% | 16.7% | F:96% R15:4% | F:95% R15:5% | 419.3 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:96% R20:4% | F:96% R20:4% | 420.9 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:96% R20:4% | F:96% R20:4% | 417.5 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:95% R21:5% | F:94% R21:6% | 849.5 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:94% R21:6% | F:93% R21:7% | 430.3 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R22:3% | F:96% R22:4% | 419.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:95% R21:5% | F:95% R21:5% | 424.7 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:94% R21:6% | F:95% R21:5% | 422.7 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R22:3% | F:97% R22:3% | 425.4 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:97% R22:3% | F:98% R22:2% | 424.8 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:3% R:20% / F:85% C:7% R:7% | 17.59%+8.92% | 20.03%+7.42% | 0.9732 | F:97% R15:3% | F:97% R15:3% | 427.1 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:3% R:20% / F:85% C:7% R:7% | 17.59%+8.92% | 20.03%+7.42% | 0.9732 | F:97% R15:3% | F:97% R15:3% | 430.0 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:3% R:20% / F:85% C:7% R:7% | 17.59%+8.92% | 20.03%+7.42% | 0.9732 | F:97% R20:3% | F:97% R20:3% | 430.8 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:3% R:20% / F:85% C:7% R:7% | 17.59%+8.92% | 20.03%+7.42% | 0.9732 | F:97% R20:3% | F:97% R20:3% | 427.9 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:77% C:3% R:20% / F:85% C:7% R:8% | 17.59%+9.05% | 20.03%+8.40% | 1.0280 | F:96% R15:4% | F:96% R15:4% | 429.9 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:77% C:3% R:20% / F:85% C:7% R:8% | 17.59%+9.05% | 20.03%+8.40% | 1.0280 | F:97% R20:3% | F:97% R20:3% | 428.0 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:77% C:3% R:20% / F:85% C:7% R:8% | 17.59%+9.05% | 20.03%+8.40% | 1.0280 | F:97% R20:3% | F:96% R20:4% | 426.5 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:77% C:3% R:20% / F:81% C:9% R:10% | 17.59%+7.59% | 20.03%+9.76% | 1.2099 | F:97% R21:3% | F:96% R21:4% | 433.4 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:77% C:3% R:20% / F:81% C:9% R:10% | 17.59%+7.59% | 20.03%+9.76% | 1.2099 | F:96% R20:4% | F:96% R20:4% | 429.0 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:77% C:3% R:20% / F:82% C:8% R:10% | 17.59%+6.26% | 20.03%+10.21% | 1.3628 | F:97% R22:3% | F:96% R22:4% | 432.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | elvq | 12 | 16.7% | 16.7% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:78% C:2% R:20% / F:85% C:7% R:8% | 21.59%+10.86% | 20.12%+8.40% | 0.8489 | F:96% R15:4% | F:96% R15:4% | 433.7 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:78% C:2% R:20% / F:85% C:7% R:8% | 21.59%+10.86% | 20.12%+8.40% | 0.8489 | F:96% R20:4% | F:97% R20:3% | 432.1 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:78% C:2% R:20% / F:85% C:7% R:8% | 21.59%+10.86% | 20.12%+8.40% | 0.8489 | F:96% R20:4% | F:97% R20:3% | 431.3 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:78% C:2% R:20% / F:81% C:9% R:10% | 21.59%+9.38% | 20.12%+9.76% | 0.9848 | F:95% R21:5% | F:95% R21:5% | 432.7 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:78% C:2% R:20% / F:81% C:9% R:10% | 21.59%+9.38% | 20.12%+9.76% | 0.9848 | F:94% R21:6% | F:94% R21:6% | 431.6 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:78% C:2% R:20% / F:82% C:8% R:10% | 21.59%+7.50% | 20.12%+10.21% | 1.1261 | F:97% R22:3% | F:96% R22:4% | 429.1 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | elvq | 12 | 16.7% | 16.7% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:73% C:2% R:25% / F:81% C:9% R:10% | 28.89%+12.19% | 24.64%+9.76% | 0.8262 | F:95% R21:5% | F:96% R21:4% | 436.3 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:73% C:2% R:25% / F:81% C:9% R:10% | 28.89%+12.19% | 24.64%+9.76% | 0.8262 | F:94% R21:6% | F:95% R21:5% | 436.5 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:73% C:2% R:25% / F:82% C:8% R:10% | 28.89%+10.61% | 24.64%+10.21% | 0.9060 | F:97% R22:3% | F:97% R22:3% | 942.0 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | elvq | 12 | 16.7% | 16.7% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:62% C:2% R:35% / F:82% C:8% R:10% | 41.98%+14.96% | 35.43%+10.21% | 0.7588 | F:97% R22:3% | F:98% R22:2% | 437.8 |
 
 ### 松被动 (高VPIP/低PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R15:3% | F:97% R15:3% | 18.7 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R15:3% | F:97% R15:3% | 18.8 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R20:3% | F:97% R20:3% | 19.0 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R20:3% | F:97% R20:3% | 19.2 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | afclockey49 | 6 | 83.3% | 0.0% | F:96% R15:4% | F:97% R15:3% | 19.1 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R20:3% | F:97% R20:3% | 19.0 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R20:3% | F:97% R20:3% | 19.3 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R21:3% | F:96% R21:4% | 19.4 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:96% R20:4% | F:96% R20:4% | 19.1 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R22:3% | F:96% R22:4% | 19.6 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | afclockey49 | 6 | 83.3% | 0.0% | F:96% R15:4% | F:97% R15:3% | 18.9 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:96% R20:4% | F:97% R20:3% | 19.4 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:96% R20:4% | F:97% R20:3% | 19.1 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:95% R21:5% | F:95% R21:5% | 19.2 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:94% R21:6% | F:95% R21:5% | 19.6 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R22:3% | F:97% R22:3% | 19.9 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:95% R21:5% | F:96% R21:4% | 19.4 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:94% R21:6% | F:96% R21:4% | 20.0 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R22:3% | F:98% R22:2% | 19.5 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:97% R22:3% | F:98% R22:2% | 19.9 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R15:3% | F:97% R15:3% | 19.0 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R15:3% | F:97% R15:3% | 19.1 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R20:3% | F:97% R20:3% | 19.5 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:86% C:7% R:6% | 17.59%+8.92% | 18.03%+6.32% | 0.8520 | F:97% R20:3% | F:97% R20:3% | 19.0 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:85% C:8% R:7% | 17.59%+9.05% | 18.03%+7.11% | 0.8972 | F:96% R15:4% | F:97% R15:3% | 19.1 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:85% C:8% R:7% | 17.59%+9.05% | 18.03%+7.11% | 0.8972 | F:97% R20:3% | F:97% R20:3% | 19.6 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:81% C:1% R:18% / F:85% C:8% R:7% | 17.59%+9.05% | 18.03%+7.11% | 0.8972 | F:97% R20:3% | F:97% R20:3% | 19.0 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:81% C:1% R:18% / F:82% C:10% R:8% | 17.59%+7.59% | 18.03%+8.02% | 1.0407 | F:97% R21:3% | F:96% R21:4% | 19.7 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:81% C:1% R:18% / F:82% C:10% R:8% | 17.59%+7.59% | 18.03%+8.02% | 1.0407 | F:96% R20:4% | F:96% R20:4% | 19.7 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:81% C:1% R:18% / F:81% C:11% R:8% | 17.59%+6.26% | 18.03%+7.92% | 1.1391 | F:97% R22:3% | F:96% R22:4% | 19.8 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | afclockey49 | 6 | 83.3% | 0.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:79% C:1% R:20% / F:85% C:8% R:7% | 21.59%+10.86% | 20.11%+7.11% | 0.7808 | F:96% R15:4% | F:97% R15:3% | 19.7 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:79% C:1% R:20% / F:85% C:8% R:7% | 21.59%+10.86% | 20.11%+7.11% | 0.7808 | F:96% R20:4% | F:97% R20:3% | 19.8 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:79% C:1% R:20% / F:85% C:8% R:7% | 21.59%+10.86% | 20.11%+7.11% | 0.7808 | F:96% R20:4% | F:97% R20:3% | 19.5 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:79% C:1% R:20% / F:82% C:10% R:8% | 21.59%+9.38% | 20.11%+8.02% | 0.8927 | F:95% R21:5% | F:95% R21:5% | 19.8 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:79% C:1% R:20% / F:82% C:10% R:8% | 21.59%+9.38% | 20.11%+8.02% | 0.8927 | F:94% R21:6% | F:95% R21:5% | 20.3 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:79% C:1% R:20% / F:81% C:11% R:8% | 21.59%+7.50% | 20.11%+7.92% | 0.9918 | F:97% R22:3% | F:97% R22:3% | 20.1 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:75% C:1% R:24% / F:82% C:10% R:8% | 28.89%+12.19% | 24.35%+8.02% | 0.7446 | F:95% R21:5% | F:96% R21:4% | 20.2 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:75% C:1% R:24% / F:82% C:10% R:8% | 28.89%+12.19% | 24.35%+8.02% | 0.7446 | F:94% R21:6% | F:96% R21:4% | 20.3 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:75% C:1% R:24% / F:81% C:11% R:8% | 28.89%+10.61% | 24.35%+7.92% | 0.7934 | F:97% R22:3% | F:98% R22:2% | 20.0 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | afclockey49 | 6 | 83.3% | 0.0% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:64% C:1% R:35% / F:81% C:11% R:8% | 41.98%+14.96% | 34.85%+7.92% | 0.6630 | F:97% R22:3% | F:98% R22:2% | 20.2 |
 
 ### 松激进 (高VPIP/高PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R15:3% | F:94% R15:6% | 413.5 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R15:3% | F:94% R15:6% | 411.9 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R20:3% | F:95% R20:5% | 414.1 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R20:3% | F:94% R20:6% | 412.2 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Badforyou | 10 | 30.0% | 22.2% | F:96% R15:4% | F:94% R15:6% | 411.7 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R20:3% | F:94% R20:6% | 415.5 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R20:3% | F:94% R20:6% | 414.0 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R21:3% | F:93% R21:7% | 410.9 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:96% R20:4% | F:93% R20:7% | 413.7 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R22:3% | F:94% R22:6% | 410.7 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Badforyou | 10 | 30.0% | 22.2% | F:96% R15:4% | F:94% R15:6% | 410.3 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:96% R20:4% | F:94% R20:6% | 416.3 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:96% R20:4% | F:94% R20:6% | 414.4 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:95% R21:5% | F:92% R21:8% | 412.2 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:94% R21:6% | F:91% R21:9% | 418.8 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R22:3% | F:95% R22:5% | 413.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:95% R21:5% | F:94% R21:6% | 414.6 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:94% R21:6% | F:93% R21:7% | 418.3 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R22:3% | F:96% R22:4% | 413.2 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:97% R22:3% | F:97% R22:3% | 412.8 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:2% R:20% / F:77% C:14% R:10% | 17.59%+8.92% | 19.79%+9.75% | 1.1090 | F:97% R15:3% | F:96% R15:4% | 422.0 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:2% R:20% / F:77% C:14% R:10% | 17.59%+8.92% | 19.79%+9.75% | 1.1090 | F:97% R15:3% | F:96% R15:4% | 427.8 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:2% R:20% / F:77% C:14% R:10% | 17.59%+8.92% | 19.79%+9.75% | 1.1090 | F:97% R20:3% | F:97% R20:3% | 424.6 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:2% R:20% / F:77% C:14% R:10% | 17.59%+8.92% | 19.79%+9.75% | 1.1090 | F:97% R20:3% | F:96% R20:4% | 424.5 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:2% R:20% / F:81% C:12% R:7% | 17.59%+9.05% | 19.79%+7.07% | 0.9374 | F:96% R15:4% | F:97% R15:3% | 421.7 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:2% R:20% / F:81% C:12% R:7% | 17.59%+9.05% | 19.79%+7.07% | 0.9374 | F:97% R20:3% | F:97% R20:3% | 427.2 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:2% R:20% / F:81% C:12% R:7% | 17.59%+9.05% | 19.79%+7.07% | 0.9374 | F:97% R20:3% | F:97% R20:3% | 428.9 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:78% C:2% R:20% / F:76% C:16% R:8% | 17.59%+7.59% | 19.79%+8.46% | 1.1198 | F:97% R21:3% | F:96% R21:4% | 422.5 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:78% C:2% R:20% / F:76% C:16% R:8% | 17.59%+7.59% | 19.79%+8.46% | 1.1198 | F:96% R20:4% | F:96% R20:4% | 427.9 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:78% C:2% R:20% / F:71% C:20% R:10% | 17.59%+6.26% | 19.79%+9.62% | 1.3153 | F:97% R22:3% | F:96% R22:4% | 431.6 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Badforyou | 10 | 30.0% | 22.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:3% R:23% / F:81% C:12% R:7% | 21.59%+10.86% | 22.67%+7.07% | 0.8266 | F:96% R15:4% | F:96% R15:4% | 424.4 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:3% R:23% / F:81% C:12% R:7% | 21.59%+10.86% | 22.67%+7.07% | 0.8266 | F:96% R20:4% | F:97% R20:3% | 423.8 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:3% R:23% / F:81% C:12% R:7% | 21.59%+10.86% | 22.67%+7.07% | 0.8266 | F:96% R20:4% | F:97% R20:3% | 425.5 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:3% R:23% / F:76% C:16% R:8% | 21.59%+9.38% | 22.67%+8.46% | 0.9733 | F:95% R21:5% | F:95% R21:5% | 427.7 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:3% R:23% / F:76% C:16% R:8% | 21.59%+9.38% | 22.67%+8.46% | 0.9733 | F:94% R21:6% | F:94% R21:6% | 426.4 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:75% C:3% R:23% / F:71% C:20% R:10% | 21.59%+7.50% | 22.67%+9.62% | 1.1604 | F:97% R22:3% | F:96% R22:4% | 422.0 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Badforyou | 10 | 30.0% | 22.2% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:71% C:3% R:27% / F:76% C:16% R:8% | 28.89%+12.19% | 26.64%+8.46% | 0.7997 | F:95% R21:5% | F:96% R21:4% | 423.2 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:71% C:3% R:27% / F:76% C:16% R:8% | 28.89%+12.19% | 26.64%+8.46% | 0.7997 | F:94% R21:6% | F:95% R21:5% | 429.3 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:71% C:3% R:27% / F:71% C:20% R:10% | 28.89%+10.61% | 26.64%+9.62% | 0.9145 | F:97% R22:3% | F:97% R22:3% | 427.8 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Badforyou | 10 | 30.0% | 22.2% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:55% C:3% R:43% / F:71% C:20% R:10% | 41.98%+14.96% | 42.73%+9.62% | 0.8090 | F:97% R22:3% | F:97% R22:3% | 424.6 |
 
 ## 数据中等 (50-300手)
 
 ### 紧被动 (低VPIP/低PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R15:3% | F:96% R15:4% | 702.5 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R15:3% | F:96% R15:4% | 714.1 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R20:3% | F:96% R20:4% | 715.5 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R20:3% | F:96% R20:4% | 699.7 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Turbem | 116 | 22.4% | 15.0% | F:96% R15:4% | F:95% R15:5% | 699.7 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R20:3% | F:96% R20:4% | 702.1 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R20:3% | F:95% R20:5% | 705.6 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R21:3% | F:95% R21:5% | 707.7 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:96% R20:4% | F:95% R20:5% | 717.9 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R22:3% | F:96% R22:4% | 701.8 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Turbem | 116 | 22.4% | 15.0% | F:96% R15:4% | F:95% R15:5% | 698.3 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:96% R20:4% | F:96% R20:4% | 698.2 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:96% R20:4% | F:95% R20:5% | 703.8 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:95% R21:5% | F:94% R21:6% | 702.2 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:94% R21:6% | F:93% R21:7% | 704.9 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R22:3% | F:96% R22:4% | 710.3 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:95% R21:5% | F:96% R21:4% | 705.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:94% R21:6% | F:96% R21:4% | 702.9 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R22:3% | F:98% R22:2% | 710.4 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:97% R22:3% | F:98% R22:2% | 701.9 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:80% C:2% R:18% / F:63% C:25% R:13% | 17.59%+8.92% | 18.35%+12.50% | 1.2092 | F:97% R15:3% | F:96% R15:4% | 732.3 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:80% C:2% R:18% / F:63% C:25% R:13% | 17.59%+8.92% | 18.35%+12.50% | 1.2092 | F:97% R15:3% | F:96% R15:4% | 1230.1 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:80% C:2% R:18% / F:63% C:25% R:13% | 17.59%+8.92% | 18.35%+12.50% | 1.2092 | F:97% R20:3% | F:96% R20:4% | 721.6 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:80% C:2% R:18% / F:63% C:25% R:13% | 17.59%+8.92% | 18.35%+12.50% | 1.2092 | F:97% R20:3% | F:96% R20:4% | 725.7 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:80% C:2% R:18% / F:62% C:15% R:23% | 17.59%+9.05% | 18.35%+23.08% | 1.6308 | F:96% R15:4% | F:94% R15:6% | 728.2 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:80% C:2% R:18% / F:62% C:15% R:23% | 17.59%+9.05% | 18.35%+23.08% | 1.6308 | F:97% R20:3% | F:95% R20:5% | 728.8 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:80% C:2% R:18% / F:62% C:15% R:23% | 17.59%+9.05% | 18.35%+23.08% | 1.6308 | F:97% R20:3% | F:94% R20:6% | 736.2 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:80% C:2% R:18% / F:76% C:6% R:18% | 17.59%+7.59% | 18.35%+17.65% | 1.5573 | F:97% R21:3% | F:95% R21:5% | 731.5 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:80% C:2% R:18% / F:76% C:6% R:18% | 17.59%+7.59% | 18.35%+17.65% | 1.5573 | F:96% R20:4% | F:94% R20:6% | 747.9 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:80% C:2% R:18% / F:72% C:19% R:8% | 17.59%+6.26% | 18.35%+8.26% | 1.1733 | F:97% R22:3% | F:96% R22:4% | 734.9 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Turbem | 116 | 22.4% | 15.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:77% C:3% R:20% / F:62% C:15% R:23% | 21.59%+10.86% | 20.43%+23.08% | 1.4179 | F:96% R15:4% | F:94% R15:6% | 736.1 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:77% C:3% R:20% / F:62% C:15% R:23% | 21.59%+10.86% | 20.43%+23.08% | 1.4179 | F:96% R20:4% | F:95% R20:5% | 729.7 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:77% C:3% R:20% / F:62% C:15% R:23% | 21.59%+10.86% | 20.43%+23.08% | 1.4179 | F:96% R20:4% | F:94% R20:6% | 733.4 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:77% C:3% R:20% / F:76% C:6% R:18% | 21.59%+9.38% | 20.43%+17.65% | 1.3346 | F:95% R21:5% | F:93% R21:7% | 735.3 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:77% C:3% R:20% / F:76% C:6% R:18% | 21.59%+9.38% | 20.43%+17.65% | 1.3346 | F:94% R21:6% | F:92% R21:8% | 736.9 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:77% C:3% R:20% / F:72% C:19% R:8% | 21.59%+7.50% | 20.43%+8.26% | 1.0207 | F:97% R22:3% | F:97% R22:3% | 732.1 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Turbem | 116 | 22.4% | 15.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:91% C:2% R:7% / F:76% C:6% R:18% | 28.89%+12.19% | 6.97%+17.65% | 0.5907 | F:95% R21:5% | F:97% R21:3% | 737.8 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:91% C:2% R:7% / F:76% C:6% R:18% | 28.89%+12.19% | 6.97%+17.65% | 0.5907 | F:94% R21:6% | F:97% R21:3% | 738.4 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:91% C:2% R:7% / F:72% C:19% R:8% | 28.89%+10.61% | 6.97%+8.26% | 0.4333 | F:97% R22:3% | F:99% R22:1% | 738.8 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Turbem | 116 | 22.4% | 15.0% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:74% C:2% R:24% / F:72% C:19% R:8% | 41.98%+14.96% | 23.79%+8.26% | 0.5593 | F:97% R22:3% | F:98% R22:2% | 732.9 |
 
 ### 紧激进 (低VPIP/高PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R15:3% | F:95% R15:5% | 883.3 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R15:3% | F:95% R15:5% | 885.8 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R20:3% | F:95% R20:5% | 892.9 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R20:3% | F:95% R20:5% | 882.7 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | iprayforgod | 129 | 23.3% | 21.4% | F:96% R15:4% | F:95% R15:5% | 895.4 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R20:3% | F:95% R20:5% | 878.2 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R20:3% | F:95% R20:5% | 884.1 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R21:3% | F:94% R21:6% | 884.4 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:96% R20:4% | F:93% R20:7% | 879.6 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R22:3% | F:94% R22:6% | 883.9 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | iprayforgod | 129 | 23.3% | 21.4% | F:96% R15:4% | F:94% R15:6% | 885.5 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:96% R20:4% | F:95% R20:5% | 891.0 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:96% R20:4% | F:95% R20:5% | 883.4 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:95% R21:5% | F:92% R21:8% | 888.5 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:94% R21:6% | F:91% R21:9% | 886.8 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R22:3% | F:95% R22:5% | 1309.8 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:95% R21:5% | F:93% R21:7% | 887.8 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:94% R21:6% | F:93% R21:7% | 885.1 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R22:3% | F:96% R22:4% | 889.4 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:97% R22:3% | F:97% R22:3% | 885.9 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:2% R:21% / F:89% C:3% R:8% | 17.59%+8.92% | 21.34%+8.17% | 1.0542 | F:97% R15:3% | F:96% R15:4% | 910.2 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:2% R:21% / F:89% C:3% R:8% | 17.59%+8.92% | 21.34%+8.17% | 1.0542 | F:97% R15:3% | F:96% R15:4% | 917.7 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:2% R:21% / F:89% C:3% R:8% | 17.59%+8.92% | 21.34%+8.17% | 1.0542 | F:97% R20:3% | F:97% R20:3% | 922.2 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:77% C:2% R:21% / F:89% C:3% R:8% | 17.59%+8.92% | 21.34%+8.17% | 1.0542 | F:97% R20:3% | F:97% R20:3% | 911.3 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:77% C:2% R:21% / F:89% C:3% R:8% | 17.59%+9.05% | 21.34%+7.60% | 1.0092 | F:96% R15:4% | F:96% R15:4% | 919.2 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:77% C:2% R:21% / F:89% C:3% R:8% | 17.59%+9.05% | 21.34%+7.60% | 1.0092 | F:97% R20:3% | F:97% R20:3% | 918.4 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:77% C:2% R:21% / F:89% C:3% R:8% | 17.59%+9.05% | 21.34%+7.60% | 1.0092 | F:97% R20:3% | F:96% R20:4% | 927.1 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:77% C:2% R:21% / F:79% C:4% R:17% | 17.59%+7.59% | 21.34%+17.02% | 1.6495 | F:97% R21:3% | F:94% R21:6% | 920.2 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:77% C:2% R:21% / F:79% C:4% R:17% | 17.59%+7.59% | 21.34%+17.02% | 1.6495 | F:96% R20:4% | F:94% R20:6% | 919.4 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:77% C:2% R:21% / F:87% C:5% R:8% | 17.59%+6.26% | 21.34%+7.87% | 1.2348 | F:97% R22:3% | F:96% R22:4% | 915.4 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | iprayforgod | 129 | 23.3% | 21.4% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:73% C:2% R:25% / F:89% C:3% R:8% | 21.59%+10.86% | 25.23%+7.60% | 0.9041 | F:96% R15:4% | F:96% R15:4% | 928.1 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:73% C:2% R:25% / F:89% C:3% R:8% | 21.59%+10.86% | 25.23%+7.60% | 0.9041 | F:96% R20:4% | F:97% R20:3% | 926.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:73% C:2% R:25% / F:89% C:3% R:8% | 21.59%+10.86% | 25.23%+7.60% | 0.9041 | F:96% R20:4% | F:96% R20:4% | 924.7 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:73% C:2% R:25% / F:79% C:4% R:17% | 21.59%+9.38% | 25.23%+17.02% | 1.4565 | F:95% R21:5% | F:92% R21:8% | 1447.3 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:73% C:2% R:25% / F:79% C:4% R:17% | 21.59%+9.38% | 25.23%+17.02% | 1.4565 | F:94% R21:6% | F:92% R21:8% | 918.2 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:73% C:2% R:25% / F:87% C:5% R:8% | 21.59%+7.50% | 25.23%+7.87% | 1.1068 | F:97% R22:3% | F:97% R22:3% | 917.5 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:66% C:2% R:32% / F:79% C:4% R:17% | 28.89%+12.19% | 31.59%+17.02% | 1.2355 | F:95% R21:5% | F:93% R21:7% | 926.1 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:66% C:2% R:32% / F:79% C:4% R:17% | 28.89%+12.19% | 31.59%+17.02% | 1.2355 | F:94% R21:6% | F:93% R21:7% | 925.9 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:66% C:2% R:32% / F:87% C:5% R:8% | 28.89%+10.61% | 31.59%+7.87% | 0.9004 | F:97% R22:3% | F:97% R22:3% | 932.0 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | iprayforgod | 129 | 23.3% | 21.4% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:53% C:2% R:45% / F:87% C:5% R:8% | 41.98%+14.96% | 45.15%+7.87% | 0.7519 | F:97% R22:3% | F:98% R22:2% | 922.3 |
 
 ### 松被动 (高VPIP/低PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R15:3% | F:97% R15:3% | 737.6 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R15:3% | F:97% R15:3% | 740.1 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R20:3% | F:97% R20:3% | 741.6 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R20:3% | F:97% R20:3% | 738.1 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | aafhs | 100 | 28.0% | 12.5% | F:96% R15:4% | F:97% R15:3% | 743.2 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R20:3% | F:97% R20:3% | 735.8 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R20:3% | F:97% R20:3% | 736.5 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R21:3% | F:97% R21:3% | 738.9 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:96% R20:4% | F:96% R20:4% | 1152.2 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R22:3% | F:97% R22:3% | 736.6 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | aafhs | 100 | 28.0% | 12.5% | F:96% R15:4% | F:96% R15:4% | 732.5 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:96% R20:4% | F:97% R20:3% | 742.0 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:96% R20:4% | F:97% R20:3% | 738.0 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:95% R21:5% | F:95% R21:5% | 735.3 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:94% R21:6% | F:95% R21:5% | 745.2 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R22:3% | F:97% R22:3% | 751.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:95% R21:5% | F:96% R21:4% | 742.7 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:94% R21:6% | F:96% R21:4% | 746.5 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R22:3% | F:98% R22:2% | 739.6 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:97% R22:3% | F:98% R22:2% | 751.3 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:8% R:14% / F:74% C:20% R:7% | 17.59%+8.92% | 13.64%+6.53% | 0.7531 | F:97% R15:3% | F:97% R15:3% | 771.4 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:8% R:14% / F:74% C:20% R:7% | 17.59%+8.92% | 13.64%+6.53% | 0.7531 | F:97% R15:3% | F:97% R15:3% | 763.2 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:8% R:14% / F:74% C:20% R:7% | 17.59%+8.92% | 13.64%+6.53% | 0.7531 | F:97% R20:3% | F:98% R20:2% | 768.3 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:8% R:14% / F:74% C:20% R:7% | 17.59%+8.92% | 13.64%+6.53% | 0.7531 | F:97% R20:3% | F:98% R20:2% | 768.4 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:8% R:14% / F:67% C:29% R:4% | 17.59%+9.05% | 13.64%+4.43% | 0.6161 | F:96% R15:4% | F:98% R15:2% | 761.6 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:8% R:14% / F:67% C:29% R:4% | 17.59%+9.05% | 13.64%+4.43% | 0.6161 | F:97% R20:3% | F:98% R20:2% | 769.0 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:8% R:14% / F:67% C:29% R:4% | 17.59%+9.05% | 13.64%+4.43% | 0.6161 | F:97% R20:3% | F:98% R20:2% | 768.4 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:78% C:8% R:14% / F:72% C:23% R:5% | 17.59%+7.59% | 13.64%+5.14% | 0.7243 | F:97% R21:3% | F:98% R21:2% | 768.3 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:78% C:8% R:14% / F:72% C:23% R:5% | 17.59%+7.59% | 13.64%+5.14% | 0.7243 | F:96% R20:4% | F:97% R20:3% | 765.2 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:78% C:8% R:14% / F:75% C:21% R:4% | 17.59%+6.26% | 13.64%+4.41% | 0.7389 | F:97% R22:3% | F:98% R22:2% | 770.4 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | aafhs | 100 | 28.0% | 12.5% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:8% R:17% / F:67% C:29% R:4% | 21.59%+10.86% | 17.04%+4.43% | 0.5674 | F:96% R15:4% | F:97% R15:3% | 772.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:8% R:17% / F:67% C:29% R:4% | 21.59%+10.86% | 17.04%+4.43% | 0.5674 | F:96% R20:4% | F:98% R20:2% | 771.8 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:8% R:17% / F:67% C:29% R:4% | 21.59%+10.86% | 17.04%+4.43% | 0.5674 | F:96% R20:4% | F:98% R20:2% | 781.2 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:8% R:17% / F:72% C:23% R:5% | 21.59%+9.38% | 17.04%+5.14% | 0.6576 | F:95% R21:5% | F:96% R21:4% | 769.7 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:8% R:17% / F:72% C:23% R:5% | 21.59%+9.38% | 17.04%+5.14% | 0.6576 | F:94% R21:6% | F:96% R21:4% | 770.9 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:75% C:8% R:17% / F:75% C:21% R:4% | 21.59%+7.50% | 17.04%+4.41% | 0.6809 | F:97% R22:3% | F:98% R22:2% | 771.6 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | aafhs | 100 | 28.0% | 12.5% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:68% C:9% R:23% / F:72% C:23% R:5% | 28.89%+12.19% | 23.05%+5.14% | 0.5797 | F:95% R21:5% | F:97% R21:3% | 779.5 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:68% C:9% R:23% / F:72% C:23% R:5% | 28.89%+12.19% | 23.05%+5.14% | 0.5797 | F:94% R21:6% | F:97% R21:3% | 773.1 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:68% C:9% R:23% / F:75% C:21% R:4% | 28.89%+10.61% | 23.05%+4.41% | 0.5757 | F:97% R22:3% | F:98% R22:2% | 772.3 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | aafhs | 100 | 28.0% | 12.5% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:69% C:7% R:24% / F:75% C:21% R:4% | 41.98%+14.96% | 24.23%+4.41% | 0.4124 | F:97% R22:3% | F:99% R22:1% | 779.8 |
 
 ### 松激进 (高VPIP/高PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R15:3% | F:93% R15:7% | 833.8 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R15:3% | F:93% R15:7% | 1312.2 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R20:3% | F:93% R20:7% | 832.7 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R20:3% | F:93% R20:7% | 842.3 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Oatta | 108 | 38.9% | 27.0% | F:96% R15:4% | F:93% R15:7% | 836.3 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R20:3% | F:93% R20:7% | 828.6 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R20:3% | F:93% R20:7% | 834.6 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R21:3% | F:93% R21:7% | 827.9 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:96% R20:4% | F:92% R20:8% | 831.3 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R22:3% | F:93% R22:7% | 834.2 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Oatta | 108 | 38.9% | 27.0% | F:96% R15:4% | F:92% R15:8% | 825.0 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:96% R20:4% | F:93% R20:7% | 831.2 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:96% R20:4% | F:93% R20:7% | 833.0 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:95% R21:5% | F:90% R21:10% | 827.7 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:94% R21:6% | F:90% R21:10% | 832.9 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R22:3% | F:94% R22:6% | 835.7 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:95% R21:5% | F:93% R21:7% | 841.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:94% R21:6% | F:93% R21:7% | 839.2 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R22:3% | F:96% R22:4% | 837.6 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:97% R22:3% | F:97% R22:3% | 832.9 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:69% C:2% R:28% / F:76% C:17% R:8% | 17.59%+8.92% | 28.46%+7.71% | 1.1828 | F:97% R15:3% | F:96% R15:4% | 854.9 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:69% C:2% R:28% / F:76% C:17% R:8% | 17.59%+8.92% | 28.46%+7.71% | 1.1828 | F:97% R15:3% | F:96% R15:4% | 864.6 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:69% C:2% R:28% / F:76% C:17% R:8% | 17.59%+8.92% | 28.46%+7.71% | 1.1828 | F:97% R20:3% | F:96% R20:4% | 859.8 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:69% C:2% R:28% / F:76% C:17% R:8% | 17.59%+8.92% | 28.46%+7.71% | 1.1828 | F:97% R20:3% | F:96% R20:4% | 859.7 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:69% C:2% R:28% / F:69% C:18% R:13% | 17.59%+9.05% | 28.46%+12.96% | 1.5221 | F:96% R15:4% | F:95% R15:5% | 866.2 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:69% C:2% R:28% / F:69% C:18% R:13% | 17.59%+9.05% | 28.46%+12.96% | 1.5221 | F:97% R20:3% | F:95% R20:5% | 861.0 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:69% C:2% R:28% / F:69% C:18% R:13% | 17.59%+9.05% | 28.46%+12.96% | 1.5221 | F:97% R20:3% | F:95% R20:5% | 1346.7 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:69% C:2% R:28% / F:66% C:24% R:10% | 17.59%+7.59% | 28.46%+10.37% | 1.4870 | F:97% R21:3% | F:95% R21:5% | 881.2 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:69% C:2% R:28% / F:66% C:24% R:10% | 17.59%+7.59% | 28.46%+10.37% | 1.4870 | F:96% R20:4% | F:95% R20:5% | 870.1 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:69% C:2% R:28% / F:57% C:28% R:16% | 17.59%+6.26% | 28.46%+15.69% | 2.0139 | F:97% R22:3% | F:94% R22:6% | 867.2 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Oatta | 108 | 38.9% | 27.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:62% C:3% R:35% / F:69% C:18% R:13% | 21.59%+10.86% | 34.92%+12.96% | 1.3892 | F:96% R15:4% | F:94% R15:6% | 871.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:62% C:3% R:35% / F:69% C:18% R:13% | 21.59%+10.86% | 34.92%+12.96% | 1.3892 | F:96% R20:4% | F:95% R20:5% | 867.8 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:62% C:3% R:35% / F:69% C:18% R:13% | 21.59%+10.86% | 34.92%+12.96% | 1.3892 | F:96% R20:4% | F:94% R20:6% | 871.3 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:62% C:3% R:35% / F:66% C:24% R:10% | 21.59%+9.38% | 34.92%+10.37% | 1.3377 | F:95% R21:5% | F:93% R21:7% | 869.4 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:62% C:3% R:35% / F:66% C:24% R:10% | 21.59%+9.38% | 34.92%+10.37% | 1.3377 | F:94% R21:6% | F:92% R21:8% | 866.0 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:62% C:3% R:35% / F:57% C:28% R:16% | 21.59%+7.50% | 34.92%+15.69% | 1.8390 | F:97% R22:3% | F:94% R22:6% | 870.3 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Oatta | 108 | 38.9% | 27.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:61% C:4% R:36% / F:66% C:24% R:10% | 28.89%+12.19% | 35.57%+10.37% | 1.0235 | F:95% R21:5% | F:94% R21:6% | 884.4 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:61% C:4% R:36% / F:66% C:24% R:10% | 28.89%+12.19% | 35.57%+10.37% | 1.0235 | F:94% R21:6% | F:94% R21:6% | 871.7 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:61% C:4% R:36% / F:57% C:28% R:16% | 28.89%+10.61% | 35.57%+15.69% | 1.3494 | F:97% R22:3% | F:96% R22:4% | 873.1 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Oatta | 108 | 38.9% | 27.0% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:52% C:3% R:45% / F:57% C:28% R:16% | 41.98%+14.96% | 45.12%+15.69% | 1.0616 | F:97% R22:3% | F:97% R22:3% | 874.7 |
 
 ## 数据充足 (>300手)
 
 ### 紧被动 (低VPIP/低PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R15:3% | F:98% R15:2% | 856.9 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R15:3% | F:98% R15:2% | 856.1 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R20:3% | F:98% R20:2% | 850.2 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R20:3% | F:98% R20:2% | 850.9 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | oleh2222 | 802 | 12.0% | 8.2% | F:96% R15:4% | F:98% R15:2% | 855.6 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R20:3% | F:98% R20:2% | 1278.7 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R20:3% | F:98% R20:2% | 853.0 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R21:3% | F:98% R21:2% | 848.4 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:96% R20:4% | F:98% R20:2% | 860.3 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R22:3% | F:98% R22:2% | 845.2 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | oleh2222 | 802 | 12.0% | 8.2% | F:96% R15:4% | F:98% R15:2% | 854.5 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:96% R20:4% | F:98% R20:2% | 853.4 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:96% R20:4% | F:98% R20:2% | 855.3 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:95% R21:5% | F:97% R21:3% | 857.9 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:94% R21:6% | F:97% R21:3% | 862.0 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R22:3% | F:98% R22:2% | 858.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:95% R21:5% | F:98% R21:2% | 861.0 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:94% R21:6% | F:98% R21:2% | 857.3 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R22:3% | F:98% R22:2% | 856.1 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:97% R22:3% | F:99% R22:1% | 851.2 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:91% C:1% R:8% / F:89% C:6% R:4% | 17.59%+8.92% | 8.09%+4.25% | 0.4685 | F:97% R15:3% | F:98% R15:2% | 883.6 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:91% C:1% R:8% / F:89% C:6% R:4% | 17.59%+8.92% | 8.09%+4.25% | 0.4685 | F:97% R15:3% | F:98% R15:2% | 889.7 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:91% C:1% R:8% / F:89% C:6% R:4% | 17.59%+8.92% | 8.09%+4.25% | 0.4685 | F:97% R20:3% | F:99% R20:1% | 883.7 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:91% C:1% R:8% / F:89% C:6% R:4% | 17.59%+8.92% | 8.09%+4.25% | 0.4685 | F:97% R20:3% | F:98% R20:2% | 1371.1 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:91% C:1% R:8% / F:89% C:9% R:2% | 17.59%+9.05% | 8.09%+2.16% | 0.3310 | F:96% R15:4% | F:99% R15:1% | 882.2 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:91% C:1% R:8% / F:89% C:9% R:2% | 17.59%+9.05% | 8.09%+2.16% | 0.3310 | F:97% R20:3% | F:99% R20:1% | 889.9 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:91% C:1% R:8% / F:89% C:9% R:2% | 17.59%+9.05% | 8.09%+2.16% | 0.3310 | F:97% R20:3% | F:99% R20:1% | 893.0 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:91% C:1% R:8% / F:82% C:13% R:4% | 17.59%+7.59% | 8.09%+4.29% | 0.5097 | F:97% R21:3% | F:98% R21:2% | 905.5 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:91% C:1% R:8% / F:82% C:13% R:4% | 17.59%+7.59% | 8.09%+4.29% | 0.5097 | F:96% R20:4% | F:98% R20:2% | 891.0 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:91% C:1% R:8% / F:88% C:6% R:6% | 17.59%+6.26% | 8.09%+5.70% | 0.6471 | F:97% R22:3% | F:98% R22:2% | 886.8 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | oleh2222 | 802 | 12.0% | 8.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:86% C:1% R:13% / F:89% C:9% R:2% | 21.59%+10.86% | 12.93%+2.16% | 0.3448 | F:96% R15:4% | F:98% R15:2% | 1367.9 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:86% C:1% R:13% / F:89% C:9% R:2% | 21.59%+10.86% | 12.93%+2.16% | 0.3448 | F:96% R20:4% | F:99% R20:1% | 888.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:86% C:1% R:13% / F:89% C:9% R:2% | 21.59%+10.86% | 12.93%+2.16% | 0.3448 | F:96% R20:4% | F:99% R20:1% | 888.5 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:86% C:1% R:13% / F:82% C:13% R:4% | 21.59%+9.38% | 12.93%+4.29% | 0.5233 | F:95% R21:5% | F:97% R21:3% | 884.3 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:86% C:1% R:13% / F:82% C:13% R:4% | 21.59%+9.38% | 12.93%+4.29% | 0.5233 | F:94% R21:6% | F:97% R21:3% | 892.6 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:86% C:1% R:13% / F:88% C:6% R:6% | 21.59%+7.50% | 12.93%+5.70% | 0.6743 | F:97% R22:3% | F:98% R22:2% | 891.0 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:87% C:1% R:12% / F:82% C:13% R:4% | 28.89%+12.19% | 12.41%+4.29% | 0.3886 | F:95% R21:5% | F:98% R21:2% | 893.2 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:87% C:1% R:12% / F:82% C:13% R:4% | 28.89%+12.19% | 12.41%+4.29% | 0.3886 | F:94% R21:6% | F:98% R21:2% | 896.2 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:87% C:1% R:12% / F:88% C:6% R:6% | 28.89%+10.61% | 12.41%+5.70% | 0.4803 | F:97% R22:3% | F:98% R22:2% | 892.2 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | oleh2222 | 802 | 12.0% | 8.2% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:83% C:3% R:14% / F:88% C:6% R:6% | 41.98%+14.96% | 13.73%+5.70% | 0.3529 | F:97% R22:3% | F:99% R22:1% | 894.8 |
 
 ### 紧激进 (低VPIP/高PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R15:3% | F:96% R15:4% | 794.4 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R15:3% | F:96% R15:4% | 785.6 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R20:3% | F:96% R20:4% | 784.9 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R20:3% | F:96% R20:4% | 793.9 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Noris22 | 1124 | 24.6% | 16.1% | F:96% R15:4% | F:96% R15:4% | 789.4 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R20:3% | F:96% R20:4% | 795.8 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R20:3% | F:96% R20:4% | 794.2 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R21:3% | F:96% R21:4% | 792.1 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:96% R20:4% | F:96% R20:4% | 796.7 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R22:3% | F:96% R22:4% | 791.3 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Noris22 | 1124 | 24.6% | 16.1% | F:96% R15:4% | F:96% R15:4% | 797.4 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:96% R20:4% | F:96% R20:4% | 793.7 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:96% R20:4% | F:96% R20:4% | 784.6 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:95% R21:5% | F:95% R21:5% | 794.1 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:94% R21:6% | F:95% R21:5% | 802.8 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R22:3% | F:97% R22:3% | 800.6 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:95% R21:5% | F:96% R21:4% | 798.5 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:94% R21:6% | F:96% R21:4% | 1223.9 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R22:3% | F:98% R22:2% | 796.7 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:97% R22:3% | F:98% R22:2% | 787.2 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:76% C:1% R:23% / F:84% C:10% R:6% | 17.59%+8.92% | 23.11%+5.68% | 0.9146 | F:97% R15:3% | F:97% R15:3% | 818.0 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:76% C:1% R:23% / F:84% C:10% R:6% | 17.59%+8.92% | 23.11%+5.68% | 0.9146 | F:97% R15:3% | F:97% R15:3% | 823.9 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:76% C:1% R:23% / F:84% C:10% R:6% | 17.59%+8.92% | 23.11%+5.68% | 0.9146 | F:97% R20:3% | F:97% R20:3% | 809.7 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:76% C:1% R:23% / F:84% C:10% R:6% | 17.59%+8.92% | 23.11%+5.68% | 0.9146 | F:97% R20:3% | F:97% R20:3% | 811.3 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:76% C:1% R:23% / F:77% C:17% R:6% | 17.59%+9.05% | 23.11%+5.61% | 0.9025 | F:96% R15:4% | F:97% R15:3% | 825.2 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:76% C:1% R:23% / F:77% C:17% R:6% | 17.59%+9.05% | 23.11%+5.61% | 0.9025 | F:97% R20:3% | F:97% R20:3% | 812.7 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:76% C:1% R:23% / F:77% C:17% R:6% | 17.59%+9.05% | 23.11%+5.61% | 0.9025 | F:97% R20:3% | F:97% R20:3% | 824.1 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:76% C:1% R:23% / F:77% C:16% R:6% | 17.59%+7.59% | 23.11%+6.26% | 1.0412 | F:97% R21:3% | F:96% R21:4% | 825.4 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:76% C:1% R:23% / F:77% C:16% R:6% | 17.59%+7.59% | 23.11%+6.26% | 1.0412 | F:96% R20:4% | F:96% R20:4% | 816.9 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:76% C:1% R:23% / F:78% C:17% R:5% | 17.59%+6.26% | 23.11%+5.03% | 1.0275 | F:97% R22:3% | F:97% R22:3% | 835.1 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Noris22 | 1124 | 24.6% | 16.1% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:1% R:24% / F:77% C:17% R:6% | 21.59%+10.86% | 23.99%+5.61% | 0.7576 | F:96% R15:4% | F:97% R15:3% | 829.0 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:1% R:24% / F:77% C:17% R:6% | 21.59%+10.86% | 23.99%+5.61% | 0.7576 | F:96% R20:4% | F:97% R20:3% | 825.4 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:1% R:24% / F:77% C:17% R:6% | 21.59%+10.86% | 23.99%+5.61% | 0.7576 | F:96% R20:4% | F:97% R20:3% | 817.4 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:1% R:24% / F:77% C:16% R:6% | 21.59%+9.38% | 23.99%+6.26% | 0.8615 | F:95% R21:5% | F:95% R21:5% | 817.8 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:1% R:24% / F:77% C:16% R:6% | 21.59%+9.38% | 23.99%+6.26% | 0.8615 | F:94% R21:6% | F:95% R21:5% | 823.5 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:75% C:1% R:24% / F:78% C:17% R:5% | 21.59%+7.50% | 23.99%+5.03% | 0.8630 | F:97% R22:3% | F:97% R22:3% | 817.3 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:72% C:2% R:26% / F:77% C:16% R:6% | 28.89%+12.19% | 26.38%+6.26% | 0.6848 | F:95% R21:5% | F:96% R21:4% | 818.2 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:72% C:2% R:26% / F:77% C:16% R:6% | 28.89%+12.19% | 26.38%+6.26% | 0.6848 | F:94% R21:6% | F:96% R21:4% | 825.3 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:72% C:2% R:26% / F:78% C:17% R:5% | 28.89%+10.61% | 26.38%+5.03% | 0.6580 | F:97% R22:3% | F:98% R22:2% | 826.3 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Noris22 | 1124 | 24.6% | 16.1% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:77% C:1% R:22% / F:78% C:17% R:5% | 41.98%+14.96% | 22.03%+5.03% | 0.4200 | F:97% R22:3% | F:99% R22:1% | 821.4 |
 
 ### 松被动 (高VPIP/低PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R15:3% | F:96% R15:4% | 694.4 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R15:3% | F:96% R15:4% | 697.8 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R20:3% | F:97% R20:3% | 698.0 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R20:3% | F:96% R20:4% | 697.4 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Dorororoo | 535 | 32.7% | 13.2% | F:96% R15:4% | F:96% R15:4% | 699.0 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R20:3% | F:97% R20:3% | 692.4 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R20:3% | F:96% R20:4% | 704.7 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R21:3% | F:96% R21:4% | 697.8 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:96% R20:4% | F:96% R20:4% | 696.5 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R22:3% | F:96% R22:4% | 695.2 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Dorororoo | 535 | 32.7% | 13.2% | F:96% R15:4% | F:97% R15:3% | 1132.8 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:96% R20:4% | F:97% R20:3% | 700.1 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:96% R20:4% | F:97% R20:3% | 695.1 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:95% R21:5% | F:96% R21:4% | 701.1 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:94% R21:6% | F:96% R21:4% | 697.0 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R22:3% | F:97% R22:3% | 697.6 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:95% R21:5% | F:97% R21:3% | 697.8 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:94% R21:6% | F:96% R21:4% | 700.8 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R22:3% | F:98% R22:2% | 697.7 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:97% R22:3% | F:98% R22:2% | 708.2 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:67% C:15% R:18% / F:71% C:20% R:8% | 17.59%+8.92% | 18.37%+8.48% | 0.9965 | F:97% R15:3% | F:97% R15:3% | 719.1 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:67% C:15% R:18% / F:71% C:20% R:8% | 17.59%+8.92% | 18.37%+8.48% | 0.9965 | F:97% R15:3% | F:97% R15:3% | 718.4 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:67% C:15% R:18% / F:71% C:20% R:8% | 17.59%+8.92% | 18.37%+8.48% | 0.9965 | F:97% R20:3% | F:97% R20:3% | 719.5 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:67% C:15% R:18% / F:71% C:20% R:8% | 17.59%+8.92% | 18.37%+8.48% | 0.9965 | F:97% R20:3% | F:97% R20:3% | 719.9 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:67% C:15% R:18% / F:73% C:20% R:7% | 17.59%+9.05% | 18.37%+6.57% | 0.8704 | F:96% R15:4% | F:97% R15:3% | 726.0 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:67% C:15% R:18% / F:73% C:20% R:7% | 17.59%+9.05% | 18.37%+6.57% | 0.8704 | F:97% R20:3% | F:97% R20:3% | 730.5 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:67% C:15% R:18% / F:73% C:20% R:7% | 17.59%+9.05% | 18.37%+6.57% | 0.8704 | F:97% R20:3% | F:97% R20:3% | 723.4 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:67% C:15% R:18% / F:65% C:28% R:6% | 17.59%+7.59% | 18.37%+6.21% | 0.9247 | F:97% R21:3% | F:97% R21:3% | 724.8 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:67% C:15% R:18% / F:65% C:28% R:6% | 17.59%+7.59% | 18.37%+6.21% | 0.9247 | F:96% R20:4% | F:97% R20:3% | 733.2 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:67% C:15% R:18% / F:60% C:33% R:7% | 17.59%+6.26% | 18.37%+7.03% | 1.0830 | F:97% R22:3% | F:97% R22:3% | 732.1 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Dorororoo | 535 | 32.7% | 13.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:11% R:13% / F:73% C:20% R:7% | 21.59%+10.86% | 13.36%+6.57% | 0.6117 | F:96% R15:4% | F:97% R15:3% | 725.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:11% R:13% / F:73% C:20% R:7% | 21.59%+10.86% | 13.36%+6.57% | 0.6117 | F:96% R20:4% | F:98% R20:2% | 728.1 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:75% C:11% R:13% / F:73% C:20% R:7% | 21.59%+10.86% | 13.36%+6.57% | 0.6117 | F:96% R20:4% | F:98% R20:2% | 731.8 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:11% R:13% / F:65% C:28% R:6% | 21.59%+9.38% | 13.36%+6.21% | 0.6405 | F:95% R21:5% | F:97% R21:3% | 726.5 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:75% C:11% R:13% / F:65% C:28% R:6% | 21.59%+9.38% | 13.36%+6.21% | 0.6405 | F:94% R21:6% | F:96% R21:4% | 726.4 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:75% C:11% R:13% / F:60% C:33% R:7% | 21.59%+7.50% | 13.36%+7.03% | 0.7615 | F:97% R22:3% | F:98% R22:2% | 725.7 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:68% C:14% R:18% / F:65% C:28% R:6% | 28.89%+12.19% | 17.84%+6.21% | 0.5611 | F:95% R21:5% | F:97% R21:3% | 731.0 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:68% C:14% R:18% / F:65% C:28% R:6% | 28.89%+12.19% | 17.84%+6.21% | 0.5611 | F:94% R21:6% | F:97% R21:3% | 732.3 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:68% C:14% R:18% / F:60% C:33% R:7% | 28.89%+10.61% | 17.84%+7.03% | 0.6397 | F:97% R22:3% | F:98% R22:2% | 738.7 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Dorororoo | 535 | 32.7% | 13.2% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:66% C:11% R:23% / F:60% C:33% R:7% | 41.98%+14.96% | 23.46%+7.03% | 0.5124 | F:97% R22:3% | F:98% R22:2% | 734.3 |
 
 ### 松激进 (高VPIP/高PFR)
 
-| 位置组合 | 玩家 | 手数 | VPIP | PFR | 先验分布 | 后验分布 | 耗时(ms) |
-|---------|------|------|------|-----|---------|---------|----------|
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R15:3% | F:95% R15:5% | 929.0 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R15:3% | F:95% R15:5% | 939.6 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R20:3% | F:96% R20:4% | 930.4 |
-| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R20:3% | F:95% R20:5% | 1339.6 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Deteuler | 638 | 27.0% | 21.4% | F:96% R15:4% | F:95% R15:5% | 934.6 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R20:3% | F:95% R20:5% | 929.8 |
-| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R20:3% | F:95% R20:5% | 928.6 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R21:3% | F:95% R21:5% | 927.1 |
-| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:96% R20:4% | F:94% R20:6% | 928.4 |
-| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R22:3% | F:95% R22:5% | 920.0 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Deteuler | 638 | 27.0% | 21.4% | F:96% R15:4% | F:95% R15:5% | 923.1 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:96% R20:4% | F:95% R20:5% | 925.2 |
-| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:96% R20:4% | F:95% R20:5% | 921.6 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:95% R21:5% | F:93% R21:7% | 927.7 |
-| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:94% R21:6% | F:93% R21:7% | 935.2 |
-| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R22:3% | F:96% R22:4% | 927.7 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:95% R21:5% | F:94% R21:6% | 926.8 |
-| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:94% R21:6% | F:94% R21:6% | 933.0 |
-| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R22:3% | F:96% R22:4% | 923.1 |
-| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:97% R22:3% | F:97% R22:3% | 927.3 |
+| 位置组合 | 玩家 | 手数 | VPIP | PFR | 对手GTO先验(R/C/F) | 对手统计后验(R/C/F) | 对手Range先验 | 对手Range后验 | 激进度比 | Hero先验分布 | Hero后验分布 | 耗时(ms) |
+|---------|------|------|------|-----|-------------------|-------------------|-------------|-------------|--------|------------|------------|----------|
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.CO: 'CO'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:1% R:21% / F:85% C:7% R:8% | 17.59%+8.92% | 21.33%+8.32% | 1.0635 | F:97% R15:3% | F:96% R15:4% | 963.9 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BTN: 'BTN'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:1% R:21% / F:85% C:7% R:8% | 17.59%+8.92% | 21.33%+8.32% | 1.0635 | F:97% R15:3% | F:96% R15:4% | 959.5 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:1% R:21% / F:85% C:7% R:8% | 17.59%+8.92% | 21.33%+8.32% | 1.0635 | F:97% R20:3% | F:97% R20:3% | 956.1 |
+| (<Position.UTG: 'UTG'>, <Position.MP: 'MP'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:91% R6.5:9% RAI:0% | F:78% C:1% R:21% / F:85% C:7% R:8% | 17.59%+8.92% | 21.33%+8.32% | 1.0635 | F:97% R20:3% | F:96% R20:4% | 960.4 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:1% R:21% / F:82% C:4% R:13% | 17.59%+9.05% | 21.33%+13.48% | 1.3440 | F:96% R15:4% | F:95% R15:5% | 962.3 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:1% R:21% / F:82% C:4% R:13% | 17.59%+9.05% | 21.33%+13.48% | 1.3440 | F:97% R20:3% | F:96% R20:4% | 957.1 |
+| (<Position.UTG: 'UTG'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:90% C:1% R6.5:9% RAI:0% | F:78% C:1% R:21% / F:82% C:4% R:13% | 17.59%+9.05% | 21.33%+13.48% | 1.3440 | F:97% R20:3% | F:95% R20:5% | 964.0 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:78% C:1% R:21% / F:82% C:5% R:13% | 17.59%+7.59% | 21.33%+13.18% | 1.4511 | F:97% R21:3% | F:95% R21:5% | 974.6 |
+| (<Position.UTG: 'UTG'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:86% C:7% R7.5:8% RAI:0% | F:78% C:1% R:21% / F:82% C:5% R:13% | 17.59%+7.59% | 21.33%+13.18% | 1.4511 | F:96% R20:4% | F:95% R20:5% | 1514.5 |
+| (<Position.UTG: 'UTG'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:82% R2:18% RAI:0% / F:88% C:6% R10:6% RAI:0% | F:78% C:1% R:21% / F:84% C:2% R:14% | 17.59%+6.26% | 21.33%+13.89% | 1.6404 | F:97% R22:3% | F:95% R22:5% | 967.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BTN: 'BTN'>) | Deteuler | 638 | 27.0% | 21.4% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:77% C:2% R:21% / F:82% C:4% R:13% | 21.59%+10.86% | 20.90%+13.48% | 1.0961 | F:96% R15:4% | F:95% R15:5% | 963.5 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:77% C:2% R:21% / F:82% C:4% R:13% | 21.59%+10.86% | 20.90%+13.48% | 1.0961 | F:96% R20:4% | F:96% R20:4% | 963.4 |
+| (<Position.MP: 'MP'>, <Position.CO: 'CO'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:78% R2:22% RAI:0% / F:88% C:1% R6.5:11% RAI:0% | F:77% C:2% R:21% / F:82% C:4% R:13% | 21.59%+10.86% | 20.90%+13.48% | 1.0961 | F:96% R20:4% | F:96% R20:4% | 968.0 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:77% C:2% R:21% / F:82% C:5% R:13% | 21.59%+9.38% | 20.90%+13.18% | 1.1665 | F:95% R21:5% | F:94% R21:6% | 960.9 |
+| (<Position.MP: 'MP'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:78% R2:22% RAI:0% / F:85% C:6% R7.5:9% RAI:0% | F:77% C:2% R:21% / F:82% C:5% R:13% | 21.59%+9.38% | 20.90%+13.18% | 1.1665 | F:94% R21:6% | F:93% R21:7% | 967.0 |
+| (<Position.MP: 'MP'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:78% R2:22% RAI:0% / F:86% C:6% R11:8% RAI:0% | F:77% C:2% R:21% / F:84% C:2% R:14% | 21.59%+7.50% | 20.90%+13.89% | 1.3386 | F:97% R22:3% | F:96% R22:4% | 1452.9 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.SB: 'SB'>) | Deteuler | 638 | 27.0% | 21.4% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:68% C:1% R:31% / F:82% C:5% R:13% | 28.89%+12.19% | 30.80%+13.18% | 1.0736 | F:95% R21:5% | F:94% R21:6% | 962.4 |
+| (<Position.CO: 'CO'>, <Position.BTN: 'BTN'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:71% R2.3:29% RAI:0% / F:84% C:3% R7.5:12% RAI:0% | F:68% C:1% R:31% / F:82% C:5% R:13% | 28.89%+12.19% | 30.80%+13.18% | 1.0736 | F:94% R21:6% | F:94% R21:6% | 970.6 |
+| (<Position.CO: 'CO'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:71% R2.3:29% RAI:0% / F:87% C:2% R11.5:11% RAI:0% | F:68% C:1% R:31% / F:84% C:2% R:14% | 28.89%+10.61% | 30.80%+13.89% | 1.1816 | F:97% R22:3% | F:96% R22:4% | 975.1 |
+| (<Position.BTN: 'BTN'>, <Position.SB: 'SB'>, <Position.BB: 'BB'>) | Deteuler | 638 | 27.0% | 21.4% | F:58% R2.5:42% RAI:0% / F:85% C:1% R12:15% RAI:0% | F:51% C:1% R:48% / F:84% C:2% R:14% | 41.98%+14.96% | 47.84%+13.89% | 1.0286 | F:97% R22:3% | F:97% R22:3% | 971.0 |
 
