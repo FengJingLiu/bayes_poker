@@ -14,6 +14,7 @@ from bayes_poker.strategy.preflop_parse.records import (
     ParsedStrategyNodeRecord,
 )
 from bayes_poker.strategy.range import PreflopRange, RANGE_169_LENGTH
+from bayes_poker.strategy.range.belief_adjustment import adjust_belief_range
 from bayes_poker.strategy.strategy_engine.contracts import (
     RecommendationDecision,
     UnsupportedScenarioDecision,
@@ -24,7 +25,6 @@ from bayes_poker.strategy.strategy_engine.gto_policy import (
 )
 from bayes_poker.strategy.strategy_engine.hero_resolver import (
     HeroGtoResolver,
-    _adjust_hero_belief_range,
     _adjust_hero_policy,
     _compute_opponent_aggression_ratio,
     _is_aggressive_action,
@@ -1064,12 +1064,12 @@ class TestComputeOpponentAggressionRatio:
 
 
 # ---------------------------------------------------------------------------
-# 单元测试: _adjust_hero_belief_range
+# 单元测试: adjust_belief_range
 # ---------------------------------------------------------------------------
 
 
 class TestAdjustHeroBeliefRange:
-    """_adjust_hero_belief_range 按 EV 排序做约束式信念重分配."""
+    """adjust_belief_range 按 EV 排序做约束式信念重分配."""
 
     def test_target_equals_current_no_change(self) -> None:
         """目标频率与当前频率相同时不调整."""
@@ -1078,9 +1078,10 @@ class TestAdjustHeroBeliefRange:
             evs=[float(i) for i in range(RANGE_169_LENGTH)],
         )
         current_freq = br.total_frequency()
-        result = _adjust_hero_belief_range(
+        result = adjust_belief_range(
             belief_range=br,
             target_frequency=current_freq,
+            low_mass_threshold=1e-9,
         )
         for i in range(RANGE_169_LENGTH):
             assert result.strategy[i] == pytest.approx(0.5, abs=1e-6)
@@ -1094,9 +1095,10 @@ class TestAdjustHeroBeliefRange:
         )
         current_freq = br.total_frequency()
         target = current_freq + 0.05
-        result = _adjust_hero_belief_range(
+        result = adjust_belief_range(
             belief_range=br,
             target_frequency=target,
+            low_mass_threshold=1e-9,
         )
         # 高 EV 手牌 (index=168) 应比原来更高
         assert result.strategy[168] > 0.3
@@ -1112,9 +1114,10 @@ class TestAdjustHeroBeliefRange:
         )
         current_freq = br.total_frequency()
         target = current_freq - 0.05
-        result = _adjust_hero_belief_range(
+        result = adjust_belief_range(
             belief_range=br,
             target_frequency=target,
+            low_mass_threshold=1e-9,
         )
         # 低 EV 手牌 (index=0) 应比原来更低
         assert result.strategy[0] < 0.5
@@ -1124,9 +1127,10 @@ class TestAdjustHeroBeliefRange:
     def test_all_zeros_range_stays_zero_when_no_ev_info(self) -> None:
         """全零策略且目标为零时保持不变."""
         br = PreflopRange.zeros()
-        result = _adjust_hero_belief_range(
+        result = adjust_belief_range(
             belief_range=br,
             target_frequency=0.0,
+            low_mass_threshold=1e-9,
         )
         assert all(v == 0.0 for v in result.strategy)
 

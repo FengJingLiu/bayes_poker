@@ -10,10 +10,10 @@ from collections.abc import Sequence
 from bayes_poker.domain.table import Player
 from bayes_poker.strategy.range import (
     RANGE_169_LENGTH,
-    RANGE_169_ORDER,
-    RANGE_1326_LENGTH,
     PreflopRange,
-    combos_per_hand,
+)
+from bayes_poker.strategy.range.belief_adjustment import (
+    adjust_belief_range,
 )
 from bayes_poker.table.observed_state import ObservedTableState
 
@@ -515,82 +515,6 @@ def _compute_opponent_aggression_ratio(
     return clamped, details
 
 
-def _combo_weight(index: int) -> float:
-    """返回某 169 手牌在总频率中的权重."""
-    return combos_per_hand(RANGE_169_ORDER[index]) / RANGE_1326_LENGTH
-
-
-def _adjust_hero_belief_range(
-    *,
-    belief_range: PreflopRange,
-    target_frequency: float,
-) -> PreflopRange:
-    """按目标频率与 EV 排序做约束式信念重分配.
-
-    复用 opponent_pipeline 的 EV-ranked redistribution 算法:
-    - delta > 0: 按 EV 从高到低增加频率
-    - delta < 0: 按 EV 从低到高削减频率
-
-    Args:
-        belief_range: 原始 belief range (169 维).
-        target_frequency: 调整后的目标总频率.
-
-    Returns:
-        调整后的新 PreflopRange.
-    """
-    adjusted_strategy = [min(max(v, 0.0), 1.0) for v in belief_range.strategy]
-    evs = list(belief_range.evs)
-    combo_weights = [_combo_weight(i) for i in range(RANGE_169_LENGTH)]
-
-    current_freq = sum(
-        s * w for s, w in zip(adjusted_strategy, combo_weights, strict=True)
-    )
-    delta = target_frequency - current_freq
-    if abs(delta) <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
-        return PreflopRange(strategy=adjusted_strategy, evs=evs)
-
-    if delta > 0.0:
-        sorted_indices = sorted(
-            range(RANGE_169_LENGTH),
-            key=lambda idx: evs[idx],
-            reverse=True,
-        )
-        for idx in sorted_indices:
-            if delta <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
-                break
-            w = combo_weights[idx]
-            if w <= 0.0:
-                continue
-            available = 1.0 - adjusted_strategy[idx]
-            if available <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
-                continue
-            max_mass = available * w
-            mass_to_add = min(delta, max_mass)
-            adjusted_strategy[idx] += mass_to_add / w
-            delta -= mass_to_add
-    else:
-        remaining = -delta
-        sorted_indices = sorted(
-            range(RANGE_169_LENGTH),
-            key=lambda idx: evs[idx],
-        )
-        for idx in sorted_indices:
-            if remaining <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
-                break
-            w = combo_weights[idx]
-            if w <= 0.0:
-                continue
-            available = adjusted_strategy[idx]
-            if available <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
-                continue
-            max_mass = available * w
-            mass_to_remove = min(remaining, max_mass)
-            adjusted_strategy[idx] -= mass_to_remove / w
-            remaining -= mass_to_remove
-
-    return PreflopRange(strategy=adjusted_strategy, evs=evs)
-
-
 def _adjust_hero_policy(
     *,
     policy: GtoPriorPolicy,
@@ -657,9 +581,10 @@ def _adjust_hero_policy(
                 old_total = action.belief_range.total_frequency()
                 new_target = old_total * agg_scale
                 new_target = min(max(new_target, 0.0), 1.0)
-                new_belief = _adjust_hero_belief_range(
+                new_belief = adjust_belief_range(
                     belief_range=action.belief_range,
                     target_frequency=new_target,
+                    low_mass_threshold=_HERO_ADJUST_LOW_MASS_THRESHOLD,
                 )
             adjusted_actions.append(
                 GtoPriorAction(
