@@ -431,6 +431,19 @@ def _is_aggressive_action(action_name: str) -> bool:
     return normalized.startswith("R") or normalized == "RAI"
 
 
+def _is_call_action(action_name: str) -> bool:
+    """判断动作编码是否属于 call/check 类动作.
+
+    Args:
+        action_name: 动作编码, 如 'C', 'X', 'F'.
+
+    Returns:
+        是否为 call/check 动作.
+    """
+    normalized = action_name.upper()
+    return normalized in {"C", "X"}
+
+
 def _compute_opponent_aggression_ratio(
     *,
     session_context: StrategySessionContext,
@@ -558,9 +571,6 @@ def _adjust_hero_policy(
     new_aggressive_total = max(new_aggressive_total, 0.0)
     new_passive_total = 1.0 - new_aggressive_total
 
-    if new_passive_total <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
-        return policy
-
     agg_scale = (
         new_aggressive_total / total_aggressive_freq
         if total_aggressive_freq > _HERO_ADJUST_LOW_MASS_THRESHOLD
@@ -605,6 +615,16 @@ def _adjust_hero_policy(
             )
         else:
             new_freq = action.blended_frequency * pass_scale
+            new_belief = action.belief_range
+            if _is_call_action(action.action_name) and action.belief_range is not None:
+                old_total = action.belief_range.total_frequency()
+                call_target = old_total * aggression_ratio
+                call_target = min(max(call_target, 0.0), 1.0)
+                new_belief = adjust_belief_range(
+                    belief_range=action.belief_range,
+                    target_frequency=call_target,
+                    low_mass_threshold=_HERO_ADJUST_LOW_MASS_THRESHOLD,
+                )
             adjusted_actions.append(
                 GtoPriorAction(
                     action_name=action.action_name,
@@ -615,7 +635,7 @@ def _adjust_hero_policy(
                     bet_size_bb=action.bet_size_bb,
                     is_all_in=action.is_all_in,
                     next_position=action.next_position,
-                    belief_range=action.belief_range,
+                    belief_range=new_belief,
                     total_ev=action.total_ev,
                     total_combos=action.total_combos,
                 )

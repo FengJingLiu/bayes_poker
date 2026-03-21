@@ -1178,6 +1178,50 @@ def _make_simple_policy(
     )
 
 
+def _make_frc_policy(
+    *,
+    fold_freq: float = 0.3,
+    call_freq: float = 0.3,
+    raise_freq: float = 0.4,
+    call_belief: PreflopRange | None = None,
+    raise_belief: PreflopRange | None = None,
+) -> GtoPriorPolicy:
+    """构造包含 F/C/R 三个动作的 policy.
+
+    Args:
+        fold_freq: fold 频率.
+        call_freq: call 频率.
+        raise_freq: raise 频率.
+        call_belief: call 的 belief range.
+        raise_belief: raise 的 belief range.
+
+    Returns:
+        GtoPriorPolicy 实例.
+    """
+    fold_action = GtoPriorAction(
+        action_name="F",
+        blended_frequency=fold_freq,
+        belief_range=None,
+        total_ev=-1.0,
+    )
+    call_action = GtoPriorAction(
+        action_name="C",
+        blended_frequency=call_freq,
+        belief_range=call_belief,
+        total_ev=0.5,
+    )
+    raise_action = GtoPriorAction(
+        action_name="R2.5",
+        blended_frequency=raise_freq,
+        belief_range=raise_belief,
+        total_ev=2.0,
+    )
+    return GtoPriorPolicy(
+        action_names=("R2.5", "C", "F"),
+        actions=(fold_action, call_action, raise_action),
+    )
+
+
 class TestAdjustHeroPolicy:
     """_adjust_hero_policy 根据 aggression_ratio 调整 hero 策略."""
 
@@ -1314,6 +1358,156 @@ class TestAdjustHeroPolicy:
         assert r1_new is not None and r2_new is not None
         # 两个激进动作的比例应与原始一致 (5:2)
         assert r1_new / r2_new == pytest.approx(0.5 / 0.2, rel=1e-4)
+
+
+class TestAdjustHeroPolicyCallBeliefLinkage:
+    """_adjust_hero_policy 中 call belief_range 与 aggression_ratio 同向联动."""
+
+    def _make_belief(self, base_strategy: float = 0.4) -> PreflopRange:
+        """创建带 EV 梯度的 belief range.
+
+        Args:
+            base_strategy: 初始策略频率.
+
+        Returns:
+            带单调 EV 梯度的 PreflopRange.
+        """
+        return PreflopRange(
+            strategy=[base_strategy] * RANGE_169_LENGTH,
+            evs=[float(i) for i in range(RANGE_169_LENGTH)],
+        )
+
+    def test_ratio_gt1_call_belief_expands(self) -> None:
+        """ratio > 1 时 call belief_range 总频率应增大."""
+        call_belief = self._make_belief(0.4)
+        raise_belief = self._make_belief(0.3)
+        original_call_frequency = call_belief.total_frequency()
+
+        policy = _make_frc_policy(
+            fold_freq=0.3,
+            call_freq=0.3,
+            raise_freq=0.4,
+            call_belief=call_belief,
+            raise_belief=raise_belief,
+        )
+        result = _adjust_hero_policy(policy=policy, aggression_ratio=1.5)
+
+        call_action = next(action for action in result.actions if action.action_name == "C")
+        assert call_action.belief_range is not None
+        new_call_frequency = call_action.belief_range.total_frequency()
+        assert new_call_frequency > original_call_frequency
+
+    def test_ratio_lt1_call_belief_shrinks(self) -> None:
+        """ratio < 1 时 call belief_range 总频率应减小."""
+        call_belief = self._make_belief(0.4)
+        raise_belief = self._make_belief(0.3)
+        original_call_frequency = call_belief.total_frequency()
+
+        policy = _make_frc_policy(
+            fold_freq=0.3,
+            call_freq=0.3,
+            raise_freq=0.4,
+            call_belief=call_belief,
+            raise_belief=raise_belief,
+        )
+        result = _adjust_hero_policy(policy=policy, aggression_ratio=0.5)
+
+        call_action = next(action for action in result.actions if action.action_name == "C")
+        assert call_action.belief_range is not None
+        new_call_frequency = call_action.belief_range.total_frequency()
+        assert new_call_frequency < original_call_frequency
+
+    def test_ratio_one_call_belief_unchanged(self) -> None:
+        """ratio = 1.0 时仍返回原 policy 对象."""
+        call_belief = self._make_belief(0.4)
+        policy = _make_frc_policy(
+            call_freq=0.3,
+            raise_freq=0.4,
+            call_belief=call_belief,
+        )
+        result = _adjust_hero_policy(policy=policy, aggression_ratio=1.0)
+        assert result is policy
+
+    def test_call_no_belief_range_passthrough(self) -> None:
+        """call 动作没有 belief_range 时应保持 None."""
+        policy = _make_frc_policy(
+            call_freq=0.3,
+            raise_freq=0.4,
+            call_belief=None,
+            raise_belief=None,
+        )
+        result = _adjust_hero_policy(policy=policy, aggression_ratio=1.5)
+        call_action = next(action for action in result.actions if action.action_name == "C")
+        assert call_action.belief_range is None
+
+    def test_fold_belief_not_adjusted(self) -> None:
+        """fold 动作的 belief_range 不应被联动调整."""
+        fold_belief = self._make_belief(0.5)
+        fold_action = GtoPriorAction(
+            action_name="F",
+            blended_frequency=0.3,
+            belief_range=fold_belief,
+            total_ev=-1.0,
+        )
+        call_action = GtoPriorAction(
+            action_name="C",
+            blended_frequency=0.3,
+            belief_range=self._make_belief(0.4),
+            total_ev=0.5,
+        )
+        raise_action = GtoPriorAction(
+            action_name="R2.5",
+            blended_frequency=0.4,
+            belief_range=self._make_belief(0.3),
+            total_ev=2.0,
+        )
+        policy = GtoPriorPolicy(
+            action_names=("R2.5", "C", "F"),
+            actions=(fold_action, call_action, raise_action),
+        )
+        result = _adjust_hero_policy(policy=policy, aggression_ratio=1.5)
+        fold_result = next(action for action in result.actions if action.action_name == "F")
+        assert fold_result.belief_range is fold_belief
+
+    def test_check_action_also_adjusted(self) -> None:
+        """X(check) 动作也应按 call 类逻辑调整 belief_range."""
+        check_belief = self._make_belief(0.4)
+        original_frequency = check_belief.total_frequency()
+
+        check_action = GtoPriorAction(
+            action_name="X",
+            blended_frequency=0.3,
+            belief_range=check_belief,
+            total_ev=0.2,
+        )
+        raise_action = GtoPriorAction(
+            action_name="R2.5",
+            blended_frequency=0.7,
+            belief_range=self._make_belief(0.3),
+            total_ev=2.0,
+        )
+        policy = GtoPriorPolicy(
+            action_names=("R2.5", "X"),
+            actions=(check_action, raise_action),
+        )
+        result = _adjust_hero_policy(policy=policy, aggression_ratio=1.5)
+        check_result = next(action for action in result.actions if action.action_name == "X")
+        assert check_result.belief_range is not None
+        assert check_result.belief_range.total_frequency() > original_frequency
+
+    def test_frequencies_still_sum_to_one(self) -> None:
+        """增加 call belief 联动后 blended_frequency 总和仍应为 1.0."""
+        policy = _make_frc_policy(
+            fold_freq=0.3,
+            call_freq=0.3,
+            raise_freq=0.4,
+            call_belief=self._make_belief(0.4),
+            raise_belief=self._make_belief(0.3),
+        )
+        for ratio in [0.2, 0.5, 0.8, 1.5, 2.0, 3.0]:
+            result = _adjust_hero_policy(policy=policy, aggression_ratio=ratio)
+            total_frequency = sum(action.blended_frequency for action in result.actions)
+            assert total_frequency == pytest.approx(1.0, abs=1e-6), f"ratio={ratio}"
 
 
 # ---------------------------------------------------------------------------
