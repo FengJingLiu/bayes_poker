@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from bayes_poker.domain.action_family import ActionFamily
 from bayes_poker.domain.table import Position
-from bayes_poker.strategy.strategy_engine.core_types import ActionFamily
 from bayes_poker.strategy.preflop_parse.models import (
     STRATEGY_VECTOR_LENGTH,
     PreflopStrategy,
@@ -600,7 +600,7 @@ def parse_strategy_node_records(
 
         strategy_data = _parse_vector(solution, "strategy")
         evs_data = _parse_vector(solution, "evs")
-        action_range = PreflopRange(strategy=strategy_data, evs=evs_data)
+        action_range = PreflopRange.from_list(strategy_data, evs_data)
 
         actions.append(
             ParsedStrategyActionRecord(

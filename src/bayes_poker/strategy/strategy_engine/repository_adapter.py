@@ -256,8 +256,8 @@ class StrategyRepositoryAdapter:
                     total_frequency=action.total_frequency,
                     next_position=action.next_position,
                     preflop_range=PreflopRange(
-                        strategy=list(action.preflop_range.strategy),
-                        evs=list(action.preflop_range.evs),
+                        strategy=action.preflop_range.strategy.copy(),
+                        evs=action.preflop_range.evs.copy(),
                     ),
                     total_ev=action.total_ev,
                     total_combos=action.total_combos,

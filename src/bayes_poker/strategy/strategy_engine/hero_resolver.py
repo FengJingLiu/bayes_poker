@@ -7,6 +7,8 @@ import math
 import random
 from collections.abc import Sequence
 
+import numpy as np
+
 from bayes_poker.domain.table import Player
 from bayes_poker.strategy.range import (
     RANGE_169_LENGTH,
@@ -15,6 +17,7 @@ from bayes_poker.strategy.range import (
 from bayes_poker.strategy.range.belief_adjustment import (
     adjust_belief_range,
 )
+from bayes_poker.strategy.range.models import extract_by_169_order, scatter_by_169_order
 from bayes_poker.table.observed_state import ObservedTableState
 
 from .context_builder import build_player_node_context
@@ -685,8 +688,8 @@ def _normalize_adjusted_action_belief_ranges(
             evs_by_action.append(None)
             adjustable_flags.append(False)
             continue
-        normalized_strategies.append(list(action.belief_range.strategy))
-        evs_by_action.append(list(action.belief_range.evs))
+        normalized_strategies.append(extract_by_169_order(action.belief_range.strategy))
+        evs_by_action.append(extract_by_169_order(action.belief_range.evs))
         adjustable_flags.append(
             _is_aggressive_action(action.action_name) or _is_call_action(action.action_name)
         )
@@ -748,7 +751,10 @@ def _normalize_adjusted_action_belief_ranges(
                 bet_size_bb=action.bet_size_bb,
                 is_all_in=action.is_all_in,
                 next_position=action.next_position,
-                belief_range=PreflopRange(strategy=strategy, evs=evs),
+                belief_range=PreflopRange(
+                    strategy=scatter_by_169_order(strategy),
+                    evs=scatter_by_169_order(evs)
+                ),
                 total_ev=action.total_ev,
                 total_combos=action.total_combos,
             )

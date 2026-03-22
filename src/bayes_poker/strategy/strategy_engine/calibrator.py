@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
+
 from bayes_poker.strategy.range import RANGE_169_LENGTH, PreflopRange
 
 _EPSILON = 1e-9
@@ -35,8 +37,8 @@ class ActionPolicy:
         if len(set(action_names)) != len(action_names):
             raise ValueError("ActionPolicy 中的动作名称不能重复。")
         for action in self.actions:
-            if len(action.range.strategy) != RANGE_169_LENGTH:
-                raise ValueError("策略长度必须与 169 手牌空间一致。")
+            if action.range.strategy.shape != (13, 13):
+                raise ValueError("策略形状必须为 (13, 13)。")
 
     @property
     def action_names(self) -> tuple[str, ...]:
@@ -56,60 +58,6 @@ class ActionPolicy:
         """读取指定动作的组合加权总频率。"""
 
         return self.for_action(action_name).total_frequency()
-
-
-def calibrate_binary_policy(
-    policy: ActionPolicy,
-    *,
-    target_frequency: float,
-    action_name: str | None = None,
-    tolerance: float = _DEFAULT_TOLERANCE,
-    max_iterations: int = _DEFAULT_MAX_ITERATIONS,
-) -> ActionPolicy:
-    """校准二元动作策略。"""
-
-    _validate_target_frequency(target_frequency)
-    _validate_solver_settings(tolerance=tolerance, max_iterations=max_iterations)
-    if len(policy.actions) != 2:
-        raise ValueError("二元校准要求策略恰好包含两个动作。")
-
-    calibrated_action_name = action_name or policy.actions[1].action_name
-
-    base_range = policy.for_action(calibrated_action_name)
-    low_shift = -_MAX_SHIFT
-    high_shift = _MAX_SHIFT
-    for _ in range(max_iterations):
-        shift = (low_shift + high_shift) / 2.0
-        shifted = [
-            _sigmoid(_safe_logit(value) + shift) for value in base_range.strategy
-        ]
-        calibrated_total = PreflopRange(
-            strategy=shifted, evs=list(base_range.evs)
-        ).total_frequency()
-        if abs(calibrated_total - target_frequency) <= tolerance:
-            break
-        if calibrated_total < target_frequency:
-            low_shift = shift
-        else:
-            high_shift = shift
-    else:
-        shift = (low_shift + high_shift) / 2.0
-
-    target_strategy = [
-        _sigmoid(_safe_logit(value) + shift) for value in base_range.strategy
-    ]
-    other_strategy = [1.0 - value for value in target_strategy]
-    return ActionPolicy(
-        actions=tuple(
-            _replace_action_range(
-                action,
-                target_strategy
-                if action.action_name == calibrated_action_name
-                else other_strategy,
-            )
-            for action in policy.actions
-        )
-    )
 
 
 def calibrate_multinomial_policy(
@@ -208,11 +156,11 @@ def redistribute_aggressive_mass(
 
 
 def _replace_action_range(
-    action: ActionPolicyAction, strategy: list[float]
+    action: ActionPolicyAction, strategy: np.ndarray, evs: np.ndarray
 ) -> ActionPolicyAction:
     return ActionPolicyAction(
         action_name=action.action_name,
-        range=PreflopRange(strategy=strategy, evs=list(action.range.evs)),
+        range=PreflopRange(strategy=strategy, evs=evs),
         rank_scores=action.rank_scores,
     )
 
@@ -224,27 +172,25 @@ def _apply_softmax_bias(
 ) -> ActionPolicy:
     adjusted_actions: list[ActionPolicyAction] = []
     for action in policy.actions:
+        strategy, evs = action.range.to_list()
         adjusted_actions.append(
             ActionPolicyAction(
                 action_name=action.action_name,
-                range=PreflopRange(
-                    strategy=list(action.range.strategy),
-                    evs=list(action.range.evs),
-                ),
+                range=PreflopRange.from_list(strategy, evs),
                 rank_scores=action.rank_scores,
             )
         )
 
     for index in range(RANGE_169_LENGTH):
         logits = [
-            _safe_logit(action.range.strategy[index]) + biases[action.action_name]
-            for action in policy.actions
+            _safe_logit(action.range[index]) + biases[action.action_name]
+            for action in adjusted_actions
         ]
         max_logit = max(logits)
         exp_values = [math.exp(value - max_logit) for value in logits]
         total_exp = sum(exp_values)
         for action, exp_value in zip(adjusted_actions, exp_values, strict=True):
-            action.range.strategy[index] = exp_value / total_exp
+            action.range[index] = exp_value / total_exp
     return ActionPolicy(actions=tuple(adjusted_actions))
 
 

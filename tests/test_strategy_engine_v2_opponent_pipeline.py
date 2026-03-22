@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import struct
 import pytest
+import numpy as np
 
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player, PlayerAction, Position
@@ -26,7 +27,6 @@ from bayes_poker.strategy.strategy_engine.opponent_pipeline import (
     OpponentPipeline,
     _PosteriorResult,
     _adjust_belief_with_stats_and_ev,
-    _calibrate_policy,
     _build_prior_only_range_from_policy,
     _build_prior_range_from_policy,
     _resolve_action_prior_range,
@@ -45,11 +45,7 @@ from bayes_poker.table.observed_state import ObservedTableState
 
 def _constant_range(probability: float, ev: float) -> PreflopRange:
     """构造固定概率与固定 EV 的 169 手范围。"""
-
-    return PreflopRange(
-        strategy=[probability] * 169,
-        evs=[ev] * 169,
-    )
+    return PreflopRange.from_list([probability] * 169, [ev] * 169)
 
 
 def _make_strategy_repo(tmp_path: Path) -> tuple[StrategyRepositoryAdapter, int]:
@@ -713,7 +709,7 @@ def test_initial_prior_uses_nearest_strategy_node(tmp_path: Path) -> None:
     )
     prior = _build_prior_range_from_policy(prior_policy, action_name="R2.5")
 
-    assert prior.strategy[0] == pytest.approx(0.9, abs=1e-6)
+    assert prior[0] == pytest.approx(0.9, abs=1e-6)
 
     stats_repo.close()
     repository_adapter.close()
@@ -771,7 +767,7 @@ def test_build_prior_range_from_policy_returns_selected_action_range() -> None:
 
     prior = _build_prior_range_from_policy(policy, action_name="R6")
 
-    assert prior.strategy[0] == pytest.approx(0.40)
+    assert prior[0] == pytest.approx(0.40)
     assert prior.evs[0] == pytest.approx(1.60)
 
 
@@ -881,9 +877,9 @@ def test_select_matching_prior_action_chooses_nearest_size() -> None:
 def test_adjust_belief_with_stats_and_ev_biases_high_ev() -> None:
     """当 stats 频率高于 GTO 时应更偏向高 EV 手牌。"""
 
-    prior_range = PreflopRange(
-        strategy=[0.2, 0.2] + [0.0] * 167,
-        evs=[2.0, -2.0] + [0.0] * 167,
+    prior_range = PreflopRange.from_list(
+        [0.2, 0.2] + [0.0] * 167,
+        [2.0, -2.0] + [0.0] * 167,
     )
     node_stats = PlayerNodeStats(
         raise_probability=0.60,
@@ -902,7 +898,7 @@ def test_adjust_belief_with_stats_and_ev_biases_high_ev() -> None:
         node_stats=node_stats,
     )
 
-    assert posterior.strategy[0] > posterior.strategy[1]
+    assert posterior[0] > posterior[1]
     assert posterior.total_frequency() == pytest.approx(0.60, abs=1e-6)
 
 
@@ -911,9 +907,9 @@ def test_adjust_belief_with_stats_and_ev_uses_next_ev_bucket_when_top_saturated(
 ):
     """高 EV 顶端已饱和时应继续调整后续 EV 组合。"""
 
-    prior_range = PreflopRange(
-        strategy=[1.0, 1.0, 0.0] + [0.0] * 166,
-        evs=[3.0, 2.5, 2.0] + [0.0] * 166,
+    prior_range = PreflopRange.from_list(
+        [1.0, 1.0, 0.0] + [0.0] * 166,
+        [3.0, 2.5, 2.0] + [0.0] * 166,
     )
     current_frequency = prior_range.total_frequency()
     target_raise_frequency = min(current_frequency + 0.003, 1.0)
@@ -934,9 +930,9 @@ def test_adjust_belief_with_stats_and_ev_uses_next_ev_bucket_when_top_saturated(
         node_stats=node_stats,
     )
 
-    assert posterior.strategy[0] == pytest.approx(1.0)
-    assert posterior.strategy[1] == pytest.approx(1.0)
-    assert posterior.strategy[2] > 0.0
+    assert posterior[0] == pytest.approx(1.0)
+    assert posterior[1] == pytest.approx(1.0)
+    assert posterior[2] > 0.0
     assert posterior.total_frequency() == pytest.approx(
         target_raise_frequency,
         abs=1e-6,
@@ -946,9 +942,9 @@ def test_adjust_belief_with_stats_and_ev_uses_next_ev_bucket_when_top_saturated(
 def test_adjust_belief_raise_uses_stats_frequency_directly() -> None:
     """RAISE 动作应直接使用节点级 stats_frequency, 不再混合全局 PFR。"""
 
-    prior_range = PreflopRange(
-        strategy=[0.2] * 169,
-        evs=[1.0] * 169,
+    prior_range = PreflopRange.from_list(
+        [0.2] * 169,
+        [1.0] * 169,
     )
     node_stats = PlayerNodeStats(
         raise_probability=0.2,
@@ -973,9 +969,9 @@ def test_adjust_belief_raise_uses_stats_frequency_directly() -> None:
 def test_adjust_belief_fold_uses_stats_frequency_directly() -> None:
     """fold 动作应直接使用节点级 stats_frequency。"""
 
-    prior_range = PreflopRange(
-        strategy=[0.5] * 169,
-        evs=[1.0] * 169,
+    prior_range = PreflopRange.from_list(
+        [0.5] * 169,
+        [1.0] * 169,
     )
     node_stats = PlayerNodeStats(
         raise_probability=0.2,
@@ -1024,44 +1020,7 @@ def test_build_prior_only_range_from_policy_aggregates_continue_actions() -> Non
     prior = _build_prior_only_range_from_policy(policy)
     expected_ev = (0.30 * 0.40 + 0.40 * 1.60) / 0.70
 
-    assert prior.strategy[0] == pytest.approx(0.70)
+    assert prior[0] == pytest.approx(0.70)
     assert prior.evs[0] == pytest.approx(expected_ev)
 
 
-def test_calibrate_policy_preserves_hand_level_belief_evs() -> None:
-    """校准策略时应保留先验动作中的 hand-level EV。"""
-
-    prior_policy = GtoPriorPolicy(
-        action_names=("C", "R6"),
-        actions=(
-            GtoPriorAction(
-                action_name="C",
-                blended_frequency=0.50,
-                belief_range=_constant_range(0.50, 0.30),
-            ),
-            GtoPriorAction(
-                action_name="R6",
-                blended_frequency=0.50,
-                belief_range=_constant_range(0.50, 1.80),
-            ),
-        ),
-    )
-    node_stats = PlayerNodeStats(
-        raise_probability=0.50,
-        call_probability=0.50,
-        fold_probability=0.00,
-        bet_0_40_probability=0.00,
-        bet_40_80_probability=0.00,
-        bet_80_120_probability=1.00,
-        bet_over_120_probability=0.00,
-        source_kind="test",
-    )
-
-    calibrated = _calibrate_policy(
-        prior_policy=prior_policy,
-        node_stats=node_stats,
-    )
-    action_by_name = {action.action_name: action for action in calibrated.actions}
-
-    assert action_by_name["C"].range.evs[0] == pytest.approx(0.30)
-    assert action_by_name["R6"].range.evs[0] == pytest.approx(1.80)

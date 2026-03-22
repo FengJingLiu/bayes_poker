@@ -27,6 +27,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "jinja2" },
     { name = "matplotlib" },
+    { name = "numpy" },
     { name = "pandas" },
     { name = "pokerkit" },
     { name = "pybloomfiltermmap3" },
@@ -45,6 +46,7 @@ dev = [
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "numpy", specifier = ">=1.24.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pokerkit" },
     { name = "pybloomfiltermmap3" },

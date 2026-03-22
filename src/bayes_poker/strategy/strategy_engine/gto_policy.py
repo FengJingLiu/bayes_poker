@@ -118,11 +118,7 @@ class GtoPriorBuilder:
 
 def _clone_preflop_range(preflop_range: PreflopRange) -> PreflopRange:
     """复制 `PreflopRange`，避免可变对象引用外泄。"""
-
-    return PreflopRange(
-        strategy=list(preflop_range.strategy),
-        evs=list(preflop_range.evs),
-    )
+    return PreflopRange(strategy=preflop_range.strategy.copy(), evs=preflop_range.evs.copy())
 
 
 def _action_sort_key(action_name: str) -> tuple[int, float, str]:

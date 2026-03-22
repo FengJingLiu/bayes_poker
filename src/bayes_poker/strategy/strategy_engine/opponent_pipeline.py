@@ -6,6 +6,8 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import numpy as np
+
 from bayes_poker.comm.session import SessionConfig
 from bayes_poker.domain.poker import ActionType, Street
 from bayes_poker.domain.table import Player, PlayerAction
@@ -22,8 +24,6 @@ from bayes_poker.table.observed_state import ObservedTableState
 from .calibrator import (
     ActionPolicy,
     ActionPolicyAction,
-    calibrate_multinomial_policy,
-    redistribute_aggressive_mass,
 )
 from .context_builder import build_player_node_context
 from .gto_policy import (
@@ -295,62 +295,6 @@ class OpponentPipeline:
         )
 
 
-def _calibrate_policy(
-    *,
-    prior_policy: GtoPriorPolicy,
-    node_stats: PlayerNodeStats,
-) -> ActionPolicy:
-    actions = tuple(
-        ActionPolicyAction(
-            action_name=action.action_name,
-            range=_resolve_action_prior_range(action),
-        )
-        for action in prior_policy.actions
-    )
-    action_policy = ActionPolicy(actions=actions)
-    aggressive_actions = [
-        action_name
-        for action_name in action_policy.action_names
-        if action_name.upper().startswith("R")
-    ]
-    target_mix: dict[str, float] = {}
-    for action_name in action_policy.action_names:
-        normalized = action_name.upper()
-        if normalized == "F":
-            target_mix[action_name] = node_stats.fold_probability
-        elif normalized == "C":
-            target_mix[action_name] = node_stats.call_probability
-        else:
-            target_mix[action_name] = node_stats.raise_probability / max(
-                1, len(aggressive_actions)
-            )
-    calibrated = calibrate_multinomial_policy(action_policy, target_mix=target_mix)
-    size_weights = _build_size_weights(
-        aggressive_actions=aggressive_actions, node_stats=node_stats
-    )
-    return redistribute_aggressive_mass(calibrated, size_weights=size_weights)
-
-
-def _build_size_weights(
-    *,
-    aggressive_actions: list[str],
-    node_stats: PlayerNodeStats,
-) -> dict[str, float] | None:
-    if not aggressive_actions:
-        return None
-    ordered_weights = [
-        node_stats.bet_0_40_probability,
-        node_stats.bet_40_80_probability,
-        node_stats.bet_80_120_probability,
-        node_stats.bet_over_120_probability,
-    ]
-    weights: dict[str, float] = {}
-    for index, action_name in enumerate(
-        sorted(aggressive_actions, key=_raise_action_key)
-    ):
-        bucket_index = min(index, len(ordered_weights) - 1)
-        weights[action_name] = ordered_weights[bucket_index]
-    return weights
 
 
 def _build_prior_range_from_policy(
@@ -508,25 +452,29 @@ def _build_prior_only_range_from_policy(prior_policy: GtoPriorPolicy) -> Preflop
     if not action_ranges:
         return _build_uniform_continue_prior_range(prior_policy)
 
-    strategy = [0.0] * RANGE_169_LENGTH
-    evs = [0.0] * RANGE_169_LENGTH
-    has_non_zero_strategy = False
-    for index in range(RANGE_169_LENGTH):
-        continue_probability = 0.0
-        weighted_ev_numerator = 0.0
-        for action_range in action_ranges:
-            action_probability = max(0.0, action_range.strategy[index])
-            continue_probability += action_probability
-            weighted_ev_numerator += action_probability * action_range.evs[index]
-        clipped_probability = max(0.0, min(1.0, continue_probability))
-        strategy[index] = clipped_probability
-        if continue_probability > 0.0:
-            evs[index] = weighted_ev_numerator / continue_probability
-            has_non_zero_strategy = True
+    # 堆叠所有动作范围的策略和 EV 矩阵
+    strategy_stack = np.stack([r.strategy for r in action_ranges], axis=0)
+    evs_stack = np.stack([r.evs for r in action_ranges], axis=0)
 
-    if not has_non_zero_strategy:
+    # 向量化聚合
+    strategy_stack_clipped = np.maximum(0.0, strategy_stack)
+    continue_probability = np.sum(strategy_stack_clipped, axis=0)
+    weighted_ev_numerator = np.sum(strategy_stack_clipped * evs_stack, axis=0)
+
+    # 计算加权平均 EV
+    evs_result = np.where(
+        continue_probability > 0.0,
+        weighted_ev_numerator / continue_probability,
+        0.0
+    )
+
+    # Clip 概率到 [0, 1]
+    strategy_result = np.clip(continue_probability, 0.0, 1.0)
+
+    if not np.any(strategy_result > 0.0):
         return _build_uniform_continue_prior_range(prior_policy)
-    return PreflopRange(strategy=strategy, evs=evs)
+
+    return PreflopRange(strategy=strategy_result.astype(np.float32), evs=evs_result.astype(np.float32))
 
 
 def _build_uniform_continue_prior_range(prior_policy: GtoPriorPolicy) -> PreflopRange:
@@ -552,7 +500,7 @@ def _build_uniform_continue_prior_range(prior_policy: GtoPriorPolicy) -> Preflop
     )
     continue_frequency = (total_frequency - fold_frequency) / total_frequency
     clipped = max(0.0, min(1.0, continue_frequency))
-    return PreflopRange(strategy=[clipped] * RANGE_169_LENGTH)
+    return PreflopRange.from_list([clipped] * RANGE_169_LENGTH, [0.0] * RANGE_169_LENGTH)
 
 
 def _resolve_action_prior_range(
@@ -574,10 +522,8 @@ def _resolve_action_prior_range(
     if belief_range is None:
         raise ValueError(f"动作缺少 belief_range: {action.action_name}")
 
-    return PreflopRange(
-        strategy=list(belief_range.strategy),
-        evs=list(belief_range.evs),
-    )
+    strategy, evs = belief_range.to_list()
+    return PreflopRange.from_list(strategy, evs)
 
 
 def _raise_action_key(action_name: str) -> float:

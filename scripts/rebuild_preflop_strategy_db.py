@@ -15,13 +15,8 @@ import sys
 import time
 from pathlib import Path
 
+# 直接导入避免循环依赖
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
-from bayes_poker.strategy.preflop_parse.parser import (
-    parse_file_meta,
-    parse_strategy_node_records,
-)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 LOGGER = logging.getLogger(__name__)
@@ -42,6 +37,13 @@ DB_PATH = Path("data/database/preflop_strategy.sqlite3")
 
 def main() -> None:
     """主入口: 删除旧库, 依次导入 5 个策略源。"""
+
+    # 延迟导入避免循环依赖
+    from bayes_poker.storage.preflop_strategy_repository import PreflopStrategyRepository
+    from bayes_poker.strategy.preflop_parse.parser import (
+        parse_file_meta,
+        parse_strategy_node_records,
+    )
 
     if DB_PATH.exists():
         LOGGER.info("删除旧数据库: %s", DB_PATH)

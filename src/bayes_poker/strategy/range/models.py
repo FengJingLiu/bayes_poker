@@ -1,27 +1,29 @@
-"""Range 数据模型。
+"""Range 数据模型（numpy 矩阵版本）。
 
-定义统一的 Range 类用于表示 preflop（169维）和 postflop（1326维）策略向量。
+PreflopRange: 13x13 矩阵
+- 对角线: 手对 (AA=0,0 到 22=12,12)
+- 右上三角: 同花组合
+- 左下三角: 非同花组合
 
-slots 参数说明：
-    slots=True 会让 dataclass 生成 __slots__ 属性，带来以下优化：
-    1. 内存效率：不再使用 __dict__ 存储属性，每个实例节省约 100+ 字节
-    2. 访问速度：属性访问比 __dict__ 查找更快（约 20-30%）
-    3. 属性限制：只能使用声明的属性，防止意外添加新属性
-
-    适合大量创建的轻量对象（如 Range），不适合需要动态添加属性的场景。
+PostflopRange: 13x13x12 三维矩阵
+- 前两维同 PreflopRange
+- 第三维: 每个手牌的具体组合（按字典序 cdhs）
+  - 对子: 6 种组合
+  - 同花: 4 种组合
+  - 非同花: 12 种组合
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from bayes_poker.strategy.range.mappings import (
     _INDEX_TO_RANK,
     _INDEX_TO_SUIT,
-    RANGE_169_LENGTH,
     RANGE_169_ORDER,
-    RANGE_1326_LENGTH,
     combos_per_hand,
     get_range_169_to_1326,
     index1326_to_combo,
@@ -31,50 +33,156 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-@dataclass(slots=True)
-class PreflopRange:
-    """169 维翻前策略范围。
+# 手牌键到矩阵坐标的映射
+def _build_hand_key_to_matrix_coord() -> dict[str, tuple[int, int]]:
+    """构建手牌键到 13x13 矩阵坐标的映射。
 
-    包含策略频率和 EV 向量，支持可变操作以便根据 EV 调整策略。
-    数据按 GTOWizard 顺序排列，与 RANGE_169_ORDER 对应。
+    Returns:
+        字典: hand_key -> (row, col)
+        - 对子在对角线: AA=(0,0), KK=(1,1), ..., 22=(12,12)
+        - 同花在右上三角: AKs=(0,1), AQs=(0,2), ...
+        - 非同花在左下三角: AKo=(1,0), AQo=(2,0), ...
+    """
+    mapping = {}
+    rank_order = "AKQJT98765432"  # A=0, K=1, ..., 2=12
+
+    for hand_key in RANGE_169_ORDER:
+        if len(hand_key) == 2:  # 对子
+            rank = hand_key[0]
+            idx = rank_order.index(rank)
+            mapping[hand_key] = (idx, idx)
+        elif hand_key.endswith("s"):  # 同花
+            r1, r2 = hand_key[0], hand_key[1]
+            i1, i2 = rank_order.index(r1), rank_order.index(r2)
+            # 大牌在前，所以 i1 < i2，放在右上三角
+            mapping[hand_key] = (i1, i2)
+        else:  # 非同花
+            r1, r2 = hand_key[0], hand_key[1]
+            i1, i2 = rank_order.index(r1), rank_order.index(r2)
+            # 大牌在前，所以 i1 < i2，放在左下三角（转置）
+            mapping[hand_key] = (i2, i1)
+
+    return mapping
+
+
+_HAND_KEY_TO_COORD = _build_hand_key_to_matrix_coord()
+
+
+# 预计算组合数权重（用于向量化计算）
+def _build_combo_weights() -> np.ndarray:
+    """构建 13x13 组合数权重矩阵。"""
+    weights = np.zeros((13, 13), dtype=np.float32)
+    for hand_key in RANGE_169_ORDER:
+        row, col = _HAND_KEY_TO_COORD[hand_key]
+        weights[row, col] = combos_per_hand(hand_key)
+    return weights
+
+
+_COMBO_WEIGHTS = _build_combo_weights()
+
+
+def _build_combo_order() -> dict[str, list[tuple[int, int]]]:
+    """构建每个手牌键的组合顺序（按字典序 cdhs）。
+
+    Returns:
+        字典: hand_key -> [(card1_52idx, card2_52idx), ...]
+    """
+    from itertools import combinations
+
+    rank_order = "AKQJT98765432"
+    suit_order = "cdhs"
+
+    combo_order = {}
+
+    for hand_key in RANGE_169_ORDER:
+        combos = []
+
+        if len(hand_key) == 2:  # 对子
+            rank = hand_key[0]
+            rank_idx = rank_order.index(rank)
+            # 6 种组合: cd, ch, cs, dh, ds, hs
+            for i, s1 in enumerate(suit_order):
+                for s2 in suit_order[i+1:]:
+                    c1 = rank_idx * 4 + suit_order.index(s1)
+                    c2 = rank_idx * 4 + suit_order.index(s2)
+                    combos.append((c1, c2))
+        else:
+            r1, r2 = hand_key[0], hand_key[1]
+            r1_idx = rank_order.index(r1)
+            r2_idx = rank_order.index(r2)
+
+            if hand_key.endswith("s"):  # 同花
+                # 4 种组合: cc, dd, hh, ss
+                for suit in suit_order:
+                    suit_idx = suit_order.index(suit)
+                    c1 = r1_idx * 4 + suit_idx
+                    c2 = r2_idx * 4 + suit_idx
+                    combos.append((c1, c2))
+            else:  # 非同花
+                # 12 种组合
+                for s1 in suit_order:
+                    for s2 in suit_order:
+                        if s1 != s2:
+                            c1 = r1_idx * 4 + suit_order.index(s1)
+                            c2 = r2_idx * 4 + suit_order.index(s2)
+                            combos.append((c1, c2))
+
+        combo_order[hand_key] = combos
+
+    return combo_order
+
+
+_COMBO_ORDER = _build_combo_order()
+
+
+@dataclass
+class PreflopRange:
+    """13x13 矩阵翻前策略范围。
+
+    矩阵布局:
+    - 对角线: 手对 (AA=0,0 到 22=12,12)
+    - 右上三角: 同花组合
+    - 左下三角: 非同花组合
 
     Attributes:
-        strategy: 169 维策略频率向量（每手牌的行动概率）
-        evs: 169 维 EV 向量（每手牌的期望值）
+        strategy: 13x13 策略频率矩阵
+        evs: 13x13 EV 矩阵
     """
 
-    strategy: list[float] = field(default_factory=lambda: [0.0] * RANGE_169_LENGTH)
-    evs: list[float] = field(default_factory=lambda: [0.0] * RANGE_169_LENGTH)
+    strategy: np.ndarray  # shape (13, 13)
+    evs: np.ndarray  # shape (13, 13)
 
     def __post_init__(self) -> None:
-        """验证数据长度。"""
-        if len(self.strategy) != RANGE_169_LENGTH:
-            msg = f"strategy 长度必须为 {RANGE_169_LENGTH}，实际为 {len(self.strategy)}"
+        """验证数据形状。"""
+        if self.strategy.shape != (13, 13):
+            msg = f"strategy 形状必须为 (13, 13)，实际为 {self.strategy.shape}"
             raise ValueError(msg)
-        if len(self.evs) != RANGE_169_LENGTH:
-            msg = f"evs 长度必须为 {RANGE_169_LENGTH}，实际为 {len(self.evs)}"
+        if self.evs.shape != (13, 13):
+            msg = f"evs 形状必须为 (13, 13)，实际为 {self.evs.shape}"
             raise ValueError(msg)
 
     def to_postflop(self) -> PostflopRange:
-        """展开为 1326 维表示。
+        """展开为 13x13x12 三维表示。
 
-        每个 169 手牌的 strategy 和 evs 复制到其对应的所有 1326 组合。
+        每个手牌的 strategy 和 evs 复制到其对应的所有组合。
 
         Returns:
-            展开后的 1326 维 PostflopRange
+            展开后的 PostflopRange
         """
-        strategy_1326 = [0.0] * RANGE_1326_LENGTH
-        evs_1326 = [0.0] * RANGE_1326_LENGTH
-        mapping = get_range_169_to_1326()
+        strategy_3d = np.zeros((13, 13, 12), dtype=np.float32)
+        evs_3d = np.zeros((13, 13, 12), dtype=np.float32)
 
-        for idx_169, combo_indices in enumerate(mapping):
-            strat_val = self.strategy[idx_169]
-            ev_val = self.evs[idx_169]
-            for combo_idx in combo_indices:
-                strategy_1326[combo_idx] = strat_val
-                evs_1326[combo_idx] = ev_val
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            n_combos = combos_per_hand(hand_key)
 
-        return PostflopRange(strategy=strategy_1326, evs=evs_1326)
+            strat_val = self.strategy[row, col]
+            ev_val = self.evs[row, col]
+
+            strategy_3d[row, col, :n_combos] = strat_val
+            evs_3d[row, col, :n_combos] = ev_val
+
+        return PostflopRange(strategy=strategy_3d, evs=evs_3d)
 
     def total_frequency(self) -> float:
         """计算加权总频率。
@@ -84,11 +192,7 @@ class PreflopRange:
         Returns:
             总频率（0.0 ~ 1.0）
         """
-        total = 0.0
-        for idx, value in enumerate(self.strategy):
-            combos = combos_per_hand(RANGE_169_ORDER[idx])
-            total += value * combos
-        return total / RANGE_1326_LENGTH
+        return float(np.sum(self.strategy * _COMBO_WEIGHTS) / 1326.0)
 
     def total_ev(self) -> float:
         """计算加权总 EV。
@@ -96,56 +200,49 @@ class PreflopRange:
         Returns:
             加权平均 EV
         """
-        total = 0.0
-        total_combos = 0.0
-        for idx, (strat, ev) in enumerate(zip(self.strategy, self.evs, strict=True)):
-            combos = combos_per_hand(RANGE_169_ORDER[idx])
-            total += strat * ev * combos
-            total_combos += strat * combos
-        return total / total_combos if total_combos > 0 else 0.0
+        weighted = self.strategy * self.evs * _COMBO_WEIGHTS
+        total = np.sum(weighted)
+        total_combos = np.sum(self.strategy * _COMBO_WEIGHTS)
+        return float(total / total_combos) if total_combos > 0 else 0.0
 
     def adjust_by_ev(self, threshold: float) -> None:
-        """根据 EV 阈值调整策略。
+        """根据 EV 阈值调整策略（原地修改）。
 
         EV 低于阈值的手牌策略设为 0。
 
         Args:
             threshold: EV 阈值
         """
-        for i in range(RANGE_169_LENGTH):
-            if self.evs[i] < threshold:
-                self.strategy[i] = 0.0
+        mask = self.evs < threshold
+        self.strategy[mask] = 0.0
 
     def normalize(self) -> None:
-        """正则化策略向量。
+        """正则化策略矩阵（原地修改）。
 
         将策略频率归一化，使加权总和为 1.0。
-        考虑每种手牌的组合数权重：对子=6，同花=4，非同花=12。
         """
-        total = 0.0
-        for idx, value in enumerate(self.strategy):
-            combos = combos_per_hand(RANGE_169_ORDER[idx])
-            total += value * combos
-
+        total = np.sum(self.strategy * _COMBO_WEIGHTS)
         if total > 0:
-            norm = RANGE_1326_LENGTH / total
-            for i in range(RANGE_169_LENGTH):
-                self.strategy[i] *= norm
+            self.strategy *= 1326.0 / total
 
     def __getitem__(self, index: int) -> float:
-        """获取指定索引的策略值。"""
-        return self.strategy[index]
+        """获取指定 169 索引的策略值（兼容旧接口）。"""
+        hand_key = RANGE_169_ORDER[index]
+        row, col = _HAND_KEY_TO_COORD[hand_key]
+        return float(self.strategy[row, col])
 
     def __setitem__(self, index: int, value: float) -> None:
-        """设置指定索引的策略值。"""
-        self.strategy[index] = value
+        """设置指定 169 索引的策略值（兼容旧接口）。"""
+        hand_key = RANGE_169_ORDER[index]
+        row, col = _HAND_KEY_TO_COORD[hand_key]
+        self.strategy[row, col] = value
 
     def __len__(self) -> int:
-        """返回数据长度。"""
-        return len(self.strategy)
+        """返回数据长度（169）。"""
+        return 169
 
     def debug(self, min_strategy: float = 0.0) -> str:
-        """生成调试字符串，打印每个手牌的 strategy 和 ev。
+        """生成调试字符串。
 
         Args:
             min_strategy: 只显示 strategy >= 此值的手牌
@@ -154,99 +251,152 @@ class PreflopRange:
             格式化的调试字符串
         """
         lines = [f"PreflopRange (total_freq={self.total_frequency():.2%})"]
-        for idx in range(RANGE_169_LENGTH):
-            strat = self.strategy[idx]
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            strat = self.strategy[row, col]
             if strat >= min_strategy:
-                ev = self.evs[idx]
-                hand_key = RANGE_169_ORDER[idx]
+                ev = self.evs[row, col]
                 lines.append(f"  {hand_key}: strategy={strat:.3f}, ev={ev:.3f}")
         return "\n".join(lines)
 
     def to_gtoplus(self, min_strategy: float = 0.001) -> str:
         """生成 GTO+ 格式的范围字符串。
 
-        展开为 1326 维后委托给 PostflopRange.to_gtoplus()。
-
         Args:
-            min_strategy: 忽略 strategy < 此值的手牌（默认 0.001）
+            min_strategy: 忽略 strategy < 此值的手牌
 
         Returns:
-            GTO+ 格式字符串，如 "[50.0]AhKs[/50.0],[100.0]AsAd[/100.0]"
+            GTO+ 格式字符串
         """
         return self.to_postflop().to_gtoplus(min_strategy=min_strategy)
 
     @classmethod
     def zeros(cls) -> PreflopRange:
-        """创建全零向量。"""
-        return cls()
+        """创建全零矩阵。"""
+        return cls(
+            strategy=np.zeros((13, 13), dtype=np.float32),
+            evs=np.zeros((13, 13), dtype=np.float32),
+        )
 
     @classmethod
     def ones(cls) -> PreflopRange:
-        """创建策略全一、EV 全零的向量。"""
-        return cls(strategy=[1.0] * RANGE_169_LENGTH)
+        """创建策略全一、EV 全零的矩阵。"""
+        return cls(
+            strategy=np.ones((13, 13), dtype=np.float32),
+            evs=np.zeros((13, 13), dtype=np.float32),
+        )
+
+    @classmethod
+    def from_list(cls, strategy: list[float], evs: list[float]) -> PreflopRange:
+        """从 169 维列表创建（兼容旧接口）。
+
+        Args:
+            strategy: 169 维策略列表（按 RANGE_169_ORDER 顺序）
+            evs: 169 维 EV 列表
+
+        Returns:
+            PreflopRange 实例
+        """
+        if len(strategy) != 169 or len(evs) != 169:
+            msg = f"列表长度必须为 169，实际为 {len(strategy)}, {len(evs)}"
+            raise ValueError(msg)
+
+        strat_matrix = np.zeros((13, 13), dtype=np.float32)
+        ev_matrix = np.zeros((13, 13), dtype=np.float32)
+
+        for idx, hand_key in enumerate(RANGE_169_ORDER):
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            strat_matrix[row, col] = strategy[idx]
+            ev_matrix[row, col] = evs[idx]
+
+        return cls(strategy=strat_matrix, evs=ev_matrix)
 
     @classmethod
     def from_tuples(
         cls, strategy: tuple[float, ...], evs: tuple[float, ...]
     ) -> PreflopRange:
         """从 tuple 创建（兼容旧接口）。"""
-        return cls(strategy=list(strategy), evs=list(evs))
+        return cls.from_list(list(strategy), list(evs))
+
+    def to_list(self) -> tuple[list[float], list[float]]:
+        """转换为 169 维列表（按 RANGE_169_ORDER 顺序）。
+
+        Returns:
+            (strategy_list, evs_list)
+        """
+        strategy_list = []
+        evs_list = []
+
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            strategy_list.append(float(self.strategy[row, col]))
+            evs_list.append(float(self.evs[row, col]))
+
+        return strategy_list, evs_list
 
 
-@dataclass(slots=True)
+@dataclass
 class PostflopRange:
-    """1326 维翻后策略范围。
+    """13x13x12 三维翻后策略范围。
 
-    包含策略频率和 EV 向量，支持可变操作。
+    矩阵布局:
+    - 前两维同 PreflopRange (13x13)
+    - 第三维: 每个手牌的具体组合（按字典序 cdhs）
+      - 对子: 6 种组合
+      - 同花: 4 种组合
+      - 非同花: 12 种组合
 
     Attributes:
-        strategy: 1326 维策略频率向量
-        evs: 1326 维 EV 向量
+        strategy: 13x13x12 策略频率张量
+        evs: 13x13x12 EV 张量
     """
 
-    strategy: list[float] = field(default_factory=lambda: [0.0] * RANGE_1326_LENGTH)
-    evs: list[float] = field(default_factory=lambda: [0.0] * RANGE_1326_LENGTH)
+    strategy: np.ndarray  # shape (13, 13, 12)
+    evs: np.ndarray  # shape (13, 13, 12)
 
     def __post_init__(self) -> None:
-        """验证数据长度。"""
-        if len(self.strategy) != RANGE_1326_LENGTH:
-            msg = (
-                f"strategy 长度必须为 {RANGE_1326_LENGTH}，实际为 {len(self.strategy)}"
-            )
+        """验证数据形状。"""
+        if self.strategy.shape != (13, 13, 12):
+            msg = f"strategy 形状必须为 (13, 13, 12)，实际为 {self.strategy.shape}"
             raise ValueError(msg)
-        if len(self.evs) != RANGE_1326_LENGTH:
-            msg = f"evs 长度必须为 {RANGE_1326_LENGTH}，实际为 {len(self.evs)}"
+        if self.evs.shape != (13, 13, 12):
+            msg = f"evs 形状必须为 (13, 13, 12)，实际为 {self.evs.shape}"
             raise ValueError(msg)
 
     def to_preflop(self) -> PreflopRange:
-        """聚合为 169 维表示。
+        """聚合为 13x13 表示。
 
-        每个 169 手牌的值为其对应 1326 组合的平均值。
+        每个手牌的值为其对应组合的平均值。
 
         Returns:
-            聚合后的 169 维 PreflopRange
+            聚合后的 PreflopRange
         """
-        strategy_169 = [0.0] * RANGE_169_LENGTH
-        evs_169 = [0.0] * RANGE_169_LENGTH
-        mapping = get_range_169_to_1326()
+        strategy_2d = np.zeros((13, 13), dtype=np.float32)
+        evs_2d = np.zeros((13, 13), dtype=np.float32)
 
-        for idx_169, combo_indices in enumerate(mapping):
-            if combo_indices:
-                strat_sum = sum(self.strategy[i] for i in combo_indices)
-                ev_sum = sum(self.evs[i] for i in combo_indices)
-                count = len(combo_indices)
-                strategy_169[idx_169] = strat_sum / count
-                evs_169[idx_169] = ev_sum / count
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            n_combos = combos_per_hand(hand_key)
 
-        return PreflopRange(strategy=strategy_169, evs=evs_169)
+            strategy_2d[row, col] = np.mean(self.strategy[row, col, :n_combos])
+            evs_2d[row, col] = np.mean(self.evs[row, col, :n_combos])
+
+        return PreflopRange(strategy=strategy_2d, evs=evs_2d)
 
     def total_frequency(self) -> float:
         """计算总频率。
 
         Returns:
-            所有组合频率的平均值（0.0 ~ 1.0）
+            所有有效组合频率的平均值（0.0 ~ 1.0）
         """
-        return sum(self.strategy) / RANGE_1326_LENGTH
+        total = 0.0
+        count = 0
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            n_combos = combos_per_hand(hand_key)
+            total += np.sum(self.strategy[row, col, :n_combos])
+            count += n_combos
+        return total / count
 
     def ban_cards(self, card_indices: Sequence[int]) -> None:
         """移除指定牌阻挡的组合（原地修改）。
@@ -256,38 +406,58 @@ class PostflopRange:
         """
         blocked = set(card_indices)
 
-        for combo_idx in range(RANGE_1326_LENGTH):
-            card1, card2 = index1326_to_combo(combo_idx)
-            if card1 in blocked or card2 in blocked:
-                self.strategy[combo_idx] = 0.0
-                self.evs[combo_idx] = 0.0
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            combos = _COMBO_ORDER[hand_key]
+
+            for combo_idx, (c1, c2) in enumerate(combos):
+                if c1 in blocked or c2 in blocked:
+                    self.strategy[row, col, combo_idx] = 0.0
+                    self.evs[row, col, combo_idx] = 0.0
 
     def normalize(self) -> None:
-        """正则化策略向量。
+        """正则化策略张量（原地修改）。
 
         将策略频率归一化，使总和为 1.0。
         """
-        total = sum(self.strategy)
+        total = 0.0
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            n_combos = combos_per_hand(hand_key)
+            total += np.sum(self.strategy[row, col, :n_combos])
 
         if total > 0:
-            norm = 1.0 / total
-            for i in range(RANGE_1326_LENGTH):
-                self.strategy[i] *= norm
+            self.strategy /= total
 
     def __getitem__(self, index: int) -> float:
-        """获取指定索引的策略值。"""
-        return self.strategy[index]
+        """获取指定 1326 索引的策略值（兼容旧接口）。"""
+        mapping = get_range_169_to_1326()
+        for hand_key_idx, combo_indices in enumerate(mapping):
+            if index in combo_indices:
+                hand_key = RANGE_169_ORDER[hand_key_idx]
+                row, col = _HAND_KEY_TO_COORD[hand_key]
+                combo_idx = combo_indices.index(index)
+                return float(self.strategy[row, col, combo_idx])
+        raise IndexError(f"Invalid index: {index}")
 
     def __setitem__(self, index: int, value: float) -> None:
-        """设置指定索引的策略值。"""
-        self.strategy[index] = value
+        """设置指定 1326 索引的策略值（兼容旧接口）。"""
+        mapping = get_range_169_to_1326()
+        for hand_key_idx, combo_indices in enumerate(mapping):
+            if index in combo_indices:
+                hand_key = RANGE_169_ORDER[hand_key_idx]
+                row, col = _HAND_KEY_TO_COORD[hand_key]
+                combo_idx = combo_indices.index(index)
+                self.strategy[row, col, combo_idx] = value
+                return
+        raise IndexError(f"Invalid index: {index}")
 
     def __len__(self) -> int:
-        """返回数据长度。"""
-        return len(self.strategy)
+        """返回数据长度（1326）。"""
+        return 1326
 
     def debug(self, min_strategy: float = 0.0, max_lines: int = 50) -> str:
-        """生成调试字符串，打印每个组合的 strategy 和 ev。
+        """生成调试字符串。
 
         Args:
             min_strategy: 只显示 strategy >= 此值的组合
@@ -298,64 +468,157 @@ class PostflopRange:
         """
         lines = [f"PostflopRange (total_freq={self.total_frequency():.2%})"]
         count = 0
-        for idx in range(RANGE_1326_LENGTH):
-            strat = self.strategy[idx]
-            if strat >= min_strategy:
-                if count >= max_lines:
-                    lines.append(f"  ... (truncated, {RANGE_1326_LENGTH - count} more)")
-                    break
-                ev = self.evs[idx]
-                c1, c2 = index1326_to_combo(idx)
-                r1, s1 = _INDEX_TO_RANK[c1 // 4], _INDEX_TO_SUIT[c1 % 4]
-                r2, s2 = _INDEX_TO_RANK[c2 // 4], _INDEX_TO_SUIT[c2 % 4]
-                combo_str = f"{r1}{s1}{r2}{s2}"
-                lines.append(f"  {combo_str}: strategy={strat:.3f}, ev={ev:.3f}")
-                count += 1
+
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            combos = _COMBO_ORDER[hand_key]
+
+            for combo_idx, (c1, c2) in enumerate(combos):
+                strat = self.strategy[row, col, combo_idx]
+                if strat >= min_strategy:
+                    if count >= max_lines:
+                        lines.append(f"  ... (truncated)")
+                        return "\n".join(lines)
+
+                    ev = self.evs[row, col, combo_idx]
+                    r1, s1 = _INDEX_TO_RANK[c1 // 4], _INDEX_TO_SUIT[c1 % 4]
+                    r2, s2 = _INDEX_TO_RANK[c2 // 4], _INDEX_TO_SUIT[c2 % 4]
+                    combo_str = f"{r1}{s1}{r2}{s2}"
+                    lines.append(f"  {combo_str}: strategy={strat:.3f}, ev={ev:.3f}")
+                    count += 1
+
         return "\n".join(lines)
 
     def to_gtoplus(self, min_strategy: float = 0.001) -> str:
         """生成 GTO+ 格式的范围字符串。
 
-        格式示例: [15.8]8s7d[/15.8],[15.8]8s7c[/15.8]
-        括号内是权重百分比（0-100）。
-        权重为 100% 时直接输出组合名称，不加权重标签。
-        权重为 0 或低于 min_strategy 的组合会被跳过。
-
         Args:
-            min_strategy: 忽略 strategy < 此值的组合（默认 0.001）
+            min_strategy: 忽略 strategy < 此值的组合
 
         Returns:
-            GTO+ 格式字符串，可直接粘贴到 GTO+ 软件中
+            GTO+ 格式字符串
         """
         parts: list[str] = []
-        for idx in range(RANGE_1326_LENGTH):
-            strat = self.strategy[idx]
-            if strat < min_strategy:
-                continue
-            c1, c2 = index1326_to_combo(idx)
-            r1, s1 = _INDEX_TO_RANK[c1 // 4], _INDEX_TO_SUIT[c1 % 4]
-            r2, s2 = _INDEX_TO_RANK[c2 // 4], _INDEX_TO_SUIT[c2 % 4]
-            combo_str = f"{r1}{s1}{r2}{s2}"
-            weight = round(strat * 100, 1)
-            if weight >= 100.0:
-                parts.append(combo_str)
-            else:
-                parts.append(f"[{weight}]{combo_str}[/{weight}]")
+
+        for hand_key in RANGE_169_ORDER:
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+            combos = _COMBO_ORDER[hand_key]
+
+            for combo_idx, (c1, c2) in enumerate(combos):
+                strat = self.strategy[row, col, combo_idx]
+                if strat < min_strategy:
+                    continue
+
+                r1, s1 = _INDEX_TO_RANK[c1 // 4], _INDEX_TO_SUIT[c1 % 4]
+                r2, s2 = _INDEX_TO_RANK[c2 // 4], _INDEX_TO_SUIT[c2 % 4]
+                combo_str = f"{r1}{s1}{r2}{s2}"
+                weight = round(strat * 100, 1)
+
+                if weight >= 100.0:
+                    parts.append(combo_str)
+                else:
+                    parts.append(f"[{weight}]{combo_str}[/{weight}]")
+
         return ",".join(parts)
 
     @classmethod
     def zeros(cls) -> PostflopRange:
-        """创建全零向量。"""
-        return cls()
+        """创建全零张量。"""
+        return cls(
+            strategy=np.zeros((13, 13, 12), dtype=np.float32),
+            evs=np.zeros((13, 13, 12), dtype=np.float32),
+        )
 
     @classmethod
     def ones(cls) -> PostflopRange:
-        """创建策略全一的向量。"""
-        return cls(strategy=[1.0] * RANGE_1326_LENGTH)
+        """创建策略全一的张量。"""
+        return cls(
+            strategy=np.ones((13, 13, 12), dtype=np.float32),
+            evs=np.zeros((13, 13, 12), dtype=np.float32),
+        )
+
+    @classmethod
+    def from_list(cls, strategy: list[float], evs: list[float]) -> PostflopRange:
+        """从 1326 维列表创建（兼容旧接口）。
+
+        Args:
+            strategy: 1326 维策略列表
+            evs: 1326 维 EV 列表
+
+        Returns:
+            PostflopRange 实例
+        """
+        if len(strategy) != 1326 or len(evs) != 1326:
+            msg = f"列表长度必须为 1326，实际为 {len(strategy)}, {len(evs)}"
+            raise ValueError(msg)
+
+        strat_tensor = np.zeros((13, 13, 12), dtype=np.float32)
+        ev_tensor = np.zeros((13, 13, 12), dtype=np.float32)
+
+        mapping = get_range_169_to_1326()
+        for hand_key_idx, combo_indices in enumerate(mapping):
+            hand_key = RANGE_169_ORDER[hand_key_idx]
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+
+            for combo_idx, idx_1326 in enumerate(combo_indices):
+                strat_tensor[row, col, combo_idx] = strategy[idx_1326]
+                ev_tensor[row, col, combo_idx] = evs[idx_1326]
+
+        return cls(strategy=strat_tensor, evs=ev_tensor)
 
     @classmethod
     def from_tuples(
         cls, strategy: tuple[float, ...], evs: tuple[float, ...]
     ) -> PostflopRange:
         """从 tuple 创建（兼容旧接口）。"""
-        return cls(strategy=list(strategy), evs=list(evs))
+        return cls.from_list(list(strategy), list(evs))
+
+    def to_list(self) -> tuple[list[float], list[float]]:
+        """转换为 1326 维列表。
+
+        Returns:
+            (strategy_list, evs_list)
+        """
+        strategy_list = [0.0] * 1326
+        evs_list = [0.0] * 1326
+
+        mapping = get_range_169_to_1326()
+        for hand_key_idx, combo_indices in enumerate(mapping):
+            hand_key = RANGE_169_ORDER[hand_key_idx]
+            row, col = _HAND_KEY_TO_COORD[hand_key]
+
+            for combo_idx, idx_1326 in enumerate(combo_indices):
+                strategy_list[idx_1326] = float(self.strategy[row, col, combo_idx])
+                evs_list[idx_1326] = float(self.evs[row, col, combo_idx])
+
+        return strategy_list, evs_list
+
+
+# ============================================================================
+# 辅助函数：169 顺序提取/散布（用于向量化操作）
+# ============================================================================
+
+
+def _get_169_order_indices() -> np.ndarray:
+    """返回 (169, 2) 数组，每行为 (row, col)。"""
+    indices = np.zeros((169, 2), dtype=np.int32)
+    for idx, hand_key in enumerate(RANGE_169_ORDER):
+        row, col = _HAND_KEY_TO_COORD[hand_key]
+        indices[idx] = [row, col]
+    return indices
+
+
+_INDICES_169 = _get_169_order_indices()
+
+
+def extract_by_169_order(matrix: np.ndarray) -> np.ndarray:
+    """按 RANGE_169_ORDER 提取为 169 维数组。"""
+    return matrix[_INDICES_169[:, 0], _INDICES_169[:, 1]]
+
+
+def scatter_by_169_order(values: np.ndarray, dtype=np.float32) -> np.ndarray:
+    """将 169 维数组按 RANGE_169_ORDER 散布到矩阵。"""
+    result = np.zeros((13, 13), dtype=dtype)
+    result[_INDICES_169[:, 0], _INDICES_169[:, 1]] = values
+    return result
+

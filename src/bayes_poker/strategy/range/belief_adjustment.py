@@ -5,13 +5,15 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from bayes_poker.strategy.range.mappings import (
     RANGE_169_LENGTH,
     RANGE_169_ORDER,
     RANGE_1326_LENGTH,
     combos_per_hand,
 )
-from bayes_poker.strategy.range.models import PreflopRange
+from bayes_poker.strategy.range.models import PreflopRange, extract_by_169_order, scatter_by_169_order
 
 _DEFAULT_LOW_MASS_THRESHOLD = 1e-9
 
@@ -34,37 +36,19 @@ def adjust_belief_range(
     target_frequency: float,
     low_mass_threshold: float = _DEFAULT_LOW_MASS_THRESHOLD,
 ) -> PreflopRange:
-    """按目标频率与 EV 排序做约束式信念重分配.
+    """按目标频率与 EV 排序做约束式信念重分配."""
+    strategy_169 = extract_by_169_order(belief_range.strategy)
+    evs_169 = extract_by_169_order(belief_range.evs)
+    adjusted_strategy = np.clip(strategy_169, 0.0, 1.0)
+    weights = np.array([combo_weight(i) for i in range(RANGE_169_LENGTH)])
 
-    当目标频率高于当前频率时, 优先向高 EV 手牌增加质量。
-    当目标频率低于当前频率时, 优先从低 EV 手牌移除质量。
-
-    Args:
-        belief_range: 原始 belief range, 使用 169 维策略向量表示。
-        target_frequency: 目标总频率。
-        low_mass_threshold: 极小质量阈值, 差异不超过该值时直接返回。
-
-    Returns:
-        调整后的新 PreflopRange。
-    """
-    adjusted_strategy = [min(max(value, 0.0), 1.0) for value in belief_range.strategy]
-    evs = list(belief_range.evs)
-    weights = [combo_weight(index) for index in range(RANGE_169_LENGTH)]
-
-    current_frequency = sum(
-        probability * weight
-        for probability, weight in zip(adjusted_strategy, weights, strict=True)
-    )
+    current_frequency = np.sum(adjusted_strategy * weights)
     delta = target_frequency - current_frequency
     if abs(delta) <= low_mass_threshold:
-        return PreflopRange(strategy=adjusted_strategy, evs=evs)
+        return PreflopRange(strategy=scatter_by_169_order(adjusted_strategy), evs=belief_range.evs.copy())
 
     if delta > 0.0:
-        sorted_indices = sorted(
-            range(RANGE_169_LENGTH),
-            key=lambda index: evs[index],
-            reverse=True,
-        )
+        sorted_indices = np.argsort(evs_169)[::-1]
         for index in sorted_indices:
             if delta <= low_mass_threshold:
                 break
@@ -80,10 +64,7 @@ def adjust_belief_range(
             delta -= mass_to_add
     else:
         remaining = -delta
-        sorted_indices = sorted(
-            range(RANGE_169_LENGTH),
-            key=lambda index: evs[index],
-        )
+        sorted_indices = np.argsort(evs_169)
         for index in sorted_indices:
             if remaining <= low_mass_threshold:
                 break
@@ -98,4 +79,4 @@ def adjust_belief_range(
             adjusted_strategy[index] -= mass_to_remove / weight
             remaining -= mass_to_remove
 
-    return PreflopRange(strategy=adjusted_strategy, evs=evs)
+    return PreflopRange(strategy=scatter_by_169_order(adjusted_strategy), evs=belief_range.evs.copy())

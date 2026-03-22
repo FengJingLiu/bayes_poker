@@ -27,24 +27,14 @@ def update_posterior(
     """根据观测动作执行 posterior 更新。"""
 
     action_likelihood = calibrated_policy.for_action(action_name)
-    posterior = PreflopRange(
-        strategy=[
-            prior_probability * likelihood_probability
-            for prior_probability, likelihood_probability in zip(
-                prior.strategy,
-                action_likelihood.strategy,
-                strict=True,
-            )
-        ],
-        evs=list(action_likelihood.evs),
-    )
+
+    posterior_strategy = prior.strategy * action_likelihood.strategy
+    posterior = PreflopRange(strategy=posterior_strategy, evs=action_likelihood.evs)
+
     total_mass = posterior.total_frequency()
     if total_mass <= _LOW_MASS_THRESHOLD:
         return PosteriorUpdate(
-            posterior_range=PreflopRange(
-                strategy=list(prior.strategy),
-                evs=list(prior.evs),
-            ),
+            posterior_range=PreflopRange(strategy=prior.strategy.copy(), evs=prior.evs.copy()),
             notes=("posterior_mass_too_small_keep_prior",),
         )
     posterior.normalize()

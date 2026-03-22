@@ -3,27 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
+from bayes_poker.domain.action_family import ActionFamily
 from bayes_poker.domain.poker import ActionType
 from bayes_poker.domain.table import Position
 from bayes_poker.player_metrics.params import PreFlopParams
-
-
-class ActionFamily(str, Enum):
-    """支持的翻前行动族。"""
-
-    FOLD = "fold"
-    OPEN = "open"
-    CALL_VS_OPEN = "call_vs_open"
-    CALL_VS_3BET = "call_vs_3bet"
-    LIMP = "limp"
-    OVERLIMP = "overlimp"
-    ISO_RAISE = "iso_raise"
-    THREE_BET = "three_bet"
-    SQUEEZE = "squeeze"
-    FOUR_BET = "four_bet"
-    JAM = "jam"
 
 
 @dataclass(frozen=True, slots=True)
