@@ -15,6 +15,7 @@ wheels/
 # Data and logs
 data/
 logs/
+docs/
 
 # Rust
 target/

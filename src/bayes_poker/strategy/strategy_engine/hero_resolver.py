@@ -641,10 +641,117 @@ def _adjust_hero_policy(
                 )
             )
 
+    normalized_actions = _normalize_adjusted_action_belief_ranges(
+        adjusted_actions=adjusted_actions,
+    )
+
     return GtoPriorPolicy(
         action_names=policy.action_names,
-        actions=tuple(adjusted_actions),
+        actions=normalized_actions,
         price_adjustment_applied=policy.price_adjustment_applied,
         price_adjustment_factor=policy.price_adjustment_factor,
         synthetic_template_kind=policy.synthetic_template_kind,
     )
+
+
+def _normalize_adjusted_action_belief_ranges(
+    *,
+    adjusted_actions: list[GtoPriorAction],
+) -> tuple[GtoPriorAction, ...]:
+    """将调整后的动作 belief_range 归一化为跨动作互斥分配.
+
+    当前 hero 调整链路会对 raise 与 call/check 的 belief_range 分别做
+    EV-ranked 重分配。为了让导出的 action-level range 可直接解释为单一动作
+    策略矩阵, 需要在每个手牌维度上保证各动作总频率不超过 1.0。
+
+    约束策略:
+    - `F` 的 belief_range 视为受保护质量, 不参与缩放。
+    - `C/X` 与激进动作 (`R*`/`RAI`) 视为可调整质量, 当总和超出剩余容量时
+      按比例统一压缩。
+
+    Args:
+        adjusted_actions: `_adjust_hero_policy` 已计算出的动作列表。
+
+    Returns:
+        belief_range 已归一化后的动作元组。
+    """
+    normalized_strategies: list[list[float] | None] = []
+    evs_by_action: list[list[float] | None] = []
+    adjustable_flags: list[bool] = []
+
+    for action in adjusted_actions:
+        if action.belief_range is None:
+            normalized_strategies.append(None)
+            evs_by_action.append(None)
+            adjustable_flags.append(False)
+            continue
+        normalized_strategies.append(list(action.belief_range.strategy))
+        evs_by_action.append(list(action.belief_range.evs))
+        adjustable_flags.append(
+            _is_aggressive_action(action.action_name) or _is_call_action(action.action_name)
+        )
+
+    for index in range(RANGE_169_LENGTH):
+        protected_total = 0.0
+        adjustable_total = 0.0
+
+        for strategy, is_adjustable in zip(
+            normalized_strategies,
+            adjustable_flags,
+            strict=True,
+        ):
+            if strategy is None:
+                continue
+            value = strategy[index]
+            if is_adjustable:
+                adjustable_total += value
+            else:
+                protected_total += value
+
+        remaining_capacity = max(0.0, 1.0 - protected_total)
+        if adjustable_total <= remaining_capacity + _HERO_ADJUST_LOW_MASS_THRESHOLD:
+            continue
+        if adjustable_total <= _HERO_ADJUST_LOW_MASS_THRESHOLD:
+            continue
+
+        scale = remaining_capacity / adjustable_total
+        for strategy, is_adjustable in zip(
+            normalized_strategies,
+            adjustable_flags,
+            strict=True,
+        ):
+            if strategy is None or not is_adjustable:
+                continue
+            strategy[index] *= scale
+
+    normalized_actions: list[GtoPriorAction] = []
+    for action, strategy, evs, is_adjustable in zip(
+        adjusted_actions,
+        normalized_strategies,
+        evs_by_action,
+        adjustable_flags,
+        strict=True,
+    ):
+        if not is_adjustable:
+            normalized_actions.append(action)
+            continue
+        if strategy is None or evs is None:
+            normalized_actions.append(action)
+            continue
+        normalized_actions.append(
+            GtoPriorAction(
+                action_name=action.action_name,
+                blended_frequency=action.blended_frequency,
+                source_id=action.source_id,
+                node_id=action.node_id,
+                action_type=action.action_type,
+                bet_size_bb=action.bet_size_bb,
+                is_all_in=action.is_all_in,
+                next_position=action.next_position,
+                belief_range=PreflopRange(strategy=strategy, evs=evs),
+                total_ev=action.total_ev,
+                total_combos=action.total_combos,
+            )
+        )
+
+    return tuple(normalized_actions)

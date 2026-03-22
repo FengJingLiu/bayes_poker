@@ -1509,6 +1509,30 @@ class TestAdjustHeroPolicyCallBeliefLinkage:
             total_frequency = sum(action.blended_frequency for action in result.actions)
             assert total_frequency == pytest.approx(1.0, abs=1e-6), f"ratio={ratio}"
 
+    def test_action_belief_ranges_remain_mutually_exclusive(self) -> None:
+        """调整后同一手牌在各动作上的总频率不应超过 1.0."""
+        policy = _make_frc_policy(
+            fold_freq=0.3,
+            call_freq=0.3,
+            raise_freq=0.4,
+            call_belief=self._make_belief(0.4),
+            raise_belief=self._make_belief(0.4),
+        )
+
+        result = _adjust_hero_policy(policy=policy, aggression_ratio=1.5)
+
+        belief_ranges = [
+            action.belief_range
+            for action in result.actions
+            if action.belief_range is not None
+        ]
+        for index in range(RANGE_169_LENGTH):
+            combo_total = sum(
+                belief_range.strategy[index]
+                for belief_range in belief_ranges
+            )
+            assert combo_total <= 1.0 + 1e-9, index
+
 
 # ---------------------------------------------------------------------------
 # 集成测试: resolve() 中的 hero 调整流程
