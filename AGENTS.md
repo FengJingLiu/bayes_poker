@@ -172,4 +172,4 @@
 
 - **PreFlopParams.previous_action 语义**: `previous_action=FOLD` 表示“该玩家在当前决策点之前尚未行动”，不是“真实上一动作就是 fold”。
 - **Reentry 语义**: multi-action preflop 场景必须按“当前决策点之前的完整前缀 + 当前仍存活对手的最近一次动作”推导上下文，不能再按 actor 或 opponent 的第一次动作切片。
-
+- **ClickHouse 查询**: 涉及 ClickHouse 查询、排障、SQL 优化或表设计时，优先使用 `clickhouse-best-practices` skill。

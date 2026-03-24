@@ -13,6 +13,7 @@ pub use action_stats::ActionStats;
 pub use builder::build_player_stats_parallel;
 pub use enums::*;
 pub use hand::{Action, Hand};
+pub use hand_hash::compute_hand_hash;
 pub use phhs_parser::{load_phhs_directory, parse_phhs_file};
 pub use player_stats::PlayerStats;
 pub use postflop_params::PostFlopParams;

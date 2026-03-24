@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/clickhouse_etl",
     "crates/poker_stats_rs",
 ]
 resolver = "2"
