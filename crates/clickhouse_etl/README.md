@@ -171,3 +171,34 @@ GROUP BY action_type;
 1. **解析入模**：通过 `GgTxtParser::parse_file()` 解析 `history.txt`；
 2. **算子衍生**：传入 `EtlTransformer::transform_chunk()` 内聚合衍生出所有的统计量矩阵 (`hands`, `player_hand_facts`, `player_actions`)；
 3. **入池落表**：借由 `ClickHouseLoader::load_batch()` 并行写入至远端服务端所初始化的引擎表中。
+
+cd /home/autumn/bayes_poker/.worktrees/two-stage-bayes-mnar-exec-20260326
+
+cargo run -p clickhouse_etl --bin export_preflop_population_dataset -- \
+  --clickhouse-url http://127.0.0.1:8123 \
+  --database bayes_poker \
+  --user default \
+  --password '你的密码' \
+  --output-dir data/population_vb \
+  --table-type 6 \
+  --date-from 2026-03-01 \
+  --date-to 2026-03-27
+
+会产出：
+
+- data/population_vb/action_totals.csv.gz
+- data/population_vb/exposed_combo_counts.csv.gz
+- data/population_vb/manifest.json
+
+然后接着训练：
+
+cd /home/autumn/bayes_poker/.worktrees/two-stage-bayes-mnar-exec-20260326
+
+PYTHONPATH=src uv run python -m bayes_poker.strategy.strategy_engine.population_vb.cli \
+  --strategy-db data/database/preflop_strategy.sqlite3 \
+  --source-id 1 \
+  --action-totals data/population_vb/action_totals.csv.gz \
+  --exposed-counts data/population_vb/exposed_combo_counts.csv.gz \
+  --output data/population_vb/population_artifact.npz \
+  --table-type 6
+

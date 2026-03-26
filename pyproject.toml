@@ -11,6 +11,7 @@ dependencies = [
     "pandas>=2.3.3",
     "pokerkit",
     "pybloomfiltermmap3",
+    "scipy>=1.13",
     "seaborn>=0.13.2",
 ]
 
