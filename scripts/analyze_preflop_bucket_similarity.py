@@ -15,14 +15,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from bayes_poker.storage.preflop_strategy_repository import (
-    PreflopStrategyRepository,
-    SolverActionRecord,
-)
 from bayes_poker.player_metrics.enums import ActionType as MetricsActionType
 from bayes_poker.player_metrics.enums import Position as MetricsPosition
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.params import PreFlopParams
+from bayes_poker.storage.preflop_strategy_repository import (
+    PreflopStrategyRepository,
+    SolverActionRecord,
+)
 from bayes_poker.strategy.strategy_engine.population_vb.bucket_similarity import (
     BucketNodeProfile,
     BucketStrategyProfile,
@@ -52,9 +52,9 @@ class BucketMergeSuggestion:
     """单行 bucket 合并建议。
 
     Attributes:
-        cluster_id: 当前簇序号（从 1 开始）。
-        bucket_param_index: 当前行对应 bucket id。
-        representative_param_index: 建议保留的代表 bucket id。
+        cluster_id: 簇序号（从 1 开始）。
+        bucket_param_index: 当前行对应的 bucket id。
+        representative_param_index: 簇代表 bucket id。
         bucket_hits: 当前 bucket hits。
         representative_hits: 代表 bucket hits。
         cluster_size: 当前簇大小。
@@ -75,20 +75,20 @@ class BucketSimilarityAnalysisResult:
     """bucket 相似度分析结果。
 
     Attributes:
-        source_id: 参与分析的策略源 ID。
-        requested_stack_bb: CLI 请求的 stack 深度。
-        resolved_stack_bb: 实际用于分析的 stack 深度。
-        total_solver_nodes: 参与扫描的 solver 节点总数。
-        mapped_solver_nodes: 成功映射到 param_index 的节点数。
+        source_id: 分析使用的策略源 ID。
+        requested_stack_bb: CLI 请求 stack。
+        resolved_stack_bb: 实际使用 stack。
+        total_solver_nodes: 扫描节点总数。
+        mapped_solver_nodes: 可映射节点数。
         bucket_profiles: 聚合后的 bucket 画像映射。
         ordered_bucket_indices: 距离矩阵顺序对应的 bucket id。
-        clusters: 基于选定阈值的 bucket 聚类结果。
-        hits_by_bucket: 外部 hits 映射。
+        clusters: 阈值聚类后的 bucket 分组。
+        hits_by_bucket: `param_index -> hits` 映射。
         threshold_sweep: 阈值扫描结果。
-        selected_threshold: 最终选用的距离阈值。
-        recommended_threshold: 阈值扫描推荐值。
-        threshold_mode: `auto_recommended` 或 `manual`。
-        suggestions: 按簇展开后的合并建议。
+        selected_threshold: 最终使用的聚类阈值。
+        recommended_threshold: 扫描推荐阈值。
+        threshold_mode: `manual` 或 `auto_recommended`。
+        suggestions: 展开后的 bucket 合并建议。
     """
 
     source_id: int
@@ -120,41 +120,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="离线分析 preflop bucket 相似度并输出合并建议。",
     )
-    parser.add_argument(
-        "--strategy-db",
-        type=Path,
-        required=True,
-        help="策略库 SQLite 路径。",
-    )
-    parser.add_argument(
-        "--hits-csv",
-        type=Path,
-        required=True,
-        help="包含 preflop_param_index,hits 的 CSV 路径。",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        required=True,
-        help="输出目录。",
-    )
+    parser.add_argument("--strategy-db", type=Path, required=True, help="策略库 SQLite 路径。")
+    parser.add_argument("--hits-csv", type=Path, required=True, help="hits CSV 路径。")
+    parser.add_argument("--output-dir", type=Path, required=True, help="输出目录。")
     parser.add_argument(
         "--source-id",
         type=int,
         default=None,
-        help="策略源 ID。未提供时仅在库内唯一 source 时自动选择。",
+        help="策略源 ID。未提供时要求库内只有一个 source。",
     )
-    parser.add_argument(
-        "--stack-bb",
-        type=int,
-        default=100,
-        help="目标筹码深度。默认 100。",
-    )
+    parser.add_argument("--stack-bb", type=int, default=100, help="目标 stack。默认 100。")
     parser.add_argument(
         "--distance-threshold",
         type=float,
         default=None,
-        help="手动指定聚类距离阈值。未指定时使用扫描推荐值。",
+        help="手动聚类阈值。未指定时使用扫描推荐值。",
     )
     return parser.parse_args(argv)
 
@@ -166,10 +146,10 @@ def load_hits_csv(hits_csv_path: Path) -> dict[int, int]:
         hits_csv_path: 命中量 CSV 路径。
 
     Returns:
-        `preflop_param_index -> hits` 映射。重复桶会累加。
+        `preflop_param_index -> hits` 映射。重复 bucket 会累加。
 
     Raises:
-        ValueError: 当 CSV 缺少必要列或存在非法值时抛出。
+        ValueError: 当列缺失或数据格式非法时抛出。
     """
 
     with hits_csv_path.open("r", encoding="utf-8", newline="") as file:
@@ -177,12 +157,10 @@ def load_hits_csv(hits_csv_path: Path) -> dict[int, int]:
         field_names = set(reader.fieldnames or ())
         required_columns = {"preflop_param_index", "hits"}
         if not required_columns.issubset(field_names):
-            msg = (
+            raise ValueError(
                 "hits CSV 缺少必要列。"
                 f"required={sorted(required_columns)} actual={sorted(field_names)}"
             )
-            raise ValueError(msg)
-
         hits_by_bucket: dict[int, int] = defaultdict(int)
         for row_number, row in enumerate(reader, start=2):
             raw_param_index = str(row.get("preflop_param_index", "")).strip()
@@ -192,42 +170,37 @@ def load_hits_csv(hits_csv_path: Path) -> dict[int, int]:
             try:
                 param_index = int(raw_param_index)
             except ValueError as exc:
-                msg = f"第 {row_number} 行 preflop_param_index 非法: {raw_param_index!r}"
-                raise ValueError(msg) from exc
+                raise ValueError(
+                    f"第 {row_number} 行 preflop_param_index 非法: {raw_param_index!r}"
+                ) from exc
             hits_by_bucket[param_index] += _parse_hits_value(raw_hits, row_number=row_number)
     return dict(hits_by_bucket)
 
 
-def resolve_source_id(
-    repository: PreflopStrategyRepository,
-    requested_source_id: int | None,
-) -> int:
+def resolve_source_id(repository: PreflopStrategyRepository, requested_source_id: int | None) -> int:
     """解析要分析的 source_id。
 
     Args:
         repository: 已连接的策略仓库。
-        requested_source_id: CLI 指定 source_id。
+        requested_source_id: CLI 传入 source_id。
 
     Returns:
         最终用于分析的 source_id。
 
     Raises:
-        ValueError: 当 source 为空、未找到或存在多个 source 且未指定时抛出。
+        ValueError: 当 source 不满足解析条件时抛出。
     """
 
     sources = repository.list_sources()
     if not sources:
         raise ValueError("策略库中没有可用 source。")
-
     if requested_source_id is not None:
         source_ids = {source.source_id for source in sources}
         if requested_source_id not in source_ids:
             raise ValueError(f"source_id={requested_source_id} 不存在。")
         return requested_source_id
-
     if len(sources) == 1:
         return sources[0].source_id
-
     source_id_list = ",".join(str(source.source_id) for source in sources)
     raise ValueError(
         "检测到多个 source，请显式传入 --source-id。"
@@ -249,7 +222,7 @@ def load_solver_nodes(
         stack_bb: 筹码深度。
 
     Returns:
-        节点字典元组。每项至少包含 `node_id/history_full/history_actions/acting_position`。
+        节点字典元组。
     """
 
     cursor = repository.conn.cursor()
@@ -295,8 +268,8 @@ def build_bucket_profiles(
     mapped_node_count = 0
 
     for solver_node in solver_nodes:
-        node_mapping = build_solver_node_bucket_mapping(solver_node)
-        param_index = node_mapping.param_index
+        mapping_result = build_solver_node_bucket_mapping(solver_node)
+        param_index = mapping_result.param_index
         if param_index is None:
             param_index = infer_param_index_from_node_columns(solver_node)
         if param_index is None:
@@ -314,13 +287,11 @@ def build_bucket_profiles(
         )
         if total_combos <= 0.0:
             continue
+
         bucket_node_profiles[param_index].append(
-            BucketNodeProfile(
-                probs_fcr=probs_fcr,
-                total_combos=total_combos,
-            )
+            BucketNodeProfile(probs_fcr=probs_fcr, total_combos=total_combos)
         )
-        bucket_history_actions[param_index].add(node_mapping.history_actions)
+        bucket_history_actions[param_index].add(mapping_result.history_actions)
 
     bucket_profiles: dict[int, BucketStrategyProfile] = {}
     for param_index in sorted(bucket_node_profiles):
@@ -334,7 +305,7 @@ def build_bucket_profiles(
 
 
 def infer_param_index_from_node_columns(solver_node: Mapping[str, object]) -> int | None:
-    """在严格历史映射失败时，基于节点列字段回退计算 param_index。
+    """在严格历史映射失败时，用节点列字段回退推导 param_index。
 
     Args:
         solver_node: solver 节点字典。
@@ -354,7 +325,6 @@ def infer_param_index_from_node_columns(solver_node: Mapping[str, object]) -> in
         num_raises = max(int(solver_node.get("raise_time", 0)), 0)
     except (TypeError, ValueError):
         return None
-    in_position = _parse_bool_like(solver_node.get("is_in_position"))
 
     params = PreFlopParams(
         table_type=TableType.SIX_MAX,
@@ -363,7 +333,7 @@ def infer_param_index_from_node_columns(solver_node: Mapping[str, object]) -> in
         num_raises=num_raises,
         num_active_players=6,
         previous_action=MetricsActionType.FOLD,
-        in_position_on_flop=in_position,
+        in_position_on_flop=_parse_bool_like(solver_node.get("is_in_position")),
         aggressor_first_in=True,
         hero_invest_raises=0,
     )
@@ -376,7 +346,7 @@ def build_merge_suggestions(
     clusters: Sequence[Sequence[int]],
     hits_by_bucket: Mapping[int, int],
 ) -> tuple[BucketMergeSuggestion, ...]:
-    """根据聚类结果展开每个 bucket 的合并建议。
+    """根据聚类结果展开 bucket 合并建议。
 
     Args:
         clusters: bucket 聚类结果。
@@ -392,7 +362,6 @@ def build_merge_suggestions(
         representative = select_representative_bucket(normalized_cluster, hits_by_bucket)
         representative_hits = max(int(hits_by_bucket.get(representative, 0)), 0)
         for member in normalized_cluster:
-            action = "keep" if member == representative else "merge"
             suggestions.append(
                 BucketMergeSuggestion(
                     cluster_id=cluster_id,
@@ -401,46 +370,25 @@ def build_merge_suggestions(
                     bucket_hits=max(int(hits_by_bucket.get(member, 0)), 0),
                     representative_hits=representative_hits,
                     cluster_size=len(normalized_cluster),
-                    action=action,
+                    action="keep" if member == representative else "merge",
                 )
             )
     return tuple(suggestions)
 
 
-def _parse_bool_like(value: object) -> bool:
-    """把 sqlite bool-like 字段解析为 Python bool。
-
-    Args:
-        value: 任意输入值。
-
-    Returns:
-        解析后的布尔值。空值按 `False` 处理。
-    """
-
-    if value is None:
-        return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return value != 0
-    normalized = str(value).strip().lower()
-    return normalized in {"1", "true", "t", "yes", "y"}
-
-
-def run_analysis(argv: list[str] | None = None) -> BucketSimilarityAnalysisResult:
+def run_analysis(args: argparse.Namespace) -> BucketSimilarityAnalysisResult:
     """执行 bucket 相似度分析主流程。
 
     Args:
-        argv: 可选参数列表。为空时使用进程参数。
+        args: CLI 参数对象。
 
     Returns:
-        完整分析结果对象。
+        分析结果对象。
 
     Raises:
-        ValueError: 当输入数据不满足分析前置条件时抛出。
+        ValueError: 当输入数据不满足分析条件时抛出。
     """
 
-    args = parse_args(argv)
     if args.distance_threshold is not None and args.distance_threshold < 0.0:
         raise ValueError("distance-threshold 不能小于 0。")
 
@@ -477,27 +425,20 @@ def run_analysis(argv: list[str] | None = None) -> BucketSimilarityAnalysisResul
         hits_by_bucket,
         ordered_bucket_indices=ordered_bucket_indices,
     )
-    recommended_row = next(
-        (row for row in threshold_sweep if row.recommended),
-        threshold_sweep[0],
-    )
+    recommended_row = next((row for row in threshold_sweep if row.recommended), threshold_sweep[0])
     recommended_threshold = float(recommended_row.threshold)
     selected_threshold = (
         float(args.distance_threshold)
         if args.distance_threshold is not None
         else recommended_threshold
     )
-    threshold_mode = "manual" if args.distance_threshold is not None else "auto_recommended"
 
-    cluster_indices = cluster_buckets(distance_matrix, threshold=selected_threshold)
     clusters = tuple(
         tuple(ordered_bucket_indices[index] for index in cluster)
-        for cluster in cluster_indices
+        for cluster in cluster_buckets(distance_matrix, threshold=selected_threshold)
     )
-    suggestions = build_merge_suggestions(
-        clusters=clusters,
-        hits_by_bucket=hits_by_bucket,
-    )
+    suggestions = build_merge_suggestions(clusters=clusters, hits_by_bucket=hits_by_bucket)
+
     return BucketSimilarityAnalysisResult(
         source_id=source_id,
         requested_stack_bb=int(args.stack_bb),
@@ -511,17 +452,13 @@ def run_analysis(argv: list[str] | None = None) -> BucketSimilarityAnalysisResul
         threshold_sweep=threshold_sweep,
         selected_threshold=selected_threshold,
         recommended_threshold=recommended_threshold,
-        threshold_mode=threshold_mode,
+        threshold_mode=("manual" if args.distance_threshold is not None else "auto_recommended"),
         suggestions=suggestions,
     )
 
 
-def write_analysis_outputs(
-    *,
-    output_dir: Path,
-    result: BucketSimilarityAnalysisResult,
-) -> None:
-    """写出分析产物到输出目录。
+def write_analysis_outputs(output_dir: Path, result: BucketSimilarityAnalysisResult) -> None:
+    """写出分析产物。
 
     Args:
         output_dir: 输出目录。
@@ -529,27 +466,19 @@ def write_analysis_outputs(
     """
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = output_dir / "bucket_merge_summary.json"
-    suggestions_path = output_dir / "bucket_merge_suggestions.csv"
-    threshold_sweep_path = output_dir / "bucket_merge_threshold_sweep.csv"
-
-    _write_summary_json(summary_path=summary_path, result=result)
-    _write_suggestions_csv(suggestions_path=suggestions_path, result=result)
+    _write_summary_json(output_dir / "bucket_merge_summary.json", result)
+    _write_suggestions_csv(output_dir / "bucket_merge_suggestions.csv", result)
     _write_threshold_sweep_csv(
-        threshold_sweep_path=threshold_sweep_path,
-        threshold_sweep=result.threshold_sweep,
+        output_dir / "bucket_merge_threshold_sweep.csv",
+        result.threshold_sweep,
     )
 
 
-def _write_summary_json(
-    *,
-    summary_path: Path,
-    result: BucketSimilarityAnalysisResult,
-) -> None:
+def _write_summary_json(summary_path: Path, result: BucketSimilarityAnalysisResult) -> None:
     """写入 bucket 合并摘要 JSON。
 
     Args:
-        summary_path: 摘要 JSON 路径。
+        summary_path: 摘要文件路径。
         result: 分析结果对象。
     """
 
@@ -566,14 +495,13 @@ def _write_summary_json(
             max(int(result.hits_by_bucket.get(bucket_index, 0)), 0)
             for bucket_index in cluster
         )
-        cluster_size = len(cluster)
-        if cluster_size > 1:
-            merged_bucket_count += cluster_size
+        if len(cluster) > 1:
+            merged_bucket_count += len(cluster)
             merged_hits += cluster_hits
         cluster_payload.append(
             {
                 "cluster_id": cluster_id,
-                "cluster_size": cluster_size,
+                "cluster_size": len(cluster),
                 "buckets": list(cluster),
                 "representative_param_index": representative,
                 "cluster_hits": cluster_hits,
@@ -616,14 +544,13 @@ def _write_summary_json(
 
 
 def _write_suggestions_csv(
-    *,
     suggestions_path: Path,
     result: BucketSimilarityAnalysisResult,
 ) -> None:
     """写入 bucket 合并建议 CSV。
 
     Args:
-        suggestions_path: 合并建议 CSV 路径。
+        suggestions_path: 建议 CSV 路径。
         result: 分析结果对象。
     """
 
@@ -656,11 +583,10 @@ def _write_suggestions_csv(
 
 
 def _write_threshold_sweep_csv(
-    *,
     threshold_sweep_path: Path,
     threshold_sweep: Sequence[ThresholdSweepRow],
 ) -> None:
-    """写入阈值扫描结果 CSV。
+    """写入阈值扫描 CSV。
 
     Args:
         threshold_sweep_path: 阈值扫描 CSV 路径。
@@ -698,10 +624,10 @@ def _parse_hits_value(raw_hits: str, *, row_number: int) -> int:
 
     Args:
         raw_hits: 原始 hits 字符串。
-        row_number: CSV 行号（包含表头偏移）。
+        row_number: CSV 行号（含表头偏移）。
 
     Returns:
-        非负 hits 值。
+        非负整数 hits。
 
     Raises:
         ValueError: 当 hits 非法时抛出。
@@ -713,12 +639,29 @@ def _parse_hits_value(raw_hits: str, *, row_number: int) -> int:
         try:
             float_hits = float(raw_hits)
         except ValueError as exc:
-            msg = f"第 {row_number} 行 hits 非法: {raw_hits!r}"
-            raise ValueError(msg) from exc
+            raise ValueError(f"第 {row_number} 行 hits 非法: {raw_hits!r}") from exc
         if not float_hits.is_integer():
-            msg = f"第 {row_number} 行 hits 必须为整数: {raw_hits!r}"
-            raise ValueError(msg)
+            raise ValueError(f"第 {row_number} 行 hits 必须为整数: {raw_hits!r}")
         return max(int(float_hits), 0)
+
+
+def _parse_bool_like(value: object) -> bool:
+    """解析 sqlite bool-like 字段。
+
+    Args:
+        value: 任意输入值。
+
+    Returns:
+        解析后的布尔值。空值按 `False`。
+    """
+
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    return str(value).strip().lower() in {"1", "true", "t", "yes", "y"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -733,8 +676,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parse_args(argv)
     try:
-        result = run_analysis(argv)
-        write_analysis_outputs(output_dir=args.output_dir, result=result)
+        result = run_analysis(args)
+        write_analysis_outputs(args.output_dir, result)
     except Exception as exc:  # noqa: BLE001
         print(f"bucket 相似度分析失败: {exc}", file=sys.stderr)
         return 1
