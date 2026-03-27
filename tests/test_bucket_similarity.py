@@ -213,3 +213,81 @@ def test_distance_matrix_accepts_bucket_profiles() -> None:
     assert ordered_indices == (4, 25)
     assert np.allclose(distance_matrix, distance_matrix.T)
     assert np.allclose(np.diag(distance_matrix), 0.0)
+
+
+def test_cluster_complete_link_prevents_chain_merging() -> None:
+    """complete-link 聚类不会把链式距离的三个桶合并为一个簇。"""
+
+    distance_matrix = np.array(
+        [
+            [0.0, 0.1, 0.5],
+            [0.1, 0.0, 0.1],
+            [0.5, 0.1, 0.0],
+        ],
+        dtype=float,
+    )
+    cluster_labels = bucket_similarity.cluster_buckets(distance_matrix, threshold=0.2)
+
+    assert len(cluster_labels) == 2
+    assert {frozenset(cluster) for cluster in cluster_labels} == {frozenset({0}), frozenset({1, 2})}
+
+
+def test_representative_bucket_prefers_highest_hits() -> None:
+    """代表桶应选取 hits 最大的桶。"""
+
+    cluster = (25, 40)
+    hits = {25: 5, 40: 10}
+    representative = bucket_similarity.select_representative_bucket(cluster, hits)
+    assert representative == 40
+
+
+def test_threshold_sweep_reports_stats_and_recommendation() -> None:
+    """阈值扫描应返回簇统计与推荐阈值。"""
+
+    distance_matrix = np.array(
+        [
+            [0.0, 0.1, 0.4],
+            [0.1, 0.0, 0.3],
+            [0.4, 0.3, 0.0],
+        ],
+        dtype=float,
+    )
+    bucket_ids = (25, 40, 60)
+    hits = {25: 10, 40: 5, 60: 2}
+    thresholds = [0.05, 0.15, 0.35]
+    sweep = bucket_similarity.compute_threshold_sweep(
+        distance_matrix,
+        hits,
+        thresholds,
+        ordered_bucket_indices=bucket_ids,
+    )
+
+    def _get(row: object, key: str) -> object | None:
+        if isinstance(row, dict):
+            return row.get(key)
+        return getattr(row, key, None)
+
+    assert len(sweep) == len(thresholds)
+    expected_keys = (
+        "threshold",
+        "cluster_count",
+        "merged_bucket_count",
+        "merged_hit_ratio",
+        "guardrail_ok",
+    )
+    for row in sweep:
+        for key in expected_keys:
+            assert _get(row, key) is not None
+    threshold_row = next(
+        (row for row in sweep if _get(row, "threshold") == pytest.approx(0.15)),
+        None,
+    )
+    assert threshold_row is not None
+    assert _get(threshold_row, "cluster_count") == 2
+    assert _get(threshold_row, "merged_bucket_count") == 2
+    assert _get(threshold_row, "merged_hit_ratio") == pytest.approx(15 / 17)
+
+    recommended_rows = [row for row in sweep if _get(row, "recommended")]
+    assert len(recommended_rows) == 1
+    assert all(_get(row, "guardrail_ok") is False for row in sweep)
+    assert _get(recommended_rows[0], "guardrail_ok") is False
