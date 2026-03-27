@@ -86,10 +86,10 @@ def test_load_population_dataset_merges_counts_and_clamps_unexposed(
             "n_exposed",
         ],
         [
-            [6, 30, "F", 1000, 10],
-            [6, 30, "C", 1001, 15],
-            [6, 30, "C", 1002, 90],
-            [6, 30, "R", 1003, 5],
+            [6, 30, "F", 10, 10],
+            [6, 30, "C", 11, 15],
+            [6, 30, "C", 12, 90],
+            [6, 30, "R", 13, 5],
         ],
     )
     observations = load_population_dataset(
@@ -106,13 +106,46 @@ def test_load_population_dataset_merges_counts_and_clamps_unexposed(
     assert obs.exposed_counts.shape == (169, 3)
     assert np.array_equal(obs.action_totals, np.array([100.0, 80.0, 20.0]))
 
-    c_index_1 = holdcard_to_hand_class_169(1001)
-    c_index_2 = holdcard_to_hand_class_169(1002)
-    assert obs.exposed_counts[c_index_1, 1] == pytest.approx(15.0)
-    assert obs.exposed_counts[c_index_2, 1] == pytest.approx(90.0)
+    assert obs.exposed_counts[11, 1] == pytest.approx(15.0)
+    assert obs.exposed_counts[12, 1] == pytest.approx(90.0)
 
     unexposed = compute_unexposed_by_action(obs)
     assert np.array_equal(unexposed, np.array([90.0, 0.0, 15.0]))
+
+
+def test_load_population_dataset_requires_169_holdcard_bucket(
+    tmp_path: Path,
+) -> None:
+    """当 holdcard_index 不在 169 维桶范围时应直接报错。"""
+    action_totals_path = tmp_path / "action_totals.csv.gz"
+    exposed_counts_path = tmp_path / "exposed_combo_counts.csv.gz"
+
+    _write_gzip_csv(
+        action_totals_path,
+        ["table_type", "preflop_param_index", "action_family", "n_total"],
+        [
+            [6, 30, "R", 10],
+        ],
+    )
+    _write_gzip_csv(
+        exposed_counts_path,
+        [
+            "table_type",
+            "preflop_param_index",
+            "action_family",
+            "holdcard_index",
+            "n_exposed",
+        ],
+        [
+            [6, 30, "R", 1000, 4],
+        ],
+    )
+
+    with pytest.raises(ValueError, match="169"):
+        load_population_dataset(
+            action_totals_path=str(action_totals_path),
+            exposed_counts_path=str(exposed_counts_path),
+        )
 
 
 def test_population_artifact_roundtrip_and_reader(tmp_path: Path) -> None:

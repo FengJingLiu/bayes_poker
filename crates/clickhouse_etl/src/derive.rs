@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
-use anyhow::Result;
 use crate::*;
+use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Default)]
 pub struct EtlTransformer;
@@ -11,7 +11,9 @@ impl EtlTransformer {
         for hand in hands {
             let transformed = self.transform_hand(hand)?;
             batch.hands.extend(transformed.hands);
-            batch.player_hand_facts.extend(transformed.player_hand_facts);
+            batch
+                .player_hand_facts
+                .extend(transformed.player_hand_facts);
             batch.player_actions.extend(transformed.player_actions);
         }
         Ok(batch)
@@ -20,14 +22,19 @@ impl EtlTransformer {
     pub fn transform_hand(&self, hand: &ParsedHand) -> Result<EtlBatch> {
         let mut batch = EtlBatch::default();
         let hand_hash = compute_hand_hash(
-            &hand.players.iter().map(|p| p.player_name.clone()).collect::<Vec<_>>(),
+            &hand
+                .players
+                .iter()
+                .map(|p| p.player_name.clone())
+                .collect::<Vec<_>>(),
             &hand.canonical_actions,
         );
 
         let position_map = build_position_map(hand.button_seat, &hand.players);
         let param_index_by_action = build_action_param_index_map(hand, &position_map);
         let winner_set: HashSet<&str> = hand.winner_names.iter().map(String::as_str).collect();
-        let showdown_set: HashSet<&str> = hand.showdown_players.iter().map(String::as_str).collect();
+        let showdown_set: HashSet<&str> =
+            hand.showdown_players.iter().map(String::as_str).collect();
         let shown_holdcard_indexes_by_player: HashMap<&str, u16> = hand
             .shown_holdcard_indexes_by_player
             .iter()
@@ -41,16 +48,24 @@ impl EtlTransformer {
                 acc
             });
 
-        let mut player_facts: HashMap<String, PlayerFact> = hand.players.iter().map(|p| {
-            (p.player_name.clone(), PlayerFact {
-                seat_no: p.seat_no as u8,
-                position: *position_map.get(&p.player_name).unwrap_or(&Position::UTG) as u8,
-                contributed_cents: p.blind_post_cents,
-                ..Default::default()
+        let mut player_facts: HashMap<String, PlayerFact> = hand
+            .players
+            .iter()
+            .map(|p| {
+                (
+                    p.player_name.clone(),
+                    PlayerFact {
+                        seat_no: p.seat_no as u8,
+                        position: *position_map.get(&p.player_name).unwrap_or(&Position::UTG) as u8,
+                        contributed_cents: p.blind_post_cents,
+                        ..Default::default()
+                    },
+                )
             })
-        }).collect();
+            .collect();
 
-        let mut active_players: HashSet<String> = hand.players.iter().map(|p| p.player_name.clone()).collect();
+        let mut active_players: HashSet<String> =
+            hand.players.iter().map(|p| p.player_name.clone()).collect();
         let mut preflop_raise_count = 0i32;
         let mut num_raises = 0i32;
         let mut num_callers = 0i32;
@@ -70,13 +85,20 @@ impl EtlTransformer {
 
             if action.street == Street::PreFlop {
                 if let Some(fact) = player_facts.get_mut(&action.player_name) {
-                    if matches!(action.action_type, ActionType::Call | ActionType::Bet | ActionType::Raise | ActionType::AllIn) {
+                    if matches!(
+                        action.action_type,
+                        ActionType::Call | ActionType::Bet | ActionType::Raise | ActionType::AllIn
+                    ) {
                         fact.is_vpip = 1;
                     }
                     if action.action_type.is_raise_action() {
                         fact.is_pfr = 1;
-                        if preflop_raise_count == 1 { fact.is_3bet = 1; }
-                        if preflop_raise_count == 2 { fact.is_4bet = 1; }
+                        if preflop_raise_count == 1 {
+                            fact.is_3bet = 1;
+                        }
+                        if preflop_raise_count == 2 {
+                            fact.is_4bet = 1;
+                        }
                     }
                 }
 
@@ -110,10 +132,16 @@ impl EtlTransformer {
                 num_raises: num_raises.max(0) as u8,
                 spr: if action.pot_before_action_cents > 0 {
                     action.delta_cents as f32 / action.pot_before_action_cents as f32
-                } else { 0.0 },
-                sizing_pct: if action.pot_before_action_cents > 0 && action.action_type.is_raise_action() {
+                } else {
+                    0.0
+                },
+                sizing_pct: if action.pot_before_action_cents > 0
+                    && action.action_type.is_raise_action()
+                {
                     Some(action.delta_cents as f32 / action.pot_before_action_cents as f32)
-                } else { None },
+                } else {
+                    None
+                },
                 preflop_param_index,
                 postflop_param_index,
                 is_vpip: player_facts[&action.player_name].is_vpip,
@@ -134,9 +162,11 @@ impl EtlTransformer {
         let mut active_at_river: HashSet<String> = HashSet::new();
 
         if hand.saw_flop {
-            active_at_flop = active_players.iter()
+            active_at_flop = active_players
+                .iter()
                 .filter(|p| {
-                    hand.actions.iter()
+                    hand.actions
+                        .iter()
                         .filter(|a| a.street == Street::PreFlop && &a.player_name == *p)
                         .all(|a| a.action_type != ActionType::Fold)
                 })
@@ -145,10 +175,15 @@ impl EtlTransformer {
         }
 
         if hand.saw_turn {
-            active_at_turn = active_players.iter()
+            active_at_turn = active_players
+                .iter()
                 .filter(|p| {
-                    hand.actions.iter()
-                        .filter(|a| (a.street == Street::PreFlop || a.street == Street::Flop) && &a.player_name == *p)
+                    hand.actions
+                        .iter()
+                        .filter(|a| {
+                            (a.street == Street::PreFlop || a.street == Street::Flop)
+                                && &a.player_name == *p
+                        })
                         .all(|a| a.action_type != ActionType::Fold)
                 })
                 .cloned()
@@ -156,9 +191,11 @@ impl EtlTransformer {
         }
 
         if hand.saw_river {
-            active_at_river = active_players.iter()
+            active_at_river = active_players
+                .iter()
                 .filter(|p| {
-                    hand.actions.iter()
+                    hand.actions
+                        .iter()
                         .filter(|a| a.street != Street::River && &a.player_name == *p)
                         .all(|a| a.action_type != ActionType::Fold)
                 })
@@ -188,10 +225,13 @@ impl EtlTransformer {
                 holdcard_index: shown_holdcard_indexes_by_player
                     .get(player.player_name.as_str())
                     .copied(),
-                net_cents: hand.collected_cents_by_player.iter()
+                net_cents: hand
+                    .collected_cents_by_player
+                    .iter()
                     .find(|(n, _)| n == &player.player_name)
                     .map(|(_, c)| *c)
-                    .unwrap_or(0) - contributed_cents,
+                    .unwrap_or(0)
+                    - contributed_cents,
                 contributed_cents,
                 is_vpip: fact.is_vpip,
                 is_pfr: fact.is_pfr,
@@ -267,7 +307,11 @@ fn build_position_map(button_seat: usize, players: &[SeatPlayer]) -> HashMap<Str
 
     for (idx, player) in sorted_players.iter().enumerate() {
         let position = if seat_count == 2 {
-            if idx == 0 { Position::SmallBlind } else { Position::BigBlind }
+            if idx == 0 {
+                Position::SmallBlind
+            } else {
+                Position::BigBlind
+            }
         } else if idx == 0 {
             Position::Button
         } else if idx == 1 {
@@ -347,10 +391,14 @@ fn build_action_param_index_map(
 
         match action.action_type {
             ActionType::Fold => {
-                state.active_players.retain(|player| player != &action.player_name);
+                state
+                    .active_players
+                    .retain(|player| player != &action.player_name);
             }
             ActionType::AllIn => {
-                state.active_players.retain(|player| player != &action.player_name);
+                state
+                    .active_players
+                    .retain(|player| player != &action.player_name);
                 if !state.all_in_players.contains(&action.player_name) {
                     state.all_in_players.push(action.player_name.clone());
                 }
@@ -382,14 +430,13 @@ fn build_preflop_param_index(
     player_name: &str,
 ) -> usize {
     let num_active_players = state.active_players.len() + state.all_in_players.len();
-    let in_position_on_flop = is_in_position(
-        &state.active_players,
-        player_name,
-        num_active_players,
-    );
-    let position = *position_map
-        .get(player_name)
-        .unwrap_or(&Position::UTG);
+    let position = *position_map.get(player_name).unwrap_or(&Position::UTG);
+    let aggressor_pos = state
+        .preflop_aggressor
+        .as_ref()
+        .and_then(|agg| position_map.get(agg).copied());
+    let in_position_on_flop =
+        is_in_position_on_flop(position, aggressor_pos, hand.players.len());
     let previous_action = *state
         .last_action_by_player
         .get(player_name)
@@ -461,6 +508,29 @@ fn build_metrics_ordered_players(
         .into_iter()
         .map(|player| player.player_name.clone())
         .collect()
+}
+
+fn is_in_position_on_flop(
+    player_position: Position,
+    aggressor_position: Option<Position>,
+    num_players: usize,
+) -> bool {
+    if let Some(agg_pos) = aggressor_position {
+        if player_position == agg_pos {
+            return false;
+        }
+        if num_players == 2 {
+            return player_position == Position::SmallBlind;
+        }
+        // Postflop 行动顺序: SB(0) < BB(1) < UTG(2) < HJ(3) < CO(4) < BTN(5)
+        (player_position as u8) > (agg_pos as u8)
+    } else {
+        if num_players == 2 {
+            player_position == Position::SmallBlind
+        } else {
+            player_position == Position::Button
+        }
+    }
 }
 
 fn is_in_position(active_players: &[String], player_name: &str, num_players: usize) -> bool {

@@ -11,7 +11,6 @@ import numpy as np
 from bayes_poker.strategy.range import RANGE_169_LENGTH
 
 from .contracts import PopulationBucketObservation
-from .holdcards import holdcard_to_hand_class_169
 
 _ACTION_FAMILY_INDEX: dict[str, int] = {"F": 0, "C": 1, "R": 2}
 
@@ -83,6 +82,7 @@ def load_population_dataset(
     Args:
         action_totals_path: `action_totals.csv.gz` 路径。
         exposed_counts_path: `exposed_combo_counts.csv.gz` 路径。
+            要求 `holdcard_index` 已是 169 维 hand class 桶索引。
 
     Returns:
         聚合后的 bucket 观测列表。
@@ -109,9 +109,6 @@ def load_population_dataset(
         action_totals, _ = bucket_arrays[key]
         action_totals[action_index] += n_total
 
-    treat_holdcard_as_1326 = any(
-        int(row["holdcard_index"]) >= RANGE_169_LENGTH for row in exposed_rows
-    )
     for row in exposed_rows:
         key = _parse_bucket_key(row)
         action_family = row["action_family"].strip().upper()
@@ -119,12 +116,13 @@ def load_population_dataset(
             continue
         action_index = _ACTION_FAMILY_INDEX[action_family]
         holdcard_index = int(row["holdcard_index"])
-        if treat_holdcard_as_1326:
-            hand_class = holdcard_to_hand_class_169(holdcard_index)
-        else:
-            if holdcard_index < 0 or holdcard_index >= RANGE_169_LENGTH:
-                continue
-            hand_class = holdcard_index
+        if holdcard_index < 0 or holdcard_index >= RANGE_169_LENGTH:
+            msg = (
+                "exposed_combo_counts holdcard_index 必须是 169 维桶索引, "
+                f"当前值为 {holdcard_index}, 期望区间 [0, {RANGE_169_LENGTH - 1}]。"
+            )
+            raise ValueError(msg)
+        hand_class = holdcard_index
         n_exposed = float(row["n_exposed"])
         _, exposed_counts = bucket_arrays[key]
         exposed_counts[hand_class, action_index] += n_exposed

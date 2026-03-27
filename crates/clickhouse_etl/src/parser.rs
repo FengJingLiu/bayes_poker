@@ -1,74 +1,51 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::{ActionType, ParsedAction, ParsedHand, SeatPlayer, Street, TableType};
 
-static HAND_SPLIT: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?m)^PokerStars Hand #").unwrap()
-});
+static HAND_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^PokerStars Hand #").unwrap());
 
-static HAND_ID: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"PokerStars Hand #(\d+):").unwrap()
-});
+static HAND_ID: Lazy<Regex> = Lazy::new(|| Regex::new(r"PokerStars Hand #(\d+):").unwrap());
 
-static DATETIME: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\d{4})/(\d{2})/(\d{2}) (\d{1,2}):(\d{2}):(\d{2})").unwrap()
-});
+static DATETIME: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(\d{4})/(\d{2})/(\d{2}) (\d{1,2}):(\d{2}):(\d{2})").unwrap());
 
-static TABLE_NAME: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"Table '([^']+)'").unwrap()
-});
+static TABLE_NAME: Lazy<Regex> = Lazy::new(|| Regex::new(r"Table '([^']+)'").unwrap());
 
-static SUMMARY_BOARD: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?m)^Board \[([^\]]+)\]").unwrap()
-});
+static SUMMARY_BOARD: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^Board \[([^\]]+)\]").unwrap());
 
-static SEAT_COUNT: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\d+)-max").unwrap()
-});
+static SEAT_COUNT: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d+)-max").unwrap());
 
-static BUTTON_SEAT: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"Seat #(\d+) is the button").unwrap()
-});
+static BUTTON_SEAT: Lazy<Regex> = Lazy::new(|| Regex::new(r"Seat #(\d+) is the button").unwrap());
 
-static BLINDS: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\(\$([0-9.]+)/\$([0-9.]+)\)").unwrap()
-});
+static BLINDS: Lazy<Regex> = Lazy::new(|| Regex::new(r"\(\$([0-9.]+)/\$([0-9.]+)\)").unwrap());
 
-static SEAT_LINE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"Seat (\d+): (.+?) \(\$([0-9.]+) in chips\)").unwrap()
-});
+static SEAT_LINE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"Seat (\d+): (.+?) \(\$([0-9.]+) in chips\)").unwrap());
 
-static CASH_DROP: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"Cash Drop to Pot\s*:\s*total\s*\$([0-9.]+)").unwrap()
-});
+static CASH_DROP: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"Cash Drop to Pot\s*:\s*total\s*\$([0-9.]+)").unwrap());
 
-static INSURANCE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(.+?): Pays Cashout Risk \(\$([0-9.]+)\)").unwrap()
-});
+static INSURANCE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(.+?): Pays Cashout Risk \(\$([0-9.]+)\)").unwrap());
 
-static COLLECTED: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(.+?) collected \$([0-9.]+) from pot").unwrap()
-});
+static COLLECTED: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(.+?) collected \$([0-9.]+) from pot").unwrap());
 
-static UNCALLED_RETURN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?m)^Uncalled bet \(\$([0-9.]+)\) returned to (.+)$").unwrap()
-});
+static UNCALLED_RETURN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?m)^Uncalled bet \(\$([0-9.]+)\) returned to (.+)$").unwrap());
 
-static SHOWS_HOLE_CARDS: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(.+?): shows \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])\]").unwrap()
-});
+static SHOWS_HOLE_CARDS: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(.+?): shows \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])\]").unwrap());
 
 static SUMMARY_SHOWED_HOLE_CARDS: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"^Seat \d+: (.+?)(?: \([^)]*\))? showed \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])\]",
-    )
-    .unwrap()
+    Regex::new(r"^Seat \d+: (.+?)(?: \([^)]*\))? showed \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])\]")
+        .unwrap()
 });
 
 #[derive(Debug, Clone, Copy)]
@@ -119,10 +96,12 @@ impl GgTxtParser {
             text = text.replace("*** FIRST RIVER ***", "*** RIVER ***");
             text = text.replace("*** FIRST SHOWDOWN ***", "*** SHOWDOWN ***");
 
-            let re_second = Regex::new(r"(?m)^\*\*\* SECOND (?:FLOP|TURN|RIVER|SHOWDOWN) \*\*\*.*\n").unwrap();
+            let re_second =
+                Regex::new(r"(?m)^\*\*\* SECOND (?:FLOP|TURN|RIVER|SHOWDOWN) \*\*\*.*\n").unwrap();
             text = re_second.replace_all(&text, "").to_string();
 
-            let re_third = Regex::new(r"(?m)^\*\*\* THIRD (?:FLOP|TURN|RIVER|SHOWDOWN) \*\*\*.*\n").unwrap();
+            let re_third =
+                Regex::new(r"(?m)^\*\*\* THIRD (?:FLOP|TURN|RIVER|SHOWDOWN) \*\*\*.*\n").unwrap();
             text = re_third.replace_all(&text, "").to_string();
         }
 
@@ -153,24 +132,28 @@ impl GgTxtParser {
         raw_text: &str,
         normalized_text: &str,
     ) -> Result<ParsedHand> {
-        let source_hand_id = HAND_ID.captures(normalized_text)
+        let source_hand_id = HAND_ID
+            .captures(normalized_text)
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string())
             .unwrap_or_default();
 
         let played_at = self.parse_datetime(normalized_text);
-        let table_name = TABLE_NAME.captures(normalized_text)
+        let table_name = TABLE_NAME
+            .captures(normalized_text)
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string())
             .unwrap_or_default();
         let board = self.parse_board(normalized_text);
 
-        let seat_count = SEAT_COUNT.captures(normalized_text)
+        let seat_count = SEAT_COUNT
+            .captures(normalized_text)
             .and_then(|c| c.get(1))
             .and_then(|m| m.as_str().parse().ok())
             .unwrap_or(6);
 
-        let button_seat = BUTTON_SEAT.captures(normalized_text)
+        let button_seat = BUTTON_SEAT
+            .captures(normalized_text)
             .and_then(|c| c.get(1))
             .and_then(|m| m.as_str().parse().ok())
             .unwrap_or(1);
@@ -235,8 +218,10 @@ impl GgTxtParser {
 
             NaiveDateTime::new(
                 chrono::NaiveDate::from_ymd_opt(year, month, day)?,
-                chrono::NaiveTime::from_hms_opt(hour, min, sec)?
-            ).and_local_timezone(Utc).single()
+                chrono::NaiveTime::from_hms_opt(hour, min, sec)?,
+            )
+            .and_local_timezone(Utc)
+            .single()
         })
     }
 
@@ -256,7 +241,8 @@ impl GgTxtParser {
     }
 
     fn parse_blinds(&self, text: &str) -> (i64, i64) {
-        BLINDS.captures(text)
+        BLINDS
+            .captures(text)
             .and_then(|c| {
                 let sb = self.parse_dollars(c.get(1)?.as_str()).ok()?;
                 let bb = self.parse_dollars(c.get(2)?.as_str()).ok()?;
@@ -266,13 +252,15 @@ impl GgTxtParser {
     }
 
     fn parse_cash_drop(&self, text: &str) -> i64 {
-        CASH_DROP.captures(text)
+        CASH_DROP
+            .captures(text)
             .and_then(|c| self.parse_dollars(c.get(1)?.as_str()).ok())
             .unwrap_or(0)
     }
 
     fn parse_insurance(&self, text: &str) -> i64 {
-        INSURANCE.captures_iter(text)
+        INSURANCE
+            .captures_iter(text)
             .filter_map(|c| self.parse_dollars(c.get(2)?.as_str()).ok())
             .sum()
     }
@@ -300,7 +288,9 @@ impl GgTxtParser {
             if line.contains("posts small blind") {
                 if let Some(name) = line.split(':').next() {
                     if let Some(amount_str) = line.split('$').nth(1) {
-                        if let Ok(cents) = self.parse_dollars(amount_str.split_whitespace().next().unwrap_or("0")) {
+                        if let Ok(cents) =
+                            self.parse_dollars(amount_str.split_whitespace().next().unwrap_or("0"))
+                        {
                             blind_posts.insert(name.trim().to_string(), cents);
                         }
                     }
@@ -308,7 +298,9 @@ impl GgTxtParser {
             } else if line.contains("posts big blind") {
                 if let Some(name) = line.split(':').next() {
                     if let Some(amount_str) = line.split('$').nth(1) {
-                        if let Ok(cents) = self.parse_dollars(amount_str.split_whitespace().next().unwrap_or("0")) {
+                        if let Ok(cents) =
+                            self.parse_dollars(amount_str.split_whitespace().next().unwrap_or("0"))
+                        {
                             blind_posts.insert(name.trim().to_string(), cents);
                         }
                     }
@@ -318,7 +310,9 @@ impl GgTxtParser {
 
         for cap in SEAT_LINE.captures_iter(text) {
             if let (Some(seat_no), Some(name), Some(stack)) = (cap.get(1), cap.get(2), cap.get(3)) {
-                if let (Ok(seat), Ok(stack_cents)) = (seat_no.as_str().parse(), self.parse_dollars(stack.as_str())) {
+                if let (Ok(seat), Ok(stack_cents)) =
+                    (seat_no.as_str().parse(), self.parse_dollars(stack.as_str()))
+                {
                     let player_name = name.as_str().to_string();
                     let blind_post_cents = blind_posts.get(&player_name).copied().unwrap_or(0);
 
@@ -335,12 +329,17 @@ impl GgTxtParser {
         players
     }
 
-    fn parse_actions(&self, text: &str, players: &[SeatPlayer]) -> (Vec<ParsedAction>, Vec<String>) {
+    fn parse_actions(
+        &self,
+        text: &str,
+        players: &[SeatPlayer],
+    ) -> (Vec<ParsedAction>, Vec<String>) {
         let mut actions = Vec::new();
         let mut canonical = Vec::new();
         let mut action_index = 0u32;
         let mut current_street = Street::PreFlop;
-        let mut player_bets: HashMap<String, i64> = players.iter()
+        let mut player_bets: HashMap<String, i64> = players
+            .iter()
             .map(|p| (p.player_name.clone(), p.blind_post_cents))
             .collect();
         let mut pot_cents = players.iter().map(|p| p.blind_post_cents).sum::<i64>();
@@ -362,14 +361,12 @@ impl GgTxtParser {
                 let max_bet = player_bets.values().copied().max().unwrap_or(0);
                 let call_amount = max_bet.saturating_sub(current_bet);
                 let (delta_cents, new_bet) = match amount {
-                    ParsedActionAmount::Delta(delta_cents) => (
-                        delta_cents,
-                        current_bet + delta_cents,
-                    ),
-                    ParsedActionAmount::TotalBet(total_bet_cents) => (
-                        total_bet_cents.saturating_sub(current_bet),
-                        total_bet_cents,
-                    ),
+                    ParsedActionAmount::Delta(delta_cents) => {
+                        (delta_cents, current_bet + delta_cents)
+                    }
+                    ParsedActionAmount::TotalBet(total_bet_cents) => {
+                        (total_bet_cents.saturating_sub(current_bet), total_bet_cents)
+                    }
                 };
 
                 actions.push(ParsedAction {
@@ -408,10 +405,18 @@ impl GgTxtParser {
             Some((player_name, ActionType::Check, ParsedActionAmount::Delta(0)))
         } else if action_part.starts_with("calls") {
             let amount = self.extract_amount(action_part).unwrap_or(0);
-            Some((player_name, ActionType::Call, ParsedActionAmount::Delta(amount)))
+            Some((
+                player_name,
+                ActionType::Call,
+                ParsedActionAmount::Delta(amount),
+            ))
         } else if action_part.starts_with("bets") {
             let amount = self.extract_amount(action_part).unwrap_or(0);
-            Some((player_name, ActionType::Bet, ParsedActionAmount::Delta(amount)))
+            Some((
+                player_name,
+                ActionType::Bet,
+                ParsedActionAmount::Delta(amount),
+            ))
         } else if action_part.starts_with("raises") {
             let amount = self.extract_raise_to_amount(action_part).unwrap_or(0);
             let action_type = if action_part.contains("all-in") {
@@ -419,14 +424,19 @@ impl GgTxtParser {
             } else {
                 ActionType::Raise
             };
-            Some((player_name, action_type, ParsedActionAmount::TotalBet(amount)))
+            Some((
+                player_name,
+                action_type,
+                ParsedActionAmount::TotalBet(amount),
+            ))
         } else {
             None
         }
     }
 
     fn extract_amount(&self, text: &str) -> Option<i64> {
-        text.split('$').nth(1)
+        text.split('$')
+            .nth(1)
             .and_then(|s| s.split_whitespace().next())
             .and_then(|s| self.parse_dollars(s).ok())
     }
@@ -434,7 +444,9 @@ impl GgTxtParser {
     fn extract_raise_to_amount(&self, text: &str) -> Option<i64> {
         let parts: Vec<&str> = text.split('$').collect();
         if parts.len() >= 3 {
-            parts[2].split_whitespace().next()
+            parts[2]
+                .split_whitespace()
+                .next()
                 .and_then(|s| self.parse_dollars(s).ok())
         } else {
             None
@@ -511,8 +523,7 @@ impl GgTxtParser {
         let mut shown_holdcard_indexes_by_player: HashMap<String, u16> = HashMap::new();
 
         for line in text.lines() {
-            if let Some((player_name, holdcard_index)) =
-                self.parse_shown_holdcard_index_line(line)
+            if let Some((player_name, holdcard_index)) = self.parse_shown_holdcard_index_line(line)
             {
                 shown_holdcard_indexes_by_player.insert(player_name, holdcard_index);
             }
@@ -532,20 +543,14 @@ impl GgTxtParser {
         if let Some(captures) = SHOWS_HOLE_CARDS.captures(line) {
             return Some((
                 captures.get(1)?.as_str().trim().to_string(),
-                self.cards_to_index1326(
-                    captures.get(2)?.as_str(),
-                    captures.get(3)?.as_str(),
-                )?,
+                self.cards_to_index1326(captures.get(2)?.as_str(), captures.get(3)?.as_str())?,
             ));
         }
 
         if let Some(captures) = SUMMARY_SHOWED_HOLE_CARDS.captures(line) {
             return Some((
                 captures.get(1)?.as_str().trim().to_string(),
-                self.cards_to_index1326(
-                    captures.get(2)?.as_str(),
-                    captures.get(3)?.as_str(),
-                )?,
+                self.cards_to_index1326(captures.get(2)?.as_str(), captures.get(3)?.as_str())?,
             ));
         }
 

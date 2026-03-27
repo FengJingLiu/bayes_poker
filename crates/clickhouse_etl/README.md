@@ -172,27 +172,35 @@ GROUP BY action_type;
 2. **算子衍生**：传入 `EtlTransformer::transform_chunk()` 内聚合衍生出所有的统计量矩阵 (`hands`, `player_hand_facts`, `player_actions`)；
 3. **入池落表**：借由 `ClickHouseLoader::load_batch()` 并行写入至远端服务端所初始化的引擎表中。
 
-cd /home/autumn/bayes_poker/.worktrees/two-stage-bayes-mnar-exec-20260326
+clickhouse-client --password '7q8w9e' --query "TRUNCATE TABLE IF EXISTS player_actions; TRUNCATE TABLE IF EXISTS player_hand_facts; TRUNCATE TABLE IF EXISTS hands;"
+
+cargo run -p clickhouse_etl --bin clickhouse_etl -- ~/gg_handhistory/2025-02-13_GGHRC_NL2_SH_TGOVM255 http://localhost:8123 default default "7q8w9e"
+
+cargo run --release -p clickhouse_etl -- data/handhistory http://localhost:8123 bayes_poker default "7q8w9e"
+
+cd /home/autumn/bayes_poker
 
 cargo run -p clickhouse_etl --bin export_preflop_population_dataset -- \
   --clickhouse-url http://127.0.0.1:8123 \
-  --database bayes_poker \
+  --database default \
   --user default \
-  --password '你的密码' \
+  --password '7q8w9e' \
   --output-dir data/population_vb \
   --table-type 6 \
-  --date-from 2026-03-01 \
+  --date-from 2000-03-01 \
   --date-to 2026-03-27
 
 会产出：
 
+- data/population_vb/action_totals.csv
 - data/population_vb/action_totals.csv.gz
+- data/population_vb/exposed_combo_counts.csv
 - data/population_vb/exposed_combo_counts.csv.gz
 - data/population_vb/manifest.json
 
 然后接着训练：
 
-cd /home/autumn/bayes_poker/.worktrees/two-stage-bayes-mnar-exec-20260326
+cd /home/autumn/bayes_poker
 
 PYTHONPATH=src uv run python -m bayes_poker.strategy.strategy_engine.population_vb.cli \
   --strategy-db data/database/preflop_strategy.sqlite3 \
@@ -201,4 +209,3 @@ PYTHONPATH=src uv run python -m bayes_poker.strategy.strategy_engine.population_
   --exposed-counts data/population_vb/exposed_combo_counts.csv.gz \
   --output data/population_vb/population_artifact.npz \
   --table-type 6
-

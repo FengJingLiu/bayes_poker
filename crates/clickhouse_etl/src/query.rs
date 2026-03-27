@@ -25,7 +25,7 @@ impl StatisticsQueryService {
     pub fn preflop_population_action_totals_sql() -> &'static str {
         r#"SELECT
     h.table_type,
-    pa.preflop_param_index,
+    assumeNotNull(pa.preflop_param_index) AS preflop_param_index,
     multiIf(
         pa.action_type = 0, 'F',
         pa.action_type IN (1, 2), 'C',
@@ -39,7 +39,7 @@ WHERE pa.street = 1
   AND pa.preflop_param_index IS NOT NULL
 GROUP BY
     h.table_type,
-    pa.preflop_param_index,
+    preflop_param_index,
     action_family
 HAVING action_family IN ('F', 'C', 'R')"#
     }
@@ -51,14 +51,14 @@ HAVING action_family IN ('F', 'C', 'R')"#
     pub fn preflop_population_exposed_combo_counts_sql() -> &'static str {
         r#"SELECT
     h.table_type,
-    pa.preflop_param_index,
+    assumeNotNull(pa.preflop_param_index) AS preflop_param_index,
     multiIf(
         pa.action_type = 0, 'F',
         pa.action_type IN (1, 2), 'C',
         pa.action_type IN (3, 4, 5), 'R',
         'X'
     ) AS action_family,
-    phf.holdcard_index,
+    assumeNotNull(phf.holdcard_index) AS holdcard_index,
     count() AS n_exposed
 FROM player_actions pa
 INNER JOIN hands h USING (hand_hash)
@@ -70,12 +70,11 @@ WHERE pa.street = 1
   AND phf.holdcard_index IS NOT NULL
 GROUP BY
     h.table_type,
-    pa.preflop_param_index,
+    preflop_param_index,
     action_family,
-    phf.holdcard_index
+    holdcard_index
 HAVING action_family IN ('F', 'C', 'R')"#
     }
-
 }
 
 #[cfg(test)]
@@ -85,6 +84,7 @@ mod tests {
     #[test]
     fn preflop_population_action_totals_sql_maps_action_family_correctly() {
         let sql = StatisticsQueryService::preflop_population_action_totals_sql();
+        assert!(sql.contains("assumeNotNull(pa.preflop_param_index) AS preflop_param_index"));
         assert!(sql.contains("pa.action_type = 0, 'F'"));
         assert!(sql.contains("pa.action_type IN (1, 2), 'C'"));
         assert!(sql.contains("pa.action_type IN (3, 4, 5), 'R'"));
@@ -94,6 +94,8 @@ mod tests {
     #[test]
     fn preflop_population_exposed_combo_counts_sql_joins_holdcards_correctly() {
         let sql = StatisticsQueryService::preflop_population_exposed_combo_counts_sql();
+        assert!(sql.contains("assumeNotNull(pa.preflop_param_index) AS preflop_param_index"));
+        assert!(sql.contains("assumeNotNull(phf.holdcard_index) AS holdcard_index"));
         assert!(sql.contains("INNER JOIN player_hand_facts phf"));
         assert!(sql.contains("pa.hand_hash = phf.hand_hash"));
         assert!(sql.contains("pa.player_name = phf.player_name"));

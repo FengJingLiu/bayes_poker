@@ -23,44 +23,63 @@ class PreFlopParams:
 
     def to_index(self) -> int:
         if self.table_type == TableType.HEADS_UP:
+            raise_idx = min(self.num_raises, 4)
             if self.position == Position.SMALL_BLIND:
-                return min(self.num_raises, 4)
+                return raise_idx
             elif self.position == Position.BIG_BLIND:
-                return 5 + min(self.num_raises, 4)
+                return 5 + raise_idx
             else:
                 raise ValueError(f"Invalid position for HU: {self.position}")
 
-        # 这里不是真正的之前动作为 FOLD，而是代表该玩家第一次行动（之前没有过动作）。
+        # 这里不是真正的之前动作为 FOLD, 而是代表该玩家第一次行动(之前没有过动作)。
         if self.previous_action == ActionType.FOLD:
+            # 阶段一: 首次行动 (First-in)
             a0 = int(self.position)
-            a1 = -1
             if self.num_raises == 0:
                 a1 = 0 if self.num_callers == 0 else 1
             elif self.num_raises == 1:
                 a1 = 2 if self.num_callers == 0 else 3
-            elif self.num_raises >= 2:
+            else:
                 a1 = 4
-
-            assert a0 != -1 and a1 != -1, f"Invalid params: pos={a0}, callers/raises combo"
             return (5 * a0) + a1
 
-        a0 = -1
+        # 阶段二: 二次行动 (Re-entry)
+
+        # 动态设置 Base Offset
+        if self.table_type == TableType.SIX_MAX:
+            base_offset = 30  # 5 * 6
+        elif self.table_type == TableType.NINE_MAX:
+            base_offset = 45  # 5 * 9
+        else:
+            base_offset = 50
+
         if self.previous_action in (ActionType.CHECK, ActionType.CALL):
-            a0 = 0
-        elif self.previous_action in (ActionType.BET, ActionType.RAISE):
-            a0 = 1
+            a0 = 0  # 被动入池后重入
+        else:
+            a0 = 1  # 主动加注后重入
 
         a1 = 0 if self.in_position_on_flop else 1
-        a2 = 0 if self.num_active_players == 2 else 1
 
-        a3 = -1
-        if self.num_raises == 1:
-            a3 = 0 if self.num_callers == 0 else 1
-        elif self.num_raises >= 2:
-            a3 = 2
+        # 消除幽灵桶, 对极端稀疏场景进行物理折叠
+        if a0 == 0:
+            # 之前是 Call/Limp
+            if self.num_raises == 1:
+                mw = 1 if self.num_active_players > 2 else 0
+                callers = 1 if self.num_callers > 0 else 0
+                a_combined = (mw * 2) + callers  # 分配 0, 1, 2, 3
+            else:
+                a_combined = 4  # 面临 Squeeze 或 3Bet+
+        else:
+            # 之前是 Bet/Raise (此时 num_raises 必然 >= 2)
+            if self.num_raises == 2:
+                mw = 1 if self.num_active_players > 2 else 0
+                callers = 1 if self.num_callers > 0 else 0
+                a_combined = (mw * 2) + callers  # 分配 0, 1, 2, 3
+            else:
+                a_combined = 4  # 面临 4Bet/5Bet+
 
-        assert a0 != -1 and a3 != -1
-        return 30 + (12 * a0) + (6 * a1) + (3 * a2) + a3
+        # 维数: a0(2) * a1(2) * a_combined(5) = 20 个桶
+        return base_offset + (10 * a0) + (5 * a1) + a_combined
 
     @staticmethod
     @lru_cache(maxsize=4)

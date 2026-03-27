@@ -73,7 +73,11 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
 
         if action.player == player_name {
             let num_active = active_players.len() + all_in_players.len();
-            let in_pos = in_position(&active_players, player_name, num_players);
+            let aggressor_pos = preflop_aggressor.as_ref().and_then(|agg| {
+                hand.get_player_index(agg)
+                    .map(|idx| Position::from_index(idx, num_players))
+            });
+            let in_pos = is_in_position_on_flop(position, aggressor_pos, num_players);
 
             let preflop_params = PreFlopParams::new(
                 stats.table_type,
@@ -200,6 +204,32 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
             if action_type.is_raise_action() {
                 num_bets += 1;
             }
+        }
+    }
+}
+
+/// 判断玩家在 flop 后是否相对于最后一个激进玩家(last raiser)处于有利位置(IP)。
+fn is_in_position_on_flop(
+    player_position: Position,
+    aggressor_position: Option<Position>,
+    num_players: usize,
+) -> bool {
+    if let Some(agg_pos) = aggressor_position {
+        if player_position == agg_pos {
+            return false;
+        }
+        if num_players == 2 {
+            // HU: postflop SB(=BTN) 后行动, 处于 IP
+            return player_position == Position::SmallBlind;
+        }
+        // Postflop 行动顺序: SB(0) < BB(1) < UTG(2) < HJ(3) < CO(4) < BTN(5)
+        (player_position as u8) > (agg_pos as u8)
+    } else {
+        // 无激进玩家(limped pot)
+        if num_players == 2 {
+            player_position == Position::SmallBlind
+        } else {
+            player_position == Position::Button
         }
     }
 }

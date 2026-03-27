@@ -71,6 +71,35 @@ def is_in_position(
     return active_players[-1] == player_name
 
 
+def _is_in_position_on_flop(
+    player_position: Position,
+    aggressor_position: Position | None,
+    num_players: int,
+) -> bool:
+    """判断玩家在 flop 后是否相对于最后一个激进玩家(last raiser)处于有利位置(IP)。
+
+    Args:
+        player_position: 当前玩家的位置。
+        aggressor_position: 最后一个 preflop 激进玩家的位置, 无则为 None。
+        num_players: 牌桌总人数。
+
+    Returns:
+        True 表示 in position, False 表示 out of position。
+    """
+    if aggressor_position is not None:
+        if player_position == aggressor_position:
+            return False
+        if num_players == 2:
+            # HU: postflop SB(=BTN) 后行动, 处于 IP
+            return player_position == Position.SMALL_BLIND
+        # Postflop 行动顺序: SB(0) < BB(1) < UTG(2) < HJ(3) < CO(4) < BTN(5)
+        return int(player_position) > int(aggressor_position)
+    # 无激进玩家(limped pot)
+    if num_players == 2:
+        return player_position == Position.SMALL_BLIND
+    return player_position == Position.BUTTON
+
+
 def _get_street_from_board_count(board_card_count: int) -> Street:
     if board_card_count == 0:
         return Street.PREFLOP
@@ -260,8 +289,12 @@ def increment_player_stats(
 
             if action.player_name == player_name:
                 current_num_players = len(active_players) + len(all_in_list)
-                in_pos = is_in_position(
-                    active_players, player_name, current_num_players
+                aggressor_pos: Position | None = None
+                if preflop_aggressor is not None and preflop_aggressor in players:
+                    agg_idx = players.index(preflop_aggressor)
+                    aggressor_pos = get_player_position(agg_idx, num_players)
+                in_pos = _is_in_position_on_flop(
+                    position, aggressor_pos, num_players
                 )
 
                 preflop_params = PreFlopParams(

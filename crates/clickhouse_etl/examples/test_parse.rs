@@ -1,4 +1,4 @@
-use clickhouse_etl::{GgTxtParser, EtlTransformer};
+use clickhouse_etl::{EtlTransformer, GgTxtParser};
 use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
@@ -38,8 +38,10 @@ fn main() -> anyhow::Result<()> {
         println!("  player: {}", fact.player_name);
         println!("  position: {}", fact.position);
         println!("  vpip: {}, pfr: {}", fact.is_vpip, fact.is_pfr);
-        println!("  saw_flop: {}, saw_turn: {}, saw_river: {}",
-            fact.is_saw_flop, fact.is_saw_turn, fact.is_saw_river);
+        println!(
+            "  saw_flop: {}, saw_turn: {}, saw_river: {}",
+            fact.is_saw_flop, fact.is_saw_turn, fact.is_saw_river
+        );
     }
 
     Ok(())

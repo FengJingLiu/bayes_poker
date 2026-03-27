@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use crate::{EtlBatch, HandRow, PlayerActionRow, PlayerHandFactRow};
 use anyhow::Result;
 use clickhouse::{Client, Row};
 use serde::Deserialize;
-use crate::{EtlBatch, HandRow, PlayerActionRow, PlayerHandFactRow};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct ClickHouseConfig {
@@ -13,7 +13,12 @@ pub struct ClickHouseConfig {
 }
 
 impl ClickHouseConfig {
-    pub fn new(url: impl Into<String>, database: impl Into<String>, user: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn new(
+        url: impl Into<String>,
+        database: impl Into<String>,
+        user: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         Self {
             url: url.into(),
             database: database.into(),
@@ -63,36 +68,52 @@ impl ClickHouseLoader {
 
     pub async fn load_batch(&self, batch: &EtlBatch) -> Result<LoadSummary> {
         let input_hands = batch.hands.len();
-        let candidate_hashes: Vec<String> = batch.hands.iter().map(|r| r.hand_hash.clone()).collect();
+        let candidate_hashes: Vec<String> =
+            batch.hands.iter().map(|r| r.hand_hash.clone()).collect();
         let existing = self.fetch_existing_hashes(&candidate_hashes).await?;
 
-        let hands: Vec<HandRow> = batch.hands.iter()
+        let hands: Vec<HandRow> = batch
+            .hands
+            .iter()
             .filter(|r| !existing.contains(&r.hand_hash))
-            .cloned().collect();
+            .cloned()
+            .collect();
         let inserted_hashes: HashSet<String> = hands.iter().map(|r| r.hand_hash.clone()).collect();
 
-        let facts: Vec<PlayerHandFactRow> = batch.player_hand_facts.iter()
+        let facts: Vec<PlayerHandFactRow> = batch
+            .player_hand_facts
+            .iter()
             .filter(|r| inserted_hashes.contains(&r.hand_hash))
-            .cloned().collect();
-        let actions: Vec<PlayerActionRow> = batch.player_actions.iter()
+            .cloned()
+            .collect();
+        let actions: Vec<PlayerActionRow> = batch
+            .player_actions
+            .iter()
             .filter(|r| inserted_hashes.contains(&r.hand_hash))
-            .cloned().collect();
+            .cloned()
+            .collect();
 
         if !hands.is_empty() {
             let mut insert = self.client.insert("hands")?;
-            for row in &hands { insert.write(row).await?; }
+            for row in &hands {
+                insert.write(row).await?;
+            }
             insert.end().await?;
         }
 
         if !facts.is_empty() {
             let mut insert = self.client.insert("player_hand_facts")?;
-            for row in &facts { insert.write(row).await?; }
+            for row in &facts {
+                insert.write(row).await?;
+            }
             insert.end().await?;
         }
 
         if !actions.is_empty() {
             let mut insert = self.client.insert("player_actions")?;
-            for row in &actions { insert.write(row).await?; }
+            for row in &actions {
+                insert.write(row).await?;
+            }
             insert.end().await?;
         }
 
@@ -104,14 +125,20 @@ impl ClickHouseLoader {
     }
 
     async fn fetch_existing_hashes(&self, hashes: &[String]) -> Result<HashSet<String>> {
-        if hashes.is_empty() { return Ok(HashSet::new()); }
+        if hashes.is_empty() {
+            return Ok(HashSet::new());
+        }
 
         let mut existing = HashSet::new();
         for chunk in hashes.chunks(1000) {
-            let quoted: Vec<String> = chunk.iter()
+            let quoted: Vec<String> = chunk
+                .iter()
                 .map(|h| format!("'{}'", h.replace('\'', "''")))
                 .collect();
-            let sql = format!("SELECT hand_hash FROM hands WHERE hand_hash IN ({})", quoted.join(","));
+            let sql = format!(
+                "SELECT hand_hash FROM hands WHERE hand_hash IN ({})",
+                quoted.join(",")
+            );
             let rows = self.client.query(&sql).fetch_all::<HandHashOnly>().await?;
             existing.extend(rows.into_iter().map(|r| r.hand_hash));
         }

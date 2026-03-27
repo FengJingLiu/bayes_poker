@@ -135,9 +135,9 @@ def test_cli_end_to_end_on_tiny_fixture(tmp_path: Path) -> None:
             "n_exposed",
         ],
         [
-            [6, 10, "F", 800, 3],
-            [6, 10, "C", 801, 3],
-            [6, 10, "R", 802, 4],
+            [6, 10, "F", 80, 3],
+            [6, 10, "C", 81, 3],
+            [6, 10, "R", 82, 4],
         ],
     )
     artifact_path = tmp_path / "population_artifact.npz"
