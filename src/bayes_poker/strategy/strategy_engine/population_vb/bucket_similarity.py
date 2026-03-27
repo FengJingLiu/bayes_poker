@@ -89,7 +89,7 @@ class BucketStrategyProfile:
         param_index: preflop 分桶索引。
         probs_fcr: `169 x 3` 的 F/C/R 概率矩阵。
         node_count: 参与聚合的节点数。
-        total_weight: 节点总权重（通常为 combos 加权和）。
+        total_node_weight: 节点总权重（按 `total_combos` 语义聚合）。
         history_actions: 参与聚合的行动线签名集合。
         hits: 当前分桶命中量（来自外部统计）。
     """
@@ -98,9 +98,32 @@ class BucketStrategyProfile:
     param_index: int
     probs_fcr: np.ndarray
     node_count: int
-    total_weight: float
+    total_node_weight: float
     history_actions: tuple[str, ...] = ()
     hits: int = 0
+
+    @property
+    def total_weight(self) -> float:
+        """返回总节点权重的兼容别名。
+
+        Returns:
+            与 `total_node_weight` 等值的权重。
+        """
+
+        return self.total_node_weight
+
+
+@dataclass(frozen=True, slots=True)
+class BucketNodeProfile:
+    """单节点画像及其组合权重输入。
+
+    Attributes:
+        probs_fcr: 单节点 `169 x 3` 画像矩阵。
+        total_combos: 节点组合权重。聚合时按该值加权。
+    """
+
+    probs_fcr: np.ndarray
+    total_combos: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +176,7 @@ def fold_action_families(action_records: Sequence[object]) -> np.ndarray:
 def aggregate_bucket_profile(
     *,
     param_index: int,
-    node_profiles: Sequence[tuple[np.ndarray, float]],
+    node_profiles: Sequence[BucketNodeProfile],
     table_type: int = 6,
     history_actions: Sequence[str] | None = None,
     hits: int = 0,
@@ -162,8 +185,8 @@ def aggregate_bucket_profile(
 
     Args:
         param_index: 目标分桶索引。
-        node_profiles: `(node_profile, node_weight)` 元组序列。
-            `node_profile` 形状必须为 `169 x 3`。
+        node_profiles: 节点画像输入序列。
+            每项都必须显式提供 `total_combos` 语义权重。
         table_type: 桌型编码。默认 `6`。
         history_actions: 可选行动线集合元信息。
         hits: 可选命中量元信息。
@@ -173,20 +196,20 @@ def aggregate_bucket_profile(
     """
 
     merged = np.zeros((169, 3), dtype=np.float64)
-    total_weight = 0.0
+    total_node_weight = 0.0
     node_count = 0
 
-    for node_profile, node_weight in node_profiles:
-        validated = _validate_profile_matrix(node_profile)
-        weight = max(float(node_weight), 0.0)
+    for node_profile in node_profiles:
+        validated = _validate_profile_matrix(node_profile.probs_fcr)
+        weight = max(float(node_profile.total_combos), 0.0)
         if weight <= 0.0:
             continue
         merged += validated * weight
-        total_weight += weight
+        total_node_weight += weight
         node_count += 1
 
-    if total_weight > 0.0:
-        probs_fcr = merged / total_weight
+    if total_node_weight > 0.0:
+        probs_fcr = merged / total_node_weight
     else:
         probs_fcr = merged
 
@@ -195,7 +218,7 @@ def aggregate_bucket_profile(
         param_index=param_index,
         probs_fcr=probs_fcr.astype(np.float32),
         node_count=node_count,
-        total_weight=total_weight,
+        total_node_weight=total_node_weight,
         history_actions=tuple(history_actions or ()),
         hits=max(int(hits), 0),
     )
@@ -651,6 +674,7 @@ def _validate_profile_matrix(profile: np.ndarray) -> np.ndarray:
 
 
 __all__ = [
+    "BucketNodeProfile",
     "BucketStrategyProfile",
     "SolverNodeBucketMapping",
     "ThresholdSweepRow",

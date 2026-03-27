@@ -132,9 +132,18 @@ def test_bucket_profile_weighted_average() -> None:
     ))
     bucket = bucket_similarity.aggregate_bucket_profile(
         param_index=25,
-        node_profiles=((profile_a, 15.0), (profile_b, 5.0)),
+        node_profiles=(
+            bucket_similarity.BucketNodeProfile(
+                probs_fcr=profile_a,
+                total_combos=15.0,
+            ),
+            bucket_similarity.BucketNodeProfile(
+                probs_fcr=profile_b,
+                total_combos=5.0,
+            ),
+        ),
     )
-    assert bucket.total_weight == 20
+    assert bucket.total_node_weight == 20
     assert bucket.probs_fcr[0].tolist() == pytest.approx([0.75, 0.0, 0.25])
 
 
