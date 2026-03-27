@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -12,6 +12,7 @@ from bayes_poker.player_metrics.enums import ActionType as MetricsActionType
 from bayes_poker.player_metrics.enums import Position as MetricsPosition
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.params import PreFlopParams
+from bayes_poker.strategy.range import RANGE_169_ORDER, PreflopRange, combos_per_hand
 from bayes_poker.strategy.preflop_parse import (
     is_in_position,
     normalize_token,
@@ -33,6 +34,17 @@ _DOMAIN_TO_METRICS_POSITION: dict[DomainPosition, MetricsPosition] = {
 _CANONICAL_6MAX_POSITION: dict[DomainPosition, DomainPosition] = {
     DomainPosition.HJ: DomainPosition.MP,
 }
+
+_ACTION_FAMILY_TO_INDEX: dict[str, int] = {
+    "F": 0,
+    "C": 1,
+    "R": 2,
+}
+
+_COMBO_WEIGHTS_169: np.ndarray = np.array(
+    [float(combos_per_hand(hand_key)) for hand_key in RANGE_169_ORDER],
+    dtype=np.float64,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +90,8 @@ class BucketStrategyProfile:
         probs_fcr: `169 x 3` 的 F/C/R 概率矩阵。
         node_count: 参与聚合的节点数。
         total_weight: 节点总权重（通常为 combos 加权和）。
+        history_actions: 参与聚合的行动线签名集合。
+        hits: 当前分桶命中量（来自外部统计）。
     """
 
     table_type: int
@@ -85,6 +99,8 @@ class BucketStrategyProfile:
     probs_fcr: np.ndarray
     node_count: int
     total_weight: float
+    history_actions: tuple[str, ...] = ()
+    hits: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +118,161 @@ class ThresholdSweepRow:
     cluster_count: int
     merged_bucket_count: int
     merged_hit_ratio: float
+
+
+def fold_action_families(action_records: Sequence[object]) -> np.ndarray:
+    """把动作序列折叠为单节点 `169 x 3` 的 F/C/R 画像。
+
+    Args:
+        action_records: 动作记录序列。每条记录需提供:
+            - `action_family` 或 `action_code`
+            - `strategy` 或 `preflop_range`（`PreflopRange`）
+
+    Returns:
+        单节点 `169 x 3` 概率矩阵。每行按 `F/C/R` 归一化, 零行保持零值。
+
+    Raises:
+        ValueError: 当动作族无法识别时抛出。
+        TypeError: 当动作记录缺少可读 `PreflopRange` 时抛出。
+    """
+
+    probs_fcr = np.zeros((169, 3), dtype=np.float64)
+    for action_record in action_records:
+        family_index = _resolve_action_family_index(action_record)
+        if family_index is None:
+            msg = "动作记录缺少可识别的 action_family/action_code。"
+            raise ValueError(msg)
+
+        preflop_range = _extract_preflop_range(action_record)
+        strategy, _ = preflop_range.to_list()
+        probs_fcr[:, family_index] += np.asarray(strategy, dtype=np.float64)
+
+    return _normalize_fcr_rows(probs_fcr)
+
+
+def aggregate_bucket_profile(
+    *,
+    param_index: int,
+    node_profiles: Sequence[tuple[np.ndarray, float]],
+    table_type: int = 6,
+    history_actions: Sequence[str] | None = None,
+    hits: int = 0,
+) -> BucketStrategyProfile:
+    """按节点权重聚合单桶画像。
+
+    Args:
+        param_index: 目标分桶索引。
+        node_profiles: `(node_profile, node_weight)` 元组序列。
+            `node_profile` 形状必须为 `169 x 3`。
+        table_type: 桌型编码。默认 `6`。
+        history_actions: 可选行动线集合元信息。
+        hits: 可选命中量元信息。
+
+    Returns:
+        聚合后的桶画像对象。
+    """
+
+    merged = np.zeros((169, 3), dtype=np.float64)
+    total_weight = 0.0
+    node_count = 0
+
+    for node_profile, node_weight in node_profiles:
+        validated = _validate_profile_matrix(node_profile)
+        weight = max(float(node_weight), 0.0)
+        if weight <= 0.0:
+            continue
+        merged += validated * weight
+        total_weight += weight
+        node_count += 1
+
+    if total_weight > 0.0:
+        probs_fcr = merged / total_weight
+    else:
+        probs_fcr = merged
+
+    return BucketStrategyProfile(
+        table_type=table_type,
+        param_index=param_index,
+        probs_fcr=probs_fcr.astype(np.float32),
+        node_count=node_count,
+        total_weight=total_weight,
+        history_actions=tuple(history_actions or ()),
+        hits=max(int(hits), 0),
+    )
+
+
+def compute_distance(
+    profile_a: np.ndarray,
+    profile_b: np.ndarray,
+    *,
+    weight_mode: str = "combo",
+) -> float:
+    """计算两个桶画像之间的加权距离。
+
+    Args:
+        profile_a: 第一个 `169 x 3` 画像矩阵。
+        profile_b: 第二个 `169 x 3` 画像矩阵。
+        weight_mode: 权重模式。`combo` 使用 `6/4/12`, `uniform` 等权。
+
+    Returns:
+        两个画像的距离值。
+
+    Raises:
+        ValueError: 当 `weight_mode` 非法时抛出。
+    """
+
+    validated_a = _validate_profile_matrix(profile_a)
+    validated_b = _validate_profile_matrix(profile_b)
+    row_total_variation = 0.5 * np.abs(validated_a - validated_b).sum(axis=1)
+
+    if weight_mode == "combo":
+        weights = _COMBO_WEIGHTS_169
+        denominator = float(np.sum(weights))
+    elif weight_mode == "uniform":
+        weights = np.ones(169, dtype=np.float64)
+        denominator = 169.0
+    else:
+        msg = f"未知距离权重模式: {weight_mode}"
+        raise ValueError(msg)
+
+    if denominator <= 0.0:
+        return 0.0
+    return float(
+        np.sqrt(np.sum(weights * np.square(row_total_variation)) / denominator)
+    )
+
+
+def compute_distance_matrix(
+    bucket_profiles: Mapping[int, np.ndarray],
+    *,
+    weight_mode: str = "combo",
+) -> tuple[tuple[int, ...], np.ndarray]:
+    """计算分桶两两距离矩阵。
+
+    Args:
+        bucket_profiles: `param_index -> 169x3` 画像矩阵映射。
+        weight_mode: 距离权重模式。`combo` 或 `uniform`。
+
+    Returns:
+        `(ordered_param_indices, distance_matrix)`。
+        矩阵对称, 对角线为 `0.0`。
+    """
+
+    ordered_indices = tuple(sorted(int(index) for index in bucket_profiles))
+    matrix_size = len(ordered_indices)
+    distance_matrix = np.zeros((matrix_size, matrix_size), dtype=np.float64)
+    for left in range(matrix_size):
+        profile_left = bucket_profiles[ordered_indices[left]]
+        for right in range(left + 1, matrix_size):
+            profile_right = bucket_profiles[ordered_indices[right]]
+            distance = compute_distance(
+                profile_left,
+                profile_right,
+                weight_mode=weight_mode,
+            )
+            distance_matrix[left, right] = distance
+            distance_matrix[right, left] = distance
+    return ordered_indices, distance_matrix
 
 
 def build_solver_node_bucket_mapping(
@@ -373,10 +544,122 @@ def _canonical_position(position: DomainPosition | None) -> DomainPosition | Non
     return _CANONICAL_6MAX_POSITION.get(position, position)
 
 
+def _extract_preflop_range(action_record: object) -> PreflopRange:
+    """从动作记录提取 `PreflopRange`。
+
+    Args:
+        action_record: 动作记录对象。
+
+    Returns:
+        动作对应的 `PreflopRange`。
+
+    Raises:
+        TypeError: 当记录不包含有效 `PreflopRange` 时抛出。
+    """
+
+    range_value = getattr(action_record, "preflop_range", None)
+    if isinstance(range_value, PreflopRange):
+        return range_value
+
+    strategy_value = getattr(action_record, "strategy", None)
+    if isinstance(strategy_value, PreflopRange):
+        return strategy_value
+
+    msg = "动作记录未包含可用的 PreflopRange(strategy/preflop_range)。"
+    raise TypeError(msg)
+
+
+def _resolve_action_family_index(action_record: object) -> int | None:
+    """把动作记录解析为 `F/C/R` 列索引。
+
+    Args:
+        action_record: 动作记录对象。
+
+    Returns:
+        `F/C/R` 列索引。无法解析时返回 `None`。
+    """
+
+    family = _normalize_action_family(getattr(action_record, "action_family", None))
+    if family is None:
+        family = _normalize_action_family(getattr(action_record, "action_code", None))
+    if family is None:
+        return None
+    return _ACTION_FAMILY_TO_INDEX[family]
+
+
+def _normalize_action_family(value: object) -> str | None:
+    """把动作描述归一化为 `F/C/R`。
+
+    Args:
+        value: 原始动作描述。
+
+    Returns:
+        归一化动作族。无法识别时返回 `None`。
+    """
+
+    if value is None:
+        return None
+    raw = str(value).strip().upper()
+    if not raw:
+        return None
+
+    if raw in {"F", "FOLD"}:
+        return "F"
+    if raw in {"C", "CALL", "CHECK", "LIMP", "OVERLIMP"}:
+        return "C"
+    if raw in {"R", "BET", "RAISE", "ALLIN", "ALL_IN"}:
+        return "R"
+    normalized = normalize_token(raw).upper()
+    if normalized in _ACTION_FAMILY_TO_INDEX:
+        return normalized
+    return None
+
+
+def _normalize_fcr_rows(probs_fcr: np.ndarray) -> np.ndarray:
+    """按行归一化 `F/C/R` 矩阵。
+
+    Args:
+        probs_fcr: 待归一化矩阵, 形状 `169 x 3`。
+
+    Returns:
+        行归一化后的矩阵。零行保持零值。
+    """
+
+    normalized = _validate_profile_matrix(probs_fcr)
+    row_sum = np.sum(normalized, axis=1, keepdims=True)
+    non_zero_rows = row_sum[:, 0] > 0.0
+    normalized[non_zero_rows] = normalized[non_zero_rows] / row_sum[non_zero_rows]
+    return normalized
+
+
+def _validate_profile_matrix(profile: np.ndarray) -> np.ndarray:
+    """校验并转换画像矩阵形状。
+
+    Args:
+        profile: 任意数组输入。
+
+    Returns:
+        `float64` 的 `169 x 3` 矩阵副本。
+
+    Raises:
+        ValueError: 当矩阵形状非法时抛出。
+    """
+
+    array = np.asarray(profile, dtype=np.float64)
+    if array.shape != (169, 3):
+        msg = f"画像矩阵形状必须为 (169, 3)，实际为 {array.shape}。"
+        raise ValueError(msg)
+    return np.array(array, copy=True)
+
+
 __all__ = [
     "BucketStrategyProfile",
     "SolverNodeBucketMapping",
     "ThresholdSweepRow",
+    "aggregate_bucket_profile",
     "build_solver_node_bucket_mapping",
+    "compute_distance",
+    "compute_distance_matrix",
+    "fold_action_families",
     "map_solver_node_to_preflop_param_index",
 ]
