@@ -215,6 +215,19 @@ def _resolve_position(position_name: str) -> Position | None:
     return None
 
 
+def resolve_position(position_name: str) -> Position | None:
+    """将位置字符串解析为业务位置枚举。
+
+    Args:
+        position_name: 待解析的位置字符串。
+
+    Returns:
+        对应的业务位置；无法识别时返回 `None`。
+    """
+
+    return _resolve_position(position_name)
+
+
 def _resolve_action_positions(
     *,
     actor_position: Position,
@@ -245,6 +258,27 @@ def _resolve_action_positions(
         if next_actor_position == effective:
             return action_positions
     return None
+
+
+def resolve_action_positions(
+    *,
+    actor_position: Position,
+    tokens: tuple[str, ...],
+) -> tuple[Position, ...] | None:
+    """解析历史 token 对应的行动位置序列。
+
+    Args:
+        actor_position: 当前待行动位置。
+        tokens: 历史 token 序列。
+
+    Returns:
+        与历史 token 一一对应的位置序列；无法确定时返回 `None`。
+    """
+
+    return _resolve_action_positions(
+        actor_position=actor_position,
+        tokens=tokens,
+    )
 
 
 def _is_aggressive_token(token: str) -> bool:
@@ -302,6 +336,27 @@ def _is_in_position(
     actor_index = _POSTFLOP_POSITION_ORDER.index(actor_position)
     aggressor_index = _POSTFLOP_POSITION_ORDER.index(aggressor_position)
     return actor_index > aggressor_index
+
+
+def is_in_position(
+    *,
+    actor_position: Position,
+    aggressor_position: Position,
+) -> bool:
+    """判断行动方相对 aggressor 是否有翻后位置优势。
+
+    Args:
+        actor_position: 当前待行动位置。
+        aggressor_position: 最后一次激进行动位置。
+
+    Returns:
+        当前行动方在翻后更靠后行动时返回 `True`。
+    """
+
+    return _is_in_position(
+        actor_position=actor_position,
+        aggressor_position=aggressor_position,
+    )
 
 
 def _simulate_action_positions(

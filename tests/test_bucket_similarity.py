@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from bayes_poker.strategy.preflop_parse import normalize_history
 
 from bayes_poker.strategy.strategy_engine.population_vb.bucket_similarity import (
@@ -11,8 +9,16 @@ from bayes_poker.strategy.strategy_engine.population_vb.bucket_similarity import
 )
 
 
-def _make_solver_node(*, history_full: str, acting_position: str) -> dict[str, Any]:
-    """构造只带历史与位置的 solver_node 记录。"""
+def _make_solver_node(*, history_full: str, acting_position: str) -> dict[str, str]:
+    """构造只带历史与位置的 solver_node 记录。
+
+    Args:
+        history_full: 完整历史字符串。
+        acting_position: 当前待行动位置。
+
+    Returns:
+        仅包含历史与位置的节点字典。
+    """
 
     return {
         "history_full": history_full,
@@ -71,3 +77,13 @@ def test_map_param_index_aggressor_first_in_flag() -> None:
     result_false = map_solver_node_to_preflop_param_index(false_aggressor)
     assert result_true == 45
     assert result_false == 47
+
+
+def test_map_param_index_returns_none_for_unknown_token() -> None:
+    """历史包含未知 token 时应返回 None。"""
+
+    node = _make_solver_node(
+        history_full="F-F-R3-X-R8-F",
+        acting_position="CO",
+    )
+    assert map_solver_node_to_preflop_param_index(node) is None

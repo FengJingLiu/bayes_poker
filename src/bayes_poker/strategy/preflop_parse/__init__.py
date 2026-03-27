@@ -15,6 +15,7 @@ from bayes_poker.strategy.preflop_parse.models import (
     StrategyNode,
 )
 from bayes_poker.strategy.preflop_parse.parser import (
+    is_in_position,
     normalize_token,
     parse_all_strategies,
     parse_bet_size_from_code,
@@ -22,6 +23,8 @@ from bayes_poker.strategy.preflop_parse.parser import (
     parse_strategy_directory,
     parse_strategy_file,
     parse_strategy_node,
+    resolve_action_positions,
+    resolve_position,
     split_history_tokens,
 )
 from bayes_poker.strategy.preflop_parse.query import (
@@ -115,6 +118,9 @@ __all__ = [
     "parse_strategy_directory",
     "parse_strategy_file",
     "parse_strategy_node",
+    "resolve_action_positions",
+    "resolve_position",
+    "is_in_position",
     "split_history_tokens",
     # Query
     "QueryResult",

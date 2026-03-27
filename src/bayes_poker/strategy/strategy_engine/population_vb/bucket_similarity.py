@@ -12,7 +12,13 @@ from bayes_poker.player_metrics.enums import ActionType as MetricsActionType
 from bayes_poker.player_metrics.enums import Position as MetricsPosition
 from bayes_poker.player_metrics.enums import TableType
 from bayes_poker.player_metrics.params import PreFlopParams
-from bayes_poker.strategy.preflop_parse import parser as preflop_parser
+from bayes_poker.strategy.preflop_parse import (
+    is_in_position,
+    normalize_token,
+    resolve_action_positions,
+    resolve_position,
+    split_history_tokens,
+)
 
 _DOMAIN_TO_METRICS_POSITION: dict[DomainPosition, MetricsPosition] = {
     DomainPosition.SB: MetricsPosition.SMALL_BLIND,
@@ -118,14 +124,14 @@ def build_solver_node_bucket_mapping(
     acting_position = _as_text(node.get("acting_position"))
 
     previous_action = MetricsActionType.FOLD
-    actor_position = preflop_parser._resolve_position(acting_position)
+    actor_position = resolve_position(acting_position)
     canonical_actor_position = _canonical_position(actor_position)
     metrics_position = (
         _DOMAIN_TO_METRICS_POSITION.get(actor_position)
         if actor_position is not None
         else None
     )
-    tokens = tuple(preflop_parser.split_history_tokens(history_full))
+    tokens = tuple(split_history_tokens(history_full))
 
     if actor_position is None or canonical_actor_position is None or metrics_position is None:
         return SolverNodeBucketMapping(
@@ -143,7 +149,7 @@ def build_solver_node_bucket_mapping(
             param_index=None,
         )
 
-    action_positions = preflop_parser._resolve_action_positions(
+    action_positions = resolve_action_positions(
         actor_position=actor_position,
         tokens=tokens,
     )
@@ -163,7 +169,22 @@ def build_solver_node_bucket_mapping(
             param_index=None,
         )
 
-    normalized_tokens = tuple(preflop_parser.normalize_token(token).upper() for token in tokens)
+    normalized_tokens = _normalize_history_tokens(tokens)
+    if normalized_tokens is None:
+        return SolverNodeBucketMapping(
+            history_full=history_full,
+            history_actions=history_actions,
+            acting_position=acting_position,
+            actor_position=actor_position,
+            metrics_position=metrics_position,
+            previous_action=previous_action,
+            num_callers=0,
+            num_raises=0,
+            in_position_on_flop=False,
+            aggressor_first_in=True,
+            hero_invest_raises=0,
+            param_index=None,
+        )
     raise_indices = [index for index, token in enumerate(normalized_tokens) if token == "R"]
     num_raises = len(raise_indices)
     last_raise_index = raise_indices[-1] if raise_indices else None
@@ -189,9 +210,25 @@ def build_solver_node_bucket_mapping(
             hero_invest_raises += 1
 
     if actor_action_indexes:
-        previous_action = _map_token_to_metrics_action(
-            normalized_tokens[actor_action_indexes[-1]]
-        )
+        try:
+            previous_action = _map_token_to_metrics_action(
+                normalized_tokens[actor_action_indexes[-1]]
+            )
+        except ValueError:
+            return SolverNodeBucketMapping(
+                history_full=history_full,
+                history_actions=history_actions,
+                acting_position=acting_position,
+                actor_position=actor_position,
+                metrics_position=metrics_position,
+                previous_action=MetricsActionType.FOLD,
+                num_callers=0,
+                num_raises=0,
+                in_position_on_flop=False,
+                aggressor_first_in=True,
+                hero_invest_raises=0,
+                param_index=None,
+            )
 
     aggressor_first_in = True
     if aggressor_position is not None and last_raise_index is not None:
@@ -202,7 +239,7 @@ def build_solver_node_bucket_mapping(
             break
 
     in_position_on_flop = (
-        preflop_parser._is_in_position(
+        is_in_position(
             actor_position=actor_position,
             aggressor_position=aggressor_position,
         )
@@ -296,7 +333,29 @@ def _map_token_to_metrics_action(token: str) -> MetricsActionType:
         return MetricsActionType.RAISE
     if token == "C":
         return MetricsActionType.CALL
-    return MetricsActionType.FOLD
+    if token == "F":
+        return MetricsActionType.FOLD
+    msg = f"未知历史 token: {token}"
+    raise ValueError(msg)
+
+
+def _normalize_history_tokens(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
+    """把历史 token 归一化为 `F/C/R` 并校验合法性。
+
+    Args:
+        tokens: 原始历史 token 序列。
+
+    Returns:
+        归一化后的 `F/C/R` token 序列；存在未知 token 时返回 `None`。
+    """
+
+    normalized_tokens: list[str] = []
+    for token in tokens:
+        normalized_token = normalize_token(token).upper()
+        if normalized_token not in {"F", "C", "R"}:
+            return None
+        normalized_tokens.append(normalized_token)
+    return tuple(normalized_tokens)
 
 
 def _canonical_position(position: DomainPosition | None) -> DomainPosition | None:
