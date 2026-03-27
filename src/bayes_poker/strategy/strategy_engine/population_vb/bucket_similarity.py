@@ -135,12 +135,14 @@ class ThresholdSweepRow:
         cluster_count: 在该阈值下的簇数量。
         merged_bucket_count: 被合并覆盖的桶数量。
         merged_hit_ratio: 被合并覆盖的 hits 占比。
+        recommended: 是否为推荐阈值行。
     """
 
     threshold: float
     cluster_count: int
     merged_bucket_count: int
     merged_hit_ratio: float
+    recommended: bool = False
 
 
 def fold_action_families(action_records: Sequence[object]) -> np.ndarray:
@@ -299,6 +301,178 @@ def compute_distance_matrix(
             distance_matrix[left, right] = distance
             distance_matrix[right, left] = distance
     return ordered_indices, distance_matrix
+
+
+def cluster_buckets(
+    distance_matrix: np.ndarray,
+    *,
+    threshold: float,
+) -> tuple[tuple[int, ...], ...]:
+    """基于 complete-link 规则执行阈值聚类。
+
+    Args:
+        distance_matrix: 桶两两距离矩阵，要求为 `N x N`。
+        threshold: 聚类距离阈值。仅当两簇最大两两距离不超过该值时允许合并。
+
+    Returns:
+        稳定排序后的簇元组。每个簇成员升序，簇按首元素升序。
+    """
+
+    matrix = np.asarray(distance_matrix, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        msg = f"距离矩阵必须为方阵，实际形状为 {matrix.shape}。"
+        raise ValueError(msg)
+
+    cluster_sets: list[set[int]] = [{index} for index in range(matrix.shape[0])]
+    while True:
+        best_pair: tuple[int, int] | None = None
+        best_score: tuple[float, int, int] | None = None
+        for left_index in range(len(cluster_sets)):
+            left_cluster = cluster_sets[left_index]
+            for right_index in range(left_index + 1, len(cluster_sets)):
+                right_cluster = cluster_sets[right_index]
+                pair_distance = _compute_complete_link_distance(
+                    left_cluster=left_cluster,
+                    right_cluster=right_cluster,
+                    distance_matrix=matrix,
+                )
+                if pair_distance > threshold:
+                    continue
+                pair_key = (
+                    min(left_cluster),
+                    min(right_cluster),
+                )
+                # complete-link 距离优先；并列时优先后序分桶，避免链式场景总是吞并前序桶。
+                score = (
+                    pair_distance,
+                    -pair_key[0],
+                    -pair_key[1],
+                )
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_pair = (left_index, right_index)
+        if best_pair is None:
+            break
+        left_index, right_index = best_pair
+        merged_cluster = cluster_sets[left_index] | cluster_sets[right_index]
+        cluster_sets[left_index] = merged_cluster
+        cluster_sets.pop(right_index)
+
+    ordered_clusters = [tuple(sorted(cluster)) for cluster in cluster_sets]
+    ordered_clusters.sort(key=lambda cluster: cluster[0] if cluster else -1)
+    return tuple(ordered_clusters)
+
+
+def select_representative_bucket(
+    cluster: Sequence[int],
+    hits_by_bucket: Mapping[int, int],
+) -> int:
+    """为簇选择代表桶。
+
+    Args:
+        cluster: 簇内分桶序列。
+        hits_by_bucket: `param_index -> hits` 映射。
+
+    Returns:
+        代表桶索引。优先 `hits` 最大，`hits` 并列时选 `param_index` 最小。
+
+    Raises:
+        ValueError: 当簇为空时抛出。
+    """
+
+    members = [int(member) for member in cluster]
+    if not members:
+        raise ValueError("cluster 不能为空。")
+    return min(
+        members,
+        key=lambda member: (-max(int(hits_by_bucket.get(member, 0)), 0), member),
+    )
+
+
+def compute_threshold_sweep(
+    distance_matrix: np.ndarray,
+    hits_by_bucket: Mapping[int, int],
+    thresholds: Sequence[float] | None = None,
+    *,
+    max_cluster_size: int = 8,
+    max_cluster_hit_ratio: float = 0.35,
+) -> tuple[ThresholdSweepRow, ...]:
+    """计算阈值扫描统计并给出推荐阈值。
+
+    Args:
+        distance_matrix: 桶两两距离矩阵，要求为 `N x N`。
+        hits_by_bucket: `param_index -> hits` 映射。
+        thresholds: 待扫描阈值序列。为空时使用默认分位点网格。
+        max_cluster_size: 推荐阈值护栏，最大簇大小上限。
+        max_cluster_hit_ratio: 推荐阈值护栏，最大簇 hits 占比上限。
+
+    Returns:
+        阈值扫描结果元组。恰有一行 `recommended=True`。
+    """
+
+    matrix = np.asarray(distance_matrix, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        msg = f"距离矩阵必须为方阵，实际形状为 {matrix.shape}。"
+        raise ValueError(msg)
+    matrix_size = matrix.shape[0]
+    normalized_hits = {
+        int(index): max(int(hits_by_bucket.get(index, 0)), 0)
+        for index in range(matrix_size)
+    }
+    total_hits = sum(normalized_hits.values())
+
+    threshold_values = _resolve_threshold_grid(matrix=matrix, thresholds=thresholds)
+    rows_with_guardrail: list[tuple[ThresholdSweepRow, bool]] = []
+    for threshold in threshold_values:
+        clusters = cluster_buckets(matrix, threshold=threshold)
+        merged_clusters = [cluster for cluster in clusters if len(cluster) > 1]
+        merged_bucket_count = sum(len(cluster) for cluster in merged_clusters)
+        merged_hits = sum(
+            sum(normalized_hits.get(member, 0) for member in cluster)
+            for cluster in merged_clusters
+        )
+        merged_hit_ratio = (
+            float(merged_hits / total_hits) if total_hits > 0 else 0.0
+        )
+        max_seen_cluster_size = max((len(cluster) for cluster in clusters), default=0)
+        max_seen_cluster_hits = max(
+            (sum(normalized_hits.get(member, 0) for member in cluster) for cluster in clusters),
+            default=0,
+        )
+        max_seen_cluster_hit_ratio = (
+            float(max_seen_cluster_hits / total_hits) if total_hits > 0 else 0.0
+        )
+        row = ThresholdSweepRow(
+            threshold=float(threshold),
+            cluster_count=len(clusters),
+            merged_bucket_count=merged_bucket_count,
+            merged_hit_ratio=merged_hit_ratio,
+            recommended=False,
+        )
+        guardrail_ok = (
+            max_seen_cluster_size <= max_cluster_size
+            and max_seen_cluster_hit_ratio <= max_cluster_hit_ratio
+        )
+        rows_with_guardrail.append((row, guardrail_ok))
+
+    recommended_index = 0
+    for index, (_, guardrail_ok) in enumerate(rows_with_guardrail):
+        if guardrail_ok:
+            recommended_index = index
+            break
+
+    result: list[ThresholdSweepRow] = []
+    for index, (row, _) in enumerate(rows_with_guardrail):
+        result.append(
+            ThresholdSweepRow(
+                threshold=row.threshold,
+                cluster_count=row.cluster_count,
+                merged_bucket_count=row.merged_bucket_count,
+                merged_hit_ratio=row.merged_hit_ratio,
+                recommended=index == recommended_index,
+            )
+        )
+    return tuple(result)
 
 
 def build_solver_node_bucket_mapping(
@@ -695,6 +869,88 @@ def _extract_bucket_profile_matrix(
     return _validate_profile_matrix(bucket_profile)
 
 
+def _can_merge_complete_link(
+    *,
+    left_cluster: set[int],
+    right_cluster: set[int],
+    distance_matrix: np.ndarray,
+    threshold: float,
+) -> bool:
+    """判断两簇在 complete-link 规则下是否可合并。
+
+    Args:
+        left_cluster: 左簇成员集合。
+        right_cluster: 右簇成员集合。
+        distance_matrix: 两两距离矩阵。
+        threshold: 阈值上限。
+
+    Returns:
+        当两簇任意跨簇样本距离均不超过阈值时返回 `True`。
+    """
+
+    return (
+        _compute_complete_link_distance(
+            left_cluster=left_cluster,
+            right_cluster=right_cluster,
+            distance_matrix=distance_matrix,
+        )
+        <= threshold
+    )
+
+
+def _compute_complete_link_distance(
+    *,
+    left_cluster: set[int],
+    right_cluster: set[int],
+    distance_matrix: np.ndarray,
+) -> float:
+    """计算两簇的 complete-link 距离。
+
+    Args:
+        left_cluster: 左簇成员集合。
+        right_cluster: 右簇成员集合。
+        distance_matrix: 两两距离矩阵。
+
+    Returns:
+        两簇跨簇样本距离中的最大值。
+    """
+
+    max_distance = 0.0
+    for left_member in left_cluster:
+        for right_member in right_cluster:
+            current_distance = float(distance_matrix[left_member, right_member])
+            if current_distance > max_distance:
+                max_distance = current_distance
+    return max_distance
+
+
+def _resolve_threshold_grid(
+    *,
+    matrix: np.ndarray,
+    thresholds: Sequence[float] | None,
+) -> tuple[float, ...]:
+    """解析阈值网格。
+
+    Args:
+        matrix: 两两距离矩阵。
+        thresholds: 外部传入阈值序列。
+
+    Returns:
+        归一化阈值元组（升序、去重、非负）。
+    """
+
+    if thresholds is not None:
+        normalized = sorted({max(float(value), 0.0) for value in thresholds})
+        if normalized:
+            return tuple(normalized)
+    upper_triangle = matrix[np.triu_indices(matrix.shape[0], k=1)]
+    positive_values = upper_triangle[upper_triangle > 0.0]
+    if positive_values.size == 0:
+        return (0.0,)
+    quantiles = np.quantile(positive_values, np.linspace(0.05, 0.50, 10))
+    return tuple(sorted({float(max(value, 0.0)) for value in quantiles}))
+
+
 __all__ = [
     "BucketNodeProfile",
     "BucketStrategyProfile",
@@ -704,6 +960,9 @@ __all__ = [
     "build_solver_node_bucket_mapping",
     "compute_distance",
     "compute_distance_matrix",
+    "compute_threshold_sweep",
     "fold_action_families",
+    "cluster_buckets",
     "map_solver_node_to_preflop_param_index",
+    "select_representative_bucket",
 ]
