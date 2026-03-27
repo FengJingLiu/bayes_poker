@@ -223,7 +223,7 @@ def compute_distance(
 
     validated_a = _validate_profile_matrix(profile_a)
     validated_b = _validate_profile_matrix(profile_b)
-    row_total_variation = 0.5 * np.abs(validated_a - validated_b).sum(axis=1)
+    row_squared_l2 = np.sum(np.square(validated_a - validated_b), axis=1)
 
     if weight_mode == "combo":
         weights = _COMBO_WEIGHTS_169
@@ -237,9 +237,7 @@ def compute_distance(
 
     if denominator <= 0.0:
         return 0.0
-    return float(
-        np.sqrt(np.sum(weights * np.square(row_total_variation)) / denominator)
-    )
+    return float(np.sqrt(np.sum(weights * row_squared_l2) / denominator))
 
 
 def compute_distance_matrix(
