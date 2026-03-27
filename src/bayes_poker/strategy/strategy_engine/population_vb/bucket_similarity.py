@@ -264,14 +264,15 @@ def compute_distance(
 
 
 def compute_distance_matrix(
-    bucket_profiles: Mapping[int, np.ndarray],
+    bucket_profiles: Mapping[int, BucketStrategyProfile | np.ndarray],
     *,
     weight_mode: str = "combo",
 ) -> tuple[tuple[int, ...], np.ndarray]:
     """计算分桶两两距离矩阵。
 
     Args:
-        bucket_profiles: `param_index -> 169x3` 画像矩阵映射。
+        bucket_profiles: `param_index -> BucketStrategyProfile` 映射。
+            为兼容场景也支持直接传 `169x3` 画像矩阵。
         weight_mode: 距离权重模式。`combo` 或 `uniform`。
 
     Returns:
@@ -283,9 +284,13 @@ def compute_distance_matrix(
     matrix_size = len(ordered_indices)
     distance_matrix = np.zeros((matrix_size, matrix_size), dtype=np.float64)
     for left in range(matrix_size):
-        profile_left = bucket_profiles[ordered_indices[left]]
+        profile_left = _extract_bucket_profile_matrix(
+            bucket_profiles[ordered_indices[left]]
+        )
         for right in range(left + 1, matrix_size):
-            profile_right = bucket_profiles[ordered_indices[right]]
+            profile_right = _extract_bucket_profile_matrix(
+                bucket_profiles[ordered_indices[right]]
+            )
             distance = compute_distance(
                 profile_left,
                 profile_right,
@@ -671,6 +676,23 @@ def _validate_profile_matrix(profile: np.ndarray) -> np.ndarray:
         msg = f"画像矩阵形状必须为 (169, 3)，实际为 {array.shape}。"
         raise ValueError(msg)
     return np.array(array, copy=True)
+
+
+def _extract_bucket_profile_matrix(
+    bucket_profile: BucketStrategyProfile | np.ndarray,
+) -> np.ndarray:
+    """从分桶对象或原始矩阵提取 `169 x 3` 画像矩阵。
+
+    Args:
+        bucket_profile: 分桶画像对象或原始矩阵。
+
+    Returns:
+        `169 x 3` 画像矩阵副本。
+    """
+
+    if isinstance(bucket_profile, BucketStrategyProfile):
+        return _validate_profile_matrix(bucket_profile.probs_fcr)
+    return _validate_profile_matrix(bucket_profile)
 
 
 __all__ = [

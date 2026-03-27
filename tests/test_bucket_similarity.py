@@ -112,6 +112,12 @@ def _constant_range(value: float) -> PreflopRange:
 
 
 def test_profile_fold_accumulates_raises() -> None:
+    """验证动作族折叠会把多个 raise 尺度累加到 `R` 列。
+
+    Returns:
+        `None`。
+    """
+
     records = (
         _FakeActionRecord(action_family="F", action_code="F", strategy=_constant_range(0.1), total_combos=10),
         _FakeActionRecord(action_family="C", action_code="C", strategy=_constant_range(0.2), total_combos=10),
@@ -124,6 +130,12 @@ def test_profile_fold_accumulates_raises() -> None:
 
 
 def test_bucket_profile_weighted_average() -> None:
+    """验证分桶画像按节点 `total_combos` 做加权平均。
+
+    Returns:
+        `None`。
+    """
+
     profile_a = bucket_similarity.fold_action_families((
         _FakeActionRecord(action_family="F", action_code="F", strategy=_constant_range(1.0), total_combos=1),
     ))
@@ -148,6 +160,12 @@ def test_bucket_profile_weighted_average() -> None:
 
 
 def test_distance_combo_vs_uniform() -> None:
+    """验证 `combo` 与 `uniform` 两种距离模式的数值。
+
+    Returns:
+        `None`。
+    """
+
     base = np.zeros((169, 3), dtype=float)
     base[0, 0] = 1.0
     variant = np.zeros_like(base)
@@ -157,3 +175,41 @@ def test_distance_combo_vs_uniform() -> None:
     assert combo_distance == pytest.approx((12 / 1326) ** 0.5)
     assert uniform_distance == pytest.approx((2 / 169) ** 0.5)
     assert combo_distance != uniform_distance
+
+
+def test_distance_matrix_accepts_bucket_profiles() -> None:
+    """验证距离矩阵接口可直接接收 `BucketStrategyProfile` 映射。
+
+    Returns:
+        `None`。
+    """
+
+    profile_a = np.zeros((169, 3), dtype=float)
+    profile_a[0, 0] = 1.0
+    profile_b = np.zeros((169, 3), dtype=float)
+    profile_b[0, 1] = 1.0
+    buckets = {
+        25: bucket_similarity.BucketStrategyProfile(
+            table_type=6,
+            param_index=25,
+            probs_fcr=profile_a.astype(np.float32),
+            node_count=1,
+            total_node_weight=10.0,
+        ),
+        4: bucket_similarity.BucketStrategyProfile(
+            table_type=6,
+            param_index=4,
+            probs_fcr=profile_b.astype(np.float32),
+            node_count=1,
+            total_node_weight=10.0,
+        ),
+    }
+
+    ordered_indices, distance_matrix = bucket_similarity.compute_distance_matrix(
+        buckets,
+        weight_mode="combo",
+    )
+
+    assert ordered_indices == (4, 25)
+    assert np.allclose(distance_matrix, distance_matrix.T)
+    assert np.allclose(np.diag(distance_matrix), 0.0)
