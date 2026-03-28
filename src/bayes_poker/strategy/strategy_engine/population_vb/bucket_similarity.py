@@ -152,7 +152,7 @@ def fold_action_families(action_records: Sequence[object]) -> np.ndarray:
 
     Args:
         action_records: 动作记录序列。每条记录需提供:
-            - `action_family` 或 `action_code`
+            - `action_family`、`action_code` 或 `action_type`
             - `strategy` 或 `preflop_range`（`PreflopRange`）
 
     Returns:
@@ -167,7 +167,7 @@ def fold_action_families(action_records: Sequence[object]) -> np.ndarray:
     for action_record in action_records:
         family_index = _resolve_action_family_index(action_record)
         if family_index is None:
-            msg = "动作记录缺少可识别的 action_family/action_code。"
+            msg = "动作记录缺少可识别的 action_family/action_code/action_type。"
             raise ValueError(msg)
 
         preflop_range = _extract_preflop_range(action_record)
@@ -802,6 +802,8 @@ def _resolve_action_family_index(action_record: object) -> int | None:
     family = _normalize_action_family(getattr(action_record, "action_family", None))
     if family is None:
         family = _normalize_action_family(getattr(action_record, "action_code", None))
+    if family is None:
+        family = _normalize_action_family(getattr(action_record, "action_type", None))
     if family is None:
         return None
     return _ACTION_FAMILY_TO_INDEX[family]

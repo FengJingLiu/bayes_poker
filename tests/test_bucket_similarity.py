@@ -103,6 +103,7 @@ class _FakeActionRecord:
     action_code: str
     strategy: PreflopRange
     total_combos: int
+    action_type: str = ""
 
 
 def _constant_range(value: float) -> PreflopRange:
@@ -127,6 +128,27 @@ def test_profile_fold_accumulates_raises() -> None:
     profile = bucket_similarity.fold_action_families(records)
     assert profile.shape == (169, 3)
     assert profile[0].tolist() == pytest.approx([0.1, 0.2, 0.7])
+
+
+def test_profile_fold_falls_back_to_action_type() -> None:
+    """验证动作码未知时会回退到 `action_type` 识别动作族。
+
+    Returns:
+        `None`。
+    """
+
+    records = (
+        _FakeActionRecord(
+            action_family="",
+            action_code="X",
+            action_type="CHECK",
+            strategy=_constant_range(1.0),
+            total_combos=10,
+        ),
+    )
+    profile = bucket_similarity.fold_action_families(records)
+    assert profile.shape == (169, 3)
+    assert profile[0].tolist() == pytest.approx([0.0, 1.0, 0.0])
 
 
 def test_bucket_profile_weighted_average() -> None:
