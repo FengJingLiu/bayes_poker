@@ -60,6 +60,13 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
 
     let mut preflop_raise_count = 0i32;
     let mut preflop_aggressor: Option<String> = None;
+    let mut last_aggressor_first_in = true;
+    let mut hero_invest_raises = 0i32;
+    let mut player_has_non_fold_action: HashMap<String, bool> = hand
+        .players
+        .iter()
+        .map(|name| (name.clone(), false))
+        .collect();
 
     for action in &hand.actions {
         if action.get_street() != Street::PreFlop {
@@ -83,10 +90,16 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
                 stats.table_type,
                 position,
                 num_callers.min(1),
-                num_raises.min(2),
+                num_raises,
                 num_active as i32,
                 last_player_action,
                 in_pos,
+                if num_raises > 0 {
+                    last_aggressor_first_in
+                } else {
+                    true
+                },
+                hero_invest_raises,
             );
 
             let idx = preflop_params.to_index();
@@ -117,12 +130,32 @@ fn process_hand_for_player(stats: &mut PlayerStats, hand: &Hand, player_name: &s
         }
 
         if action_type.is_raise_action() {
+            let aggressor_had_non_fold = *player_has_non_fold_action
+                .get(&action.player)
+                .unwrap_or(&false);
+            last_aggressor_first_in = !aggressor_had_non_fold;
             num_raises += 1;
             num_callers = 0;
             preflop_raise_count += 1;
             preflop_aggressor = Some(action.player.clone());
         } else if action_type == ActionType::Call {
             num_callers += 1;
+        }
+
+        if action.player == player_name
+            && matches!(
+                action_type,
+                ActionType::Call
+                    | ActionType::Check
+                    | ActionType::Bet
+                    | ActionType::Raise
+                    | ActionType::AllIn
+            )
+        {
+            hero_invest_raises = num_raises;
+        }
+        if action_type != ActionType::Fold {
+            player_has_non_fold_action.insert(action.player.clone(), true);
         }
     }
 

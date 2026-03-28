@@ -94,7 +94,10 @@ def load_population_dataset(
     bucket_keys: set[tuple[int, int]] = set()
     bucket_keys.update(_parse_bucket_key(row) for row in action_rows)
     bucket_keys.update(_parse_bucket_key(row) for row in exposed_rows)
-
+    
+    # 每个 bucket 包含两个数组：
+    # action_totals[3] — 3 个动作族（F/C/R）的总计数
+    # exposed_counts[169, 3] — 169 手牌类型 × 3 动作的暴露计数
     bucket_arrays: dict[tuple[int, int], tuple[np.ndarray, np.ndarray]] = {
         bucket_key: _init_observation_arrays() for bucket_key in bucket_keys
     }

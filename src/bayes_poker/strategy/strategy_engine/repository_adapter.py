@@ -40,6 +40,9 @@ class StrategyNodeCandidate:
     pot_size: float
     raise_size_bb: float | None
     is_in_position: bool | None
+    previous_action: str
+    aggressor_first_in: bool
+    hero_invest_raises: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,6 +379,9 @@ def _to_strategy_candidates(candidates) -> tuple[StrategyNodeCandidate, ...]:
             pot_size=candidate.pot_size,
             raise_size_bb=candidate.raise_size_bb,
             is_in_position=candidate.is_in_position,
+            previous_action=candidate.previous_action,
+            aggressor_first_in=candidate.aggressor_first_in,
+            hero_invest_raises=candidate.hero_invest_raises,
         )
         for candidate in candidates
     )

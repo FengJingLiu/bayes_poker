@@ -186,13 +186,11 @@ def _build_base_node_context(
         for action in prefix_actions[last_raise_index + 1 :]
         if action.action_type in {ActionType.CHECK, ActionType.CALL}
     )
-    if limp_count > 0:
-        raise UnsupportedContextError("当前最小实现暂不支持 limp 后加注场景")
     return NodeContext(
         actor_position=Position.UTG,
         aggressor_position=None,
         call_count=call_count,
-        limp_count=0,
+        limp_count=limp_count,
         raise_time=raise_time,
         pot_size=pot_size,
         raise_size_bb=last_raise.amount / big_blind if big_blind > 0 else None,
@@ -286,7 +284,7 @@ def build_player_node_context(
         big_blind=observed_state.big_blind,
     )
     aggressor_position = None
-    if base_node_context.raise_time > 0 and base_node_context.limp_count == 0:
+    if base_node_context.raise_time > 0:
         for action in prefix_actions:
             if action.action_type in {
                 ActionType.BET,
@@ -313,12 +311,47 @@ def build_player_node_context(
         num_callers = base_node_context.call_count
     previous_action = observed_state.get_preflop_previous_action_for_seat(actor_seat)
     active_player_count = observed_state.get_active_player_count_before_current_turn()
+    hero_invest_raises = 0
+    current_raises = 0
+    last_aggressor_action_index = -1
+    aggressor_seat: int | None = None
+    for action_index, action in enumerate(prefix_actions):
+        if action.action_type in {
+            ActionType.BET,
+            ActionType.RAISE,
+            ActionType.ALL_IN,
+        }:
+            current_raises += 1
+            last_aggressor_action_index = action_index
+            aggressor_seat = action.player_index
+        if action.player_index == actor_seat and action.action_type in {
+            ActionType.CALL,
+            ActionType.CHECK,
+            ActionType.BET,
+            ActionType.RAISE,
+            ActionType.ALL_IN,
+        }:
+            hero_invest_raises = current_raises
+
+    aggressor_first_in = True
+    if (
+        base_node_context.raise_time > 0
+        and aggressor_seat is not None
+        and last_aggressor_action_index > 0
+    ):
+        for index in range(last_aggressor_action_index):
+            prior_action = prefix_actions[index]
+            if prior_action.player_index != aggressor_seat:
+                continue
+            if prior_action.action_type != ActionType.FOLD:
+                aggressor_first_in = False
+            break
 
     params = PreFlopParams(
         table_type=table_type,
         position=metrics_position,
         num_callers=min(num_callers, 1),
-        num_raises=min(num_raises, 2),
+        num_raises=num_raises,
         num_active_players=max(2, active_player_count),
         previous_action=_map_domain_action_to_metrics_action(previous_action),
         in_position_on_flop=_is_in_position_on_flop(
@@ -326,6 +359,8 @@ def build_player_node_context(
             aggressor_position=node_context.aggressor_position,
             player_count=observed_state.player_count,
         ),
+        aggressor_first_in=aggressor_first_in,
+        hero_invest_raises=hero_invest_raises,
     )
     return PlayerNodeContext(
         actor_seat=actor_seat,

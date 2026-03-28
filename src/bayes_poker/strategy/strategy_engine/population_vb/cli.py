@@ -67,13 +67,17 @@ def run_cli(argv: list[str] | None = None) -> int:
         action_totals_path=args.action_totals,
         exposed_counts_path=args.exposed_counts,
     )
+    # 从策略数据库加载 GTO 策略作为先验信念
+    # priors 包含每个 bucket 的初始策略
     prior_builder = GtoFamilyPriorBuilder(
         strategy_db_path=args.strategy_db,
         source_id=args.source_id,
         stack_bb=args.stack_bb,
     )
     priors = prior_builder.build_all(table_type=args.table_type)
-
+    # 通过 变分贝叶斯（VB） 优化人口层面策略后验
+    # 输入：人口观测数据 + GTO 先验
+    # 输出：buckets — 优化后的后验策略
     trainer = PopulationTrainer(
         lambda_gto=args.lambda_gto,
         eps=args.eps,

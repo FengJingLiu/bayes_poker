@@ -417,6 +417,19 @@ def _parse_action_family_state_label(state_label: str | None) -> ActionFamily | 
     return _STATE_LABEL_TO_ACTION_FAMILY.get(normalized_state_label)
 
 
+def _canonical_preflop_position(position: Position) -> Position:
+    """将 preflop 位置归一化到 6-max 兼容表示。
+
+    Args:
+        position: 原始位置。
+
+    Returns:
+        归一化后的位置。
+    """
+
+    return _6MAX_POSITION_ALIASES.get(position, position)
+
+
 def _extract_state_label_from_data(data: dict[str, Any]) -> str | None:
     """从 JSON 根对象中提取节点状态标签。
 
@@ -440,6 +453,79 @@ def _extract_state_label_from_data(data: dict[str, Any]) -> str | None:
                 return value
 
     return None
+
+
+def _derive_param_fields_from_history(
+    *,
+    acting_position: str,
+    history_full: str,
+) -> tuple[str, bool, int]:
+    """从历史推导 `PreFlopParams` 关键字段。
+
+    Args:
+        acting_position: 当前待行动位置字符串。
+        history_full: 完整历史字符串。
+
+    Returns:
+        `(previous_action, aggressor_first_in, hero_invest_raises)`。
+        当历史无法可靠解析时返回默认值 `("F", True, 0)`。
+    """
+
+    actor_position = _resolve_position(acting_position)
+    if actor_position is None:
+        return ("F", True, 0)
+
+    tokens = tuple(split_history_tokens(history_full))
+    if not tokens:
+        return ("F", True, 0)
+
+    action_positions = _resolve_action_positions(
+        actor_position=actor_position,
+        tokens=tokens,
+    )
+    if action_positions is None:
+        return ("F", True, 0)
+
+    normalized_tokens: tuple[str, ...] = tuple(
+        normalize_token(token).upper() for token in tokens
+    )
+    if any(token not in {"F", "C", "R"} for token in normalized_tokens):
+        return ("F", True, 0)
+
+    canonical_actor = _canonical_preflop_position(actor_position)
+    actor_action_indexes: list[int] = []
+    hero_invest_raises = 0
+    for index, (position, token) in enumerate(
+        zip(action_positions, normalized_tokens, strict=True)
+    ):
+        if _canonical_preflop_position(position) != canonical_actor:
+            continue
+        actor_action_indexes.append(index)
+        if token == "R":
+            hero_invest_raises += 1
+
+    previous_action = (
+        normalized_tokens[actor_action_indexes[-1]] if actor_action_indexes else "F"
+    )
+
+    raise_indexes = [
+        index for index, token in enumerate(normalized_tokens) if token == "R"
+    ]
+    if not raise_indexes:
+        return (previous_action, True, hero_invest_raises)
+
+    last_raise_index = raise_indexes[-1]
+    aggressor_position = action_positions[last_raise_index]
+    canonical_aggressor = _canonical_preflop_position(aggressor_position)
+
+    aggressor_first_in = True
+    for index in range(last_raise_index):
+        if _canonical_preflop_position(action_positions[index]) != canonical_aggressor:
+            continue
+        aggressor_first_in = normalized_tokens[index] == "F"
+        break
+
+    return (previous_action, aggressor_first_in, hero_invest_raises)
 
 
 def _derive_action_family_from_history(
@@ -693,6 +779,12 @@ def parse_strategy_node_records(
         history_full=history_full,
         state_label=state_label,
     )
+    previous_action, aggressor_first_in, hero_invest_raises = (
+        _derive_param_fields_from_history(
+            acting_position=acting_position,
+            history_full=history_full,
+        )
+    )
 
     return (
         ParsedStrategyNodeRecord(
@@ -711,6 +803,9 @@ def parse_strategy_node_records(
             pot_size=pot_size,
             raise_size_bb=raise_size_bb,
             is_in_position=is_in_position,
+            previous_action=previous_action,
+            aggressor_first_in=aggressor_first_in,
+            hero_invest_raises=hero_invest_raises,
         ),
         tuple(actions),
     )

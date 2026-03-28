@@ -276,6 +276,11 @@ def increment_player_stats(
 
     preflop_raise_count = 0
     preflop_aggressor: str | None = None
+    last_aggressor_first_in = True
+    hero_invest_raises = 0
+    player_has_non_fold_action: dict[str, bool] = {
+        name: False for name in players
+    }
 
     for action in extract_actions_from_hand_history(hh):
         if action.street != current_street:
@@ -301,10 +306,14 @@ def increment_player_stats(
                     table_type=table_type,
                     position=position,
                     num_callers=min(num_callers, 1),
-                    num_raises=min(num_raises, 2),
+                    num_raises=num_raises,
                     num_active_players=current_num_players,
                     previous_action=last_player_action,
                     in_position_on_flop=in_pos,
+                    aggressor_first_in=(
+                        last_aggressor_first_in if num_raises > 0 else True
+                    ),
+                    hero_invest_raises=hero_invest_raises,
                 )
 
                 try:
@@ -340,12 +349,27 @@ def increment_player_stats(
                 ActionType.BET,
                 ActionType.ALL_IN,
             ):
+                last_aggressor_first_in = not player_has_non_fold_action.get(
+                    action.player_name, False
+                )
                 num_raises += 1
                 num_callers = 0
                 preflop_raise_count += 1
                 preflop_aggressor = action.player_name
             elif action.action_type == ActionType.CALL:
                 num_callers += 1
+
+            if action.player_name == player_name and action.action_type in (
+                ActionType.CALL,
+                ActionType.CHECK,
+                ActionType.BET,
+                ActionType.RAISE,
+                ActionType.ALL_IN,
+            ):
+                hero_invest_raises = num_raises
+
+            if action.action_type != ActionType.FOLD:
+                player_has_non_fold_action[action.player_name] = True
 
         else:
             if player_folded_or_all_in or len(active_players) <= 1:

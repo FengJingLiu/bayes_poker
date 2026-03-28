@@ -233,9 +233,11 @@ def test_context_builder_supports_hero_open_facing_3bet_reentry() -> None:
     assert context.params.previous_action == MetricsActionType.RAISE
     assert context.params.num_raises == 2
     assert context.params.num_active_players == 2
+    assert context.params.hero_invest_raises == 1
+    assert context.params.aggressor_first_in is True
 
 
-def test_unsupported_context_limp_then_face_raise_reentry() -> None:
+def test_context_builder_supports_limp_then_face_raise_reentry() -> None:
     observed_state = ObservedTableState(
         table_id="t7",
         player_count=6,
@@ -254,8 +256,49 @@ def test_unsupported_context_limp_then_face_raise_reentry() -> None:
         state_version=1,
     )
 
-    with pytest.raises(UnsupportedContextError, match="limp 后加注"):
-        build_player_node_context(observed_state)
+    context = build_player_node_context(observed_state)
+
+    assert context.node_context.raise_time == 1
+    assert context.node_context.limp_count == 1
+    assert context.params.previous_action == MetricsActionType.CALL
+    assert context.params.hero_invest_raises == 0
+    assert context.params.aggressor_first_in is True
+    assert context.params.to_index() == 22
+
+
+def test_context_builder_marks_reactive_aggressor_for_multi_raise_reentry() -> None:
+    observed_state = ObservedTableState(
+        table_id="t8",
+        player_count=6,
+        small_blind=0.5,
+        big_blind=1.0,
+        hand_id="h8",
+        street=Street.PREFLOP,
+        btn_seat=0,
+        actor_seat=3,
+        hero_seat=3,
+        players=_build_sixmax_players(),
+        action_history=[
+            PlayerAction(3, ActionType.RAISE, 2.5, Street.PREFLOP),
+            PlayerAction(4, ActionType.CALL, 2.5, Street.PREFLOP),
+            PlayerAction(5, ActionType.RAISE, 10.0, Street.PREFLOP),
+            PlayerAction(0, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(1, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(2, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(3, ActionType.RAISE, 24.0, Street.PREFLOP),
+            PlayerAction(4, ActionType.FOLD, 0.0, Street.PREFLOP),
+            PlayerAction(5, ActionType.RAISE, 55.0, Street.PREFLOP),
+        ],
+        state_version=1,
+    )
+
+    context = build_player_node_context(observed_state)
+
+    assert context.params.previous_action == MetricsActionType.RAISE
+    assert context.params.num_raises == 4
+    assert context.params.hero_invest_raises == 3
+    assert context.params.aggressor_first_in is False
+    assert context.params.to_index() == 41
 
 
 @pytest.mark.parametrize(

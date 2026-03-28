@@ -117,11 +117,11 @@ class TestActionStats:
 class TestPreFlopParams:
     def test_get_all_params_six_max_count(self):
         params = PreFlopParams.get_all_params(TableType.SIX_MAX)
-        assert len(params) == 30
+        assert len(params) == 42
 
     def test_get_all_params_heads_up_count(self):
         params = PreFlopParams.get_all_params(TableType.HEADS_UP)
-        assert len(params) == 10
+        assert len(params) == 0
 
     def test_to_index_first_action_sb(self):
         params = PreFlopParams(
@@ -133,7 +133,7 @@ class TestPreFlopParams:
             previous_action=ActionType.FOLD,
             in_position_on_flop=False,
         )
-        assert params.to_index() == 0
+        assert params.to_index() == 12
 
     def test_to_index_bb_one_raise(self):
         params = PreFlopParams(
@@ -145,12 +145,40 @@ class TestPreFlopParams:
             previous_action=ActionType.FOLD,
             in_position_on_flop=False,
         )
-        assert params.to_index() == 7
+        assert params.to_index() == 17
 
     def test_to_index_all_unique(self):
         params_list = PreFlopParams.get_all_params(TableType.SIX_MAX)
         indices = [p.to_index() for p in params_list]
         assert len(indices) == len(set(indices))
+
+    def test_to_index_passive_reentry_uses_hero_invest_and_cold_flag(self):
+        params = PreFlopParams(
+            table_type=TableType.SIX_MAX,
+            position=Position.BUTTON,
+            num_callers=0,
+            num_raises=2,
+            num_active_players=2,
+            previous_action=ActionType.CALL,
+            in_position_on_flop=True,
+            aggressor_first_in=False,
+            hero_invest_raises=1,
+        )
+        assert params.to_index() == 26
+
+    def test_to_index_active_reentry_reactive_five_bet_plus(self):
+        params = PreFlopParams(
+            table_type=TableType.SIX_MAX,
+            position=Position.UTG,
+            num_callers=0,
+            num_raises=4,
+            num_active_players=2,
+            previous_action=ActionType.RAISE,
+            in_position_on_flop=False,
+            aggressor_first_in=False,
+            hero_invest_raises=3,
+        )
+        assert params.to_index() == 41
 
 
 class TestPostFlopParams:
@@ -187,7 +215,7 @@ class TestPlayerStats:
         stats = PlayerStats(player_name="Hero", table_type=TableType.SIX_MAX)
         assert stats.player_name == "Hero"
         assert stats.table_type == TableType.SIX_MAX
-        assert len(stats.preflop_stats) == 30
+        assert len(stats.preflop_stats) == 42
         assert len(stats.postflop_stats) == 1296
         assert stats.vpip.total == 0
 
@@ -220,7 +248,9 @@ class TestPlayerStats:
                 stats.preflop_stats[i].fold_samples = 2
         
         positive, total = calculate_pfr(stats)
-        num_zero_raise_params = sum(1 for p in all_preflop if p.num_raises == 0)
+        num_zero_raise_params = sum(
+            1 for p in all_preflop if p.num_raises == 0 and p.previous_action == ActionType.FOLD
+        )
         assert positive == 3 * num_zero_raise_params
         assert total == 10 * num_zero_raise_params
 

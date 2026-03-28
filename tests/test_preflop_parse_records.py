@@ -69,9 +69,48 @@ def test_parse_strategy_node_records_extracts_mapper_fields() -> None:
     assert node_record.pot_size == pytest.approx(5.5)
     assert node_record.raise_size_bb == pytest.approx(2.0)
     assert node_record.is_in_position is True
+    assert node_record.previous_action == "F"
+    assert node_record.aggressor_first_in is True
+    assert node_record.hero_invest_raises == 0
     assert len(action_records) == 2
     assert action_records[0].action_code == "F"
     assert action_records[1].action_code == "C"
+
+
+def test_parse_strategy_node_records_extracts_reentry_param_fields() -> None:
+    """应从复杂历史中提取 re-entry 参数字段。"""
+
+    data = {
+        "solutions": [
+            {
+                "action": {
+                    "code": "F",
+                    "position": "CO",
+                    "type": "FOLD",
+                    "next_position": "",
+                    "allin": False,
+                },
+                "total_frequency": 1.0,
+                "total_ev": 0.0,
+                "total_combos": 10.0,
+                "strategy": [1.0] * 169,
+                "evs": [0.0] * 169,
+            },
+        ]
+    }
+
+    records = parse_strategy_node_records(
+        stack_bb=100,
+        data=data,
+        history_full="C-F-R3-F-F-F-R8",
+        source_file="test_reentry.json",
+    )
+
+    assert records is not None
+    node_record, _ = records
+    assert node_record.previous_action == "R"
+    assert node_record.aggressor_first_in is False
+    assert node_record.hero_invest_raises == 1
 
 
 @pytest.mark.parametrize(

@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS solver_nodes (
     pot_size REAL NOT NULL,
     raise_size_bb REAL,
     is_in_position INTEGER,
+    previous_action TEXT NOT NULL DEFAULT 'F',
+    aggressor_first_in INTEGER NOT NULL DEFAULT 1,
+    hero_invest_raises INTEGER NOT NULL DEFAULT 0,
     UNIQUE(source_id, stack_bb, history_full),
     FOREIGN KEY(source_id) REFERENCES strategy_sources(source_id)
 )
@@ -128,6 +131,9 @@ class SolverNodeRecord:
         pot_size: 当前节点前底池大小（单位 BB）。
         raise_size_bb: 最后一次激进行动尺度。
         is_in_position: 当前待行动方相对 aggressor 是否有位置优势。
+        previous_action: 当前 actor 在该决策点前最近一次动作（`F/C/R`）。
+        aggressor_first_in: 最后 aggressor 在本轮是否 first-in。
+        hero_invest_raises: 当前 actor 在历史中累计激进行动次数。
     """
 
     node_id: int
@@ -146,6 +152,9 @@ class SolverNodeRecord:
     pot_size: float
     raise_size_bb: float | None
     is_in_position: bool | None
+    previous_action: str
+    aggressor_first_in: bool
+    hero_invest_raises: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,8 +366,11 @@ class PreflopStrategyRepository:
                 raise_time,
                 pot_size,
                 raise_size_bb,
-                is_in_position
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_in_position,
+                previous_action,
+                aggressor_first_in,
+                hero_invest_raises
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_id, stack_bb, history_full) DO UPDATE SET
                 history_actions = excluded.history_actions,
                 history_token_count = excluded.history_token_count,
@@ -371,7 +383,10 @@ class PreflopStrategyRepository:
                 raise_time = excluded.raise_time,
                 pot_size = excluded.pot_size,
                 raise_size_bb = excluded.raise_size_bb,
-                is_in_position = excluded.is_in_position
+                is_in_position = excluded.is_in_position,
+                previous_action = excluded.previous_action,
+                aggressor_first_in = excluded.aggressor_first_in,
+                hero_invest_raises = excluded.hero_invest_raises
             """,
             (
                 source_id,
@@ -389,6 +404,9 @@ class PreflopStrategyRepository:
                 node_record.pot_size,
                 node_record.raise_size_bb,
                 _encode_bool(node_record.is_in_position),
+                node_record.previous_action,
+                _encode_bool(node_record.aggressor_first_in),
+                node_record.hero_invest_raises,
             ),
         )
         self.conn.commit()
@@ -520,7 +538,10 @@ class PreflopStrategyRepository:
                 raise_time,
                 pot_size,
                 raise_size_bb,
-                is_in_position
+                is_in_position,
+                previous_action,
+                aggressor_first_in,
+                hero_invest_raises
             FROM solver_nodes
             WHERE raise_time = ?
               AND (
@@ -613,7 +634,10 @@ class PreflopStrategyRepository:
                 raise_time,
                 pot_size,
                 raise_size_bb,
-                is_in_position
+                is_in_position,
+                previous_action,
+                aggressor_first_in,
+                hero_invest_raises
             FROM solver_nodes
             WHERE raise_time = 0
               AND actor_position = ?
@@ -833,6 +857,9 @@ def _row_to_solver_node_record(row: sqlite3.Row) -> SolverNodeRecord:
         if row["raise_size_bb"] is not None
         else None,
         is_in_position=_decode_bool(row["is_in_position"]),
+        previous_action=str(row["previous_action"]),
+        aggressor_first_in=bool(row["aggressor_first_in"]),
+        hero_invest_raises=int(row["hero_invest_raises"]),
     )
 
 

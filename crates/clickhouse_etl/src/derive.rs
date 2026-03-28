@@ -283,11 +283,14 @@ struct ActionComputationState {
     active_players: Vec<String>,
     all_in_players: Vec<String>,
     last_action_by_player: HashMap<String, ActionType>,
+    hero_invest_raises_by_player: HashMap<String, i32>,
+    player_has_non_fold_action: HashMap<String, bool>,
     current_street: Street,
     num_raises: i32,
     num_callers: i32,
     preflop_raise_count: i32,
     preflop_aggressor: Option<String>,
+    last_aggressor_first_in: bool,
 }
 
 fn build_position_map(button_seat: usize, players: &[SeatPlayer]) -> HashMap<String, Position> {
@@ -343,11 +346,22 @@ fn build_action_param_index_map(
             .iter()
             .map(|player| (player.player_name.clone(), ActionType::Fold))
             .collect(),
+        hero_invest_raises_by_player: hand
+            .players
+            .iter()
+            .map(|player| (player.player_name.clone(), 0))
+            .collect(),
+        player_has_non_fold_action: hand
+            .players
+            .iter()
+            .map(|player| (player.player_name.clone(), false))
+            .collect(),
         current_street: Street::PreFlop,
         num_raises: 0,
         num_callers: 0,
         preflop_raise_count: 0,
         preflop_aggressor: None,
+        last_aggressor_first_in: true,
     };
 
     for action in &hand.actions {
@@ -358,12 +372,12 @@ fn build_action_param_index_map(
         }
 
         let preflop_param_index = if action.street == Street::PreFlop {
-            Some(build_preflop_param_index(
+            build_preflop_param_index(
                 hand,
                 position_map,
                 &state,
                 &action.player_name,
-            ))
+            )
         } else {
             None
         };
@@ -408,12 +422,34 @@ fn build_action_param_index_map(
 
         if action.street == Street::PreFlop {
             if action.action_type.is_raise_action() {
+                let aggressor_had_non_fold = *state
+                    .player_has_non_fold_action
+                    .get(&action.player_name)
+                    .unwrap_or(&false);
+                state.last_aggressor_first_in = !aggressor_had_non_fold;
                 state.num_raises += 1;
                 state.num_callers = 0;
                 state.preflop_raise_count += 1;
                 state.preflop_aggressor = Some(action.player_name.clone());
             } else if action.action_type == ActionType::Call {
                 state.num_callers += 1;
+            }
+            if matches!(
+                action.action_type,
+                ActionType::Call
+                    | ActionType::Check
+                    | ActionType::Bet
+                    | ActionType::Raise
+                    | ActionType::AllIn
+            ) {
+                state
+                    .hero_invest_raises_by_player
+                    .insert(action.player_name.clone(), state.num_raises);
+            }
+            if action.action_type != ActionType::Fold {
+                state
+                    .player_has_non_fold_action
+                    .insert(action.player_name.clone(), true);
             }
         } else if action.action_type.is_raise_action() {
             state.num_raises += 1;
@@ -428,7 +464,7 @@ fn build_preflop_param_index(
     position_map: &HashMap<String, Position>,
     state: &ActionComputationState,
     player_name: &str,
-) -> usize {
+) -> Option<usize> {
     let num_active_players = state.active_players.len() + state.all_in_players.len();
     let position = *position_map.get(player_name).unwrap_or(&Position::UTG);
     let aggressor_pos = state
@@ -441,17 +477,28 @@ fn build_preflop_param_index(
         .last_action_by_player
         .get(player_name)
         .unwrap_or(&ActionType::Fold);
+    let hero_invest_raises = *state
+        .hero_invest_raises_by_player
+        .get(player_name)
+        .unwrap_or(&0);
 
-    PreFlopParams::new(
+    let params = PreFlopParams::new(
         hand.table_type,
         position,
         state.num_callers.min(1),
-        state.num_raises.min(2),
+        state.num_raises,
         num_active_players as i32,
         previous_action,
         in_position_on_flop,
-    )
-    .to_index()
+        if state.num_raises > 0 {
+            state.last_aggressor_first_in
+        } else {
+            true
+        },
+        hero_invest_raises,
+    );
+    let idx = params.to_index();
+    if idx == usize::MAX { None } else { Some(idx) }
 }
 
 fn build_postflop_param_index(
@@ -830,7 +877,7 @@ Seat 6: Foxtrot folded before Flop (didn't bet)
             .find(|row| row.player_name == "RedZitteraal" && row.action_index == 0)
             .unwrap();
 
-        assert_eq!(redzitteraal_action.preflop_param_index, Some(10));
+        assert_eq!(redzitteraal_action.preflop_param_index, Some(0));
         assert_eq!(redzitteraal_action.postflop_param_index, None);
     }
 

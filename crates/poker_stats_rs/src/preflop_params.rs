@@ -9,6 +9,8 @@ pub struct PreFlopParams {
     pub num_active_players: i32,
     pub previous_action: ActionType,
     pub in_position_on_flop: bool,
+    pub aggressor_first_in: bool,
+    pub hero_invest_raises: i32,
 }
 
 impl PreFlopParams {
@@ -20,6 +22,8 @@ impl PreFlopParams {
         num_active_players: i32,
         previous_action: ActionType,
         in_position_on_flop: bool,
+        aggressor_first_in: bool,
+        hero_invest_raises: i32,
     ) -> Self {
         Self {
             table_type,
@@ -29,78 +33,137 @@ impl PreFlopParams {
             num_active_players,
             previous_action,
             in_position_on_flop,
+            aggressor_first_in,
+            hero_invest_raises,
         }
     }
 
+    /// 将当前参数映射为统计数组下标, 幽灵节点(不可能场景)返回 `usize::MAX`.
     pub fn to_index(&self) -> usize {
-        if self.table_type == TableType::HeadsUp {
-            let raise_idx = self.num_raises.min(4) as usize;
-            return if self.position == Position::SmallBlind {
-                raise_idx
-            } else {
-                5 + raise_idx
-            };
+        if self.table_type != TableType::SixMax {
+            return usize::MAX;
         }
+
+        let r = self.num_raises;
+        let c = if self.num_callers > 0 { 1 } else { 0 };
 
         if self.previous_action == ActionType::Fold {
-            // 阶段一: 首次行动 (First-in)
-            let a0 = self.position as usize;
-            let a1 = match (self.num_raises, self.num_callers > 0) {
-                (0, false) => 0, // RFI (Unopened)
-                (0, true) => 1,  // Facing Limper(s)
-                (1, false) => 2, // Facing Open
-                (1, true) => 3,  // Facing Open + Caller(s) (Squeeze 场景)
-                _ => 4,          // Facing 3Bet/4Bet+
+            // 阶段一: 首次行动 (First-in), 21 个合法桶.
+            if r >= 2 {
+                return match self.position {
+                    Position::CutOff | Position::Button => 19,
+                    Position::SmallBlind | Position::BigBlind => 20,
+                    _ => usize::MAX,
+                };
+            }
+
+            return match self.position {
+                Position::UTG => {
+                    if r == 0 && c == 0 {
+                        0
+                    } else {
+                        usize::MAX
+                    }
+                }
+                Position::HJ => {
+                    if r == 0 {
+                        (1 + c) as usize
+                    } else if r == 1 {
+                        3
+                    } else {
+                        usize::MAX
+                    }
+                }
+                Position::CutOff => match (r, c) {
+                    (0, 0) => 4,
+                    (0, 1) => 5,
+                    (1, 0) => 6,
+                    (1, 1) => 7,
+                    _ => usize::MAX,
+                },
+                Position::Button => match (r, c) {
+                    (0, 0) => 8,
+                    (0, 1) => 9,
+                    (1, 0) => 10,
+                    (1, 1) => 11,
+                    _ => usize::MAX,
+                },
+                Position::SmallBlind => match (r, c) {
+                    (0, 0) => 12,
+                    (0, 1) => 13,
+                    (1, 0) => 14,
+                    (1, 1) => 15,
+                    _ => usize::MAX,
+                },
+                Position::BigBlind => {
+                    if r == 0 && c == 1 {
+                        16
+                    } else if r == 1 {
+                        (17 + c) as usize
+                    } else {
+                        usize::MAX
+                    }
+                }
             };
-            return (5 * a0) + a1;
         }
 
-        // 阶段二: 二次行动 (Re-entry)
+        // 阶段二: 重入池 (Re-entry), 21 个战术桶.
+        let is_oop = if self.in_position_on_flop { 0 } else { 1 };
+        let is_react = if self.aggressor_first_in { 0 } else { 1 };
+        let hr = self.hero_invest_raises;
 
-        // 动态设置 Base Offset
-        let base_offset = match self.table_type {
-            TableType::SixMax => 30, // 5 * 6
-            _ => 50,
-        };
+        if r <= hr {
+            return usize::MAX;
+        }
 
-        let a0 = match self.previous_action {
-            ActionType::Check | ActionType::Call => 0, // 被动入池后重入
-            _ => 1,                                    // 主动加注后重入
-        };
-        let a1 = if self.in_position_on_flop { 0 } else { 1 };
-
-        // 消除幽灵桶, 对极端稀疏场景进行物理折叠
-        let a_combined = if a0 == 0 {
-            // 之前是 Call/Limp
-            match self.num_raises {
-                1 => {
-                    let mw = if self.num_active_players > 2 { 1 } else { 0 };
-                    let callers = if self.num_callers > 0 { 1 } else { 0 };
-                    (mw * 2) + callers // 分配 0, 1, 2, 3
+        match self.previous_action {
+            ActionType::Check | ActionType::Call => {
+                // 1. 被动重入 (Passive), 9 桶.
+                let hr = hr.clamp(0, 2);
+                let base = 21usize;
+                if hr == 0 {
+                    if r == 1 {
+                        base + is_oop // 21,22
+                    } else {
+                        base + 2 // 23
+                    }
+                } else if hr == 1 {
+                    if r == 2 {
+                        base + 3 + (is_react * 2) + is_oop // 24..27
+                    } else {
+                        base + 7 // 28
+                    }
+                } else {
+                    base + 8 // 29
                 }
-                _ => 4, // 面临 Squeeze 或 3Bet+
             }
-        } else {
-            // 之前是 Bet/Raise (此时 num_raises 必然 >= 2)
-            match self.num_raises {
-                2 => {
-                    let mw = if self.num_active_players > 2 { 1 } else { 0 };
-                    let callers = if self.num_callers > 0 { 1 } else { 0 };
-                    (mw * 2) + callers // 分配 0, 1, 2, 3
+            _ => {
+                // 2. 主动重入 (Active), 12 桶.
+                let hr = hr.clamp(1, 3);
+                let base = 30usize;
+                if hr == 1 {
+                    if r == 2 {
+                        base + (is_react * 2) + is_oop // 30..33
+                    } else {
+                        base + 4 + is_react // 34,35
+                    }
+                } else if hr == 2 {
+                    if r == 3 {
+                        base + 6 + (is_react * 2) + is_oop // 36..39
+                    } else {
+                        base + 10 // 40
+                    }
+                } else {
+                    base + 11 // 41
                 }
-                _ => 4, // 面临 4Bet/5Bet+
             }
-        };
-
-        // 维数: a0(2) * a1(2) * a_combined(5) = 20 个桶
-        base_offset + (10 * a0) + (5 * a1) + a_combined
+        }
     }
 
     pub fn get_all_params_count(table_type: TableType) -> usize {
         match table_type {
-            TableType::HeadsUp => 10,
-            TableType::SixMax => 30 + 20, // 50
-            _ => 100,
+            TableType::HeadsUp => 0,
+            TableType::SixMax => 42,
         }
     }
 }

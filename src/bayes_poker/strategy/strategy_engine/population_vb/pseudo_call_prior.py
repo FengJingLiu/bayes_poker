@@ -137,8 +137,8 @@ def build_pseudo_call_prior_from_raise_ev(
     fold_component = shrunk_mix[0] * fold_affinity
     call_component = shrunk_mix[1] * call_affinity
     raise_component = shrunk_mix[2] * raise_affinity
-    if shrunk_mix[1] <= eps:
-        call_component = np.zeros_like(call_component)
+    # 保证每个手牌组合的 call 概率大于 0, 弱牌保留极小值。
+    call_component = np.maximum(call_component, eps)
 
     stacked = np.stack(
         [

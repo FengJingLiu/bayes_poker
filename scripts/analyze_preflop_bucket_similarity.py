@@ -236,7 +236,10 @@ def load_solver_nodes(
             actor_position,
             call_count,
             raise_time,
-            is_in_position
+            is_in_position,
+            previous_action,
+            aggressor_first_in,
+            hero_invest_raises
         FROM solver_nodes
         WHERE source_id = ? AND stack_bb = ?
         ORDER BY node_id ASC
@@ -323,8 +326,16 @@ def infer_param_index_from_node_columns(solver_node: Mapping[str, object]) -> in
     try:
         num_callers = min(max(int(solver_node.get("call_count", 0)), 0), 1)
         num_raises = max(int(solver_node.get("raise_time", 0)), 0)
+        hero_invest_raises = max(int(solver_node.get("hero_invest_raises", 0)), 0)
     except (TypeError, ValueError):
         return None
+    previous_action_token = str(solver_node.get("previous_action", "F")).strip().upper()
+    if previous_action_token == "R":
+        previous_action = MetricsActionType.RAISE
+    elif previous_action_token == "C":
+        previous_action = MetricsActionType.CALL
+    else:
+        previous_action = MetricsActionType.FOLD
 
     params = PreFlopParams(
         table_type=TableType.SIX_MAX,
@@ -332,10 +343,13 @@ def infer_param_index_from_node_columns(solver_node: Mapping[str, object]) -> in
         num_callers=num_callers,
         num_raises=num_raises,
         num_active_players=6,
-        previous_action=MetricsActionType.FOLD,
+        previous_action=previous_action,
         in_position_on_flop=_parse_bool_like(solver_node.get("is_in_position")),
-        aggressor_first_in=True,
-        hero_invest_raises=0,
+        aggressor_first_in=_parse_bool_like_with_default(
+            solver_node.get("aggressor_first_in"),
+            default=True,
+        ),
+        hero_invest_raises=hero_invest_raises,
     )
     index_value = params.to_index()
     return int(index_value) if index_value >= 0 else None
@@ -662,6 +676,22 @@ def _parse_bool_like(value: object) -> bool:
     if isinstance(value, int):
         return value != 0
     return str(value).strip().lower() in {"1", "true", "t", "yes", "y"}
+
+
+def _parse_bool_like_with_default(value: object, *, default: bool) -> bool:
+    """解析 bool-like 值并支持默认值。
+
+    Args:
+        value: 任意输入值。
+        default: 当输入为空时的默认布尔值。
+
+    Returns:
+        解析后的布尔值。
+    """
+
+    if value is None:
+        return default
+    return _parse_bool_like(value)
 
 
 def main(argv: list[str] | None = None) -> int:

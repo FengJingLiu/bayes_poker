@@ -58,6 +58,9 @@ class ParsedStrategyNodeRecord:
         pot_size: 当前节点前的底池大小（单位 BB）。
         raise_size_bb: 最后一次激进行动尺度。
         is_in_position: 当前待行动方相对 aggressor 是否有位置优势。
+        previous_action: 当前 actor 在该决策点前最近一次动作（`F/C/R`）。
+        aggressor_first_in: 最后 aggressor 在本轮是否 first-in。
+        hero_invest_raises: 当前 actor 在历史中累计激进行动次数。
     """
 
     stack_bb: int
@@ -75,3 +78,6 @@ class ParsedStrategyNodeRecord:
     pot_size: float
     raise_size_bb: float | None
     is_in_position: bool | None
+    previous_action: str = "F"
+    aggressor_first_in: bool = True
+    hero_invest_raises: int = 0

@@ -26,6 +26,9 @@ def _make_node_record(
     pot_size: float = 5.5,
     raise_size_bb: float | None = 2.0,
     is_in_position: bool | None = True,
+    previous_action: str = "F",
+    aggressor_first_in: bool = True,
+    hero_invest_raises: int = 0,
 ) -> ParsedStrategyNodeRecord:
     """构造最小可用的节点记录."""
 
@@ -45,13 +48,19 @@ def _make_node_record(
         pot_size=pot_size,
         raise_size_bb=raise_size_bb,
         is_in_position=is_in_position,
+        previous_action=previous_action,
+        aggressor_first_in=aggressor_first_in,
+        hero_invest_raises=hero_invest_raises,
     )
 
 
 def _make_action_records() -> tuple[ParsedStrategyActionRecord, ...]:
     """构造最小可用的动作记录集合."""
 
-    base_range = PreflopRange(strategy=[0.5] * 169, evs=[0.1] * 169)
+    base_range = PreflopRange.from_list(
+        strategy=[0.5] * 169,
+        evs=[0.1] * 169,
+    )
     return (
         ParsedStrategyActionRecord(
             order_index=0,
@@ -130,6 +139,9 @@ def test_repository_reads_candidates_and_actions_by_node_id(tmp_path: Path) -> N
 
     assert len(candidates) == 1
     assert candidates[0].node_id == node_ids["R2-C"]
+    assert candidates[0].previous_action == "F"
+    assert candidates[0].aggressor_first_in is True
+    assert candidates[0].hero_invest_raises == 0
     assert len(actions_by_node_id[node_ids["R2-C"]]) == 2
     assert actions_by_node_id[node_ids["R2-C"]][1].action_code == "C"
     assert repo.count_nodes() == 1

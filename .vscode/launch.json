@@ -11,6 +11,30 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "Python: Debug population_vb CLI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "bayes_poker.strategy.strategy_engine.population_vb.cli",
+            "args": [
+                "--strategy-db",
+                "data/database/preflop_strategy.sqlite3",
+                "--source-id",
+                "1",
+                "--action-totals",
+                "data/population_vb/action_totals.csv.gz",
+                "--exposed-counts",
+                "data/population_vb/exposed_combo_counts.csv.gz",
+                "--output",
+                "data/population_vb"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            }
         }
     ]
 }

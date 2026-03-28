@@ -8,6 +8,11 @@ from .enums import ActionType, Position, PreflopPotType, Street, TableType
 
 @dataclass(frozen=True)
 class PreFlopParams:
+    """翻前节点参数。
+
+    该参数对象用于把翻前决策上下文映射到致密索引桶。
+    """
+
     table_type: TableType
     position: Position
     num_callers: int
@@ -15,134 +20,216 @@ class PreFlopParams:
     num_active_players: int
     previous_action: ActionType
     in_position_on_flop: bool
+    aggressor_first_in: bool = True
+    hero_invest_raises: int = 0
 
     def forced_action(self) -> bool:
+        """判断当前是否为强制响应节点。
+
+        Returns:
+            对大盲位仅当已出现加注时返回 True。其余位置恒为 True。
+        """
+
         if self.position == Position.BIG_BLIND:
             return self.num_raises > 0
         return True
 
     def to_index(self) -> int:
-        if self.table_type == TableType.HEADS_UP:
-            raise_idx = min(self.num_raises, 4)
-            if self.position == Position.SMALL_BLIND:
-                return raise_idx
-            elif self.position == Position.BIG_BLIND:
-                return 5 + raise_idx
-            else:
-                raise ValueError(f"Invalid position for HU: {self.position}")
+        """把参数映射到 42 维翻前致密桶索引。
 
-        # 这里不是真正的之前动作为 FOLD, 而是代表该玩家第一次行动(之前没有过动作)。
+        Returns:
+            合法桶返回 [0, 41]。非法或时空冲突场景返回 -1。
+        """
+
+        if self.table_type != TableType.SIX_MAX:
+            return -1
+
+        r = self.num_raises
+        c = 1 if self.num_callers > 0 else 0
+
         if self.previous_action == ActionType.FOLD:
-            # 阶段一: 首次行动 (First-in)
-            a0 = int(self.position)
-            if self.num_raises == 0:
-                a1 = 0 if self.num_callers == 0 else 1
-            elif self.num_raises == 1:
-                a1 = 2 if self.num_callers == 0 else 3
-            else:
-                a1 = 4
-            return (5 * a0) + a1
+            # 阶段一: 首次行动 (First-In), 21 个桶。
+            if r >= 2:
+                if self.position in (Position.CO, Position.BUTTON):
+                    return 19
+                if self.position in (Position.SMALL_BLIND, Position.BIG_BLIND):
+                    return 20
+                return -1
 
-        # 阶段二: 二次行动 (Re-entry)
+            if self.position == Position.UTG:
+                return 0 if (r == 0 and c == 0) else -1
+            if self.position == Position.HJ:
+                return (1 + c) if r == 0 else 3
+            if self.position == Position.CO:
+                return (4 + c) if r == 0 else (6 + c)
+            if self.position == Position.BUTTON:
+                return (8 + c) if r == 0 else (10 + c)
+            if self.position == Position.SMALL_BLIND:
+                return (12 + c) if r == 0 else (14 + c)
+            if self.position == Position.BIG_BLIND:
+                if r == 0 and c == 1:
+                    return 16
+                if r == 1:
+                    return 17 + c
+            return -1
 
-        # 动态设置 Base Offset
-        if self.table_type == TableType.SIX_MAX:
-            base_offset = 30  # 5 * 6
-        elif self.table_type == TableType.NINE_MAX:
-            base_offset = 45  # 5 * 9
-        else:
-            base_offset = 50
+        # 阶段二: 重入池 (Re-entry), 21 个桶。
+        is_oop = 0 if self.in_position_on_flop else 1
+        is_react = 0 if self.aggressor_first_in else 1
+
+        hr = self.hero_invest_raises
+        if r <= hr:
+            return -1
 
         if self.previous_action in (ActionType.CHECK, ActionType.CALL):
-            a0 = 0  # 被动入池后重入
-        else:
-            a0 = 1  # 主动加注后重入
+            # 1. 被动重入 (Passive), 9 个桶。
+            hr = min(hr, 2)
+            base = 21
+            if hr == 0:
+                if r == 1:
+                    return base + is_oop  # 21, 22
+                return base + 2  # 23
+            if hr == 1:
+                if r == 2:
+                    return base + 3 + (is_react * 2) + is_oop  # 24..27
+                return base + 7  # 28
+            return base + 8  # 29
 
-        a1 = 0 if self.in_position_on_flop else 1
-
-        # 消除幽灵桶, 对极端稀疏场景进行物理折叠
-        if a0 == 0:
-            # 之前是 Call/Limp
-            if self.num_raises == 1:
-                mw = 1 if self.num_active_players > 2 else 0
-                callers = 1 if self.num_callers > 0 else 0
-                a_combined = (mw * 2) + callers  # 分配 0, 1, 2, 3
-            else:
-                a_combined = 4  # 面临 Squeeze 或 3Bet+
-        else:
-            # 之前是 Bet/Raise (此时 num_raises 必然 >= 2)
-            if self.num_raises == 2:
-                mw = 1 if self.num_active_players > 2 else 0
-                callers = 1 if self.num_callers > 0 else 0
-                a_combined = (mw * 2) + callers  # 分配 0, 1, 2, 3
-            else:
-                a_combined = 4  # 面临 4Bet/5Bet+
-
-        # 维数: a0(2) * a1(2) * a_combined(5) = 20 个桶
-        return base_offset + (10 * a0) + (5 * a1) + a_combined
+        # 2. 主动重入 (Active), 12 个桶。
+        hr = max(min(hr, 3), 1)
+        base = 30
+        if hr == 1:
+            if r == 2:
+                return base + (is_react * 2) + is_oop  # 30..33
+            return base + 4 + is_react  # 34, 35
+        if hr == 2:
+            if r == 3:
+                return base + 6 + (is_react * 2) + is_oop  # 36..39
+            return base + 10  # 40
+        return base + 11  # 41
 
     @staticmethod
     @lru_cache(maxsize=4)
     def get_all_params(table_type: TableType) -> tuple[PreFlopParams, ...]:
-        all_params: list[PreFlopParams] = []
+        """返回翻前参数全集并保证 42 桶全覆盖。
 
-        if table_type == TableType.HEADS_UP:
-            for num_raises in range(5):
-                all_params.append(
-                    PreFlopParams(
-                        table_type, Position.SMALL_BLIND, 0, num_raises, 2, ActionType.FOLD, True
-                    )
-                )
-            for num_raises in range(5):
-                all_params.append(
-                    PreFlopParams(
-                        table_type, Position.BIG_BLIND, 0, num_raises, 2, ActionType.FOLD, False
-                    )
-                )
-        else:
-            for pos in Position:
-                if pos == Position.EMPTY:
-                    continue
-                all_params.append(
-                    PreFlopParams(
-                        table_type, pos, 0, 0, int(table_type), ActionType.FOLD, False
-                    )
-                )
-                all_params.append(
-                    PreFlopParams(
-                        table_type, pos, 1, 0, int(table_type), ActionType.FOLD, False
-                    )
-                )
-                all_params.append(
-                    PreFlopParams(
-                        table_type, pos, 0, 1, int(table_type), ActionType.FOLD, False
-                    )
-                )
-                all_params.append(
-                    PreFlopParams(
-                        table_type, pos, 1, 1, int(table_type), ActionType.FOLD, False
-                    )
-                )
-                all_params.append(
-                    PreFlopParams(
-                        table_type, pos, 0, 2, int(table_type), ActionType.FOLD, False
-                    )
-                )
+        Args:
+            table_type: 桌型。
 
-        return tuple(all_params)
+        Returns:
+            6-max 返回致密 42 桶参数列表。其他桌型返回空元组。
+        """
+
+        if table_type != TableType.SIX_MAX:
+            return tuple()
+
+        all_params: list[PreFlopParams | None] = [None] * 42
+        tt = table_type
+
+        def _add(params: PreFlopParams) -> None:
+            idx = params.to_index()
+            if idx != -1 and all_params[idx] is None:
+                all_params[idx] = params
+
+        # 通过穷举注入, 由 to_index() 负责过滤并锚定到 42 个合法桶。
+        for position in Position:
+            if position == Position.EMPTY:
+                continue
+            for raises in range(6):
+                for callers in range(2):
+                    _add(
+                        PreFlopParams(
+                            table_type=tt,
+                            position=position,
+                            num_callers=callers,
+                            num_raises=raises,
+                            num_active_players=6,
+                            previous_action=ActionType.FOLD,
+                            in_position_on_flop=False,
+                            aggressor_first_in=True,
+                            hero_invest_raises=0,
+                        )
+                    )
+                    for hero_raises in range(5):
+                        for is_react in (True, False):
+                            for is_oop in (False, True):
+                                in_position = not is_oop
+                                _add(
+                                    PreFlopParams(
+                                        table_type=tt,
+                                        position=position,
+                                        num_callers=callers,
+                                        num_raises=raises,
+                                        num_active_players=6,
+                                        previous_action=ActionType.CALL,
+                                        in_position_on_flop=in_position,
+                                        aggressor_first_in=not is_react,
+                                        hero_invest_raises=hero_raises,
+                                    )
+                                )
+                                _add(
+                                    PreFlopParams(
+                                        table_type=tt,
+                                        position=position,
+                                        num_callers=callers,
+                                        num_raises=raises,
+                                        num_active_players=6,
+                                        previous_action=ActionType.RAISE,
+                                        in_position_on_flop=in_position,
+                                        aggressor_first_in=not is_react,
+                                        hero_invest_raises=hero_raises,
+                                    )
+                                )
+
+        missing = [idx for idx, params in enumerate(all_params) if params is None]
+        assert not missing, f"状态机映射失败, 存在无法触达的空桶: {missing}"
+        return tuple(
+            sorted(
+                (
+                    params
+                    for params in all_params
+                    if params is not None
+                ),
+                key=lambda params: params.to_index(),
+            )
+        )
 
     def __str__(self) -> str:
+        """返回可读字符串表示。"""
+
+        idx = self.to_index()
         if self.previous_action == ActionType.FOLD:
-            return (
-                f"{self.previous_action.name}, {self.position.name}, "
-                f"bets: {self.num_raises}, limpers: {self.num_callers}"
-            )
-        pos_str = "inp" if self.in_position_on_flop else "oop"
-        return (
-            f"{self.previous_action.name}, {pos_str}, "
-            f"players: {self.num_active_players}, raises: {self.num_raises}, "
-            f"callers: {self.num_callers}"
-        )
+            if idx == 19:
+                return "FirstIn, CO/BTN, R:2+, C:Any"
+            if idx == 20:
+                return "FirstIn, Blinds, R:2+, C:Any"
+            r_str = str(self.num_raises)
+            c_str = "1+" if self.num_callers > 0 else "0"
+            return f"FirstIn, {self.position.name}, R:{r_str}, C:{c_str}"
+
+        pos_str = "IP" if self.in_position_on_flop else "OOP"
+        aggr_str = "Cold" if self.aggressor_first_in else "React"
+        if self.previous_action in (ActionType.CHECK, ActionType.CALL):
+            if idx == 23:
+                return "ReEntry(Limp), Face 3B+ (Merged)"
+            if idx == 28:
+                return "ReEntry(CallOpen), Face 4B+ (Merged)"
+            if idx == 29:
+                return "ReEntry(Call3B+), Face 4B+ (Merged)"
+            act = "Limp/Check" if self.hero_invest_raises == 0 else "CallOpen"
+            face = "Iso" if self.num_raises == 1 else "Squeeze"
+            return f"ReEntry({act}), Face {aggr_str} {face}, {pos_str}"
+
+        if idx in (34, 35):
+            return f"ReEntry(Open), Face {aggr_str} 4B+ (Merged Pos)"
+        if idx == 40:
+            return "ReEntry(3B), Face 5B+ (Merged)"
+        if idx == 41:
+            return "ReEntry(4B+), Face 5B+ (Merged)"
+
+        act = "Open" if self.hero_invest_raises == 1 else "3B"
+        face = "3B" if self.num_raises == 2 else "4B"
+        return f"ReEntry({act}), Face {aggr_str} {face}, {pos_str}"
 
 
 @dataclass(frozen=True)

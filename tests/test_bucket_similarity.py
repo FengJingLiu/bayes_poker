@@ -43,30 +43,30 @@ def test_map_param_index_first_in_root() -> None:
 
 
 def test_map_param_index_first_in_bb_limp_defense() -> None:
-    """BB limp defense 应落在 bucket 19。"""
+    """BB limp defense 应落在 bucket 16。"""
 
     node = _make_solver_node(history_full="F-F-F-F-C", acting_position="BB")
-    assert bucket_similarity.map_solver_node_to_preflop_param_index(node) == 19
+    assert bucket_similarity.map_solver_node_to_preflop_param_index(node) == 16
 
 
 def test_map_param_index_passive_reentry() -> None:
-    """Passive re-entry 场景应落在 bucket 25。"""
+    """Passive re-entry 场景应落在 bucket 23。"""
 
     node = _make_solver_node(
         history_full="R2-C-F-F-R6-F-F",
         acting_position="HJ",
     )
-    assert bucket_similarity.map_solver_node_to_preflop_param_index(node) == 25
+    assert bucket_similarity.map_solver_node_to_preflop_param_index(node) == 23
 
 
 def test_map_param_index_active_reentry() -> None:
-    """Active re-entry 场景应落在 bucket 45。"""
+    """Active re-entry 场景应落在 bucket 30。"""
 
     node = _make_solver_node(
         history_full="F-F-R3-F-R8-F",
         acting_position="CO",
     )
-    assert bucket_similarity.map_solver_node_to_preflop_param_index(node) == 45
+    assert bucket_similarity.map_solver_node_to_preflop_param_index(node) == 30
 
 
 def test_map_param_index_aggressor_first_in_flag() -> None:
@@ -83,8 +83,8 @@ def test_map_param_index_aggressor_first_in_flag() -> None:
 
     result_true = bucket_similarity.map_solver_node_to_preflop_param_index(true_aggressor)
     result_false = bucket_similarity.map_solver_node_to_preflop_param_index(false_aggressor)
-    assert result_true == 45
-    assert result_false == 47
+    assert result_true == 30
+    assert result_false == 32
 
 
 def test_map_param_index_returns_none_for_unknown_token() -> None:

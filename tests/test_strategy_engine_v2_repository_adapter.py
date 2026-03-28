@@ -57,7 +57,10 @@ def _make_node_record(
 
 
 def _make_action_records() -> tuple[ParsedStrategyActionRecord, ...]:
-    base_range = PreflopRange(strategy=[0.5] * 169, evs=[0.1] * 169)
+    base_range = PreflopRange.from_list(
+        strategy=[0.5] * 169,
+        evs=[0.1] * 169,
+    )
     return (
         ParsedStrategyActionRecord(
             order_index=0,

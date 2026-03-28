@@ -69,8 +69,8 @@ def test_pseudo_call_prior_places_call_between_raise_and_fold() -> None:
     assert prior[high_index, 2] > prior[mid_index, 2]
 
 
-def test_pseudo_call_prior_zero_call_when_empirical_call_zero() -> None:
-    """当经验 call 质量为 0 时, 先验 call 维度应收缩到 0。"""
+def test_pseudo_call_prior_floor_when_empirical_call_zero() -> None:
+    """当经验 call 质量为 0 时, 先验 call 维度应收缩到极小正值(floor)。"""
     raise_score = np.linspace(-1.0, 1.0, RANGE_169_LENGTH, dtype=np.float32)
     combo_weights = combo_weights_169()
     empirical_mix = np.array([0.7, 0.0, 0.3], dtype=np.float32)
@@ -82,7 +82,9 @@ def test_pseudo_call_prior_zero_call_when_empirical_call_zero() -> None:
         solver_raise_share=0.3,
     )
 
-    assert np.allclose(prior[:, 1], 0.0, atol=1e-6)
+    # call 列全部大于 0, 但数值极小
+    assert np.all(prior[:, 1] > 0)
+    assert np.all(prior[:, 1] < 1e-4)
     assert np.allclose(prior.sum(axis=1), 1.0, atol=1e-6)
 
 
